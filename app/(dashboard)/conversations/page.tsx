@@ -36,11 +36,14 @@ function isBase64(str: string): boolean {
   return /^[A-Za-z0-9+/=]{50,}/.test(str);
 }
 
-function lastMessagePreview(chat: Chat): string {
-  if (!chat.lastMessage) return 'No messages';
+function lastMessagePreview(chat: Chat & { messageCount?: number }): string {
+  if (!chat.lastMessage) {
+    if (chat.messageCount && chat.messageCount > 0) return `${chat.messageCount} messages`;
+    return 'No messages yet';
+  }
   const lm = chat.lastMessage as { body?: string; type?: string; fromMe?: boolean };
   const body = lm.body || '';
-  if (!body || isBase64(body)) {
+  if (!body || body === 'Media' || isBase64(body)) {
     const typeLabel = lm.type && lm.type !== 'text' ? lm.type.charAt(0).toUpperCase() + lm.type.slice(1) : 'Media';
     return lm.fromMe ? `You: ${typeLabel}` : typeLabel;
   }
@@ -223,9 +226,15 @@ function MessageContent({ message }: { message: Message }) {
   }
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function MessageBubble({ message, isGroup }: { message: Message; isGroup: boolean }) {
   const isSent = message.fromMe;
   const time = formatMessageTime(message.timestamp);
+  const body = message.body || message.caption || '';
+
+  // Skip completely empty messages that have no content
+  if (!body && !message.mediaUrl && message.type === 'text') {
+    return null;
+  }
 
   return (
     <div className={`flex ${isSent ? 'justify-end' : 'justify-start'} mb-1 px-2`}>
@@ -236,7 +245,8 @@ function MessageBubble({ message }: { message: Message }) {
           backgroundColor: isSent ? '#DCF8C6' : '#ffffff',
         }}
       >
-        {!isSent && message.senderName && (
+        {/* Show sender name only in groups, for received messages */}
+        {!isSent && isGroup && message.senderName && (
           <p className="mb-0.5 text-xs font-semibold text-wa-teal">{message.senderName}</p>
         )}
         <MessageContent message={message} />
@@ -333,7 +343,19 @@ export default function ConversationsPage() {
       if (res.ok) {
         const data: ApiResponse<Chat[]> = await res.json();
         if (data.success && data.data) {
-          const sorted = [...data.data].sort(
+          // Deduplicate by wppId (keep the one with most messages/latest update)
+          const seen = new Map<string, Chat>();
+          for (const chat of data.data) {
+            const existing = seen.get(chat.wppId);
+            if (!existing || (chat.lastMessage && !existing.lastMessage) ||
+                new Date(chat.updatedAt).getTime() > new Date(existing.updatedAt).getTime()) {
+              seen.set(chat.wppId, chat);
+            }
+          }
+          const deduped = Array.from(seen.values());
+          // Filter out status@broadcast
+          const filtered = deduped.filter(c => c.wppId !== 'status@broadcast');
+          const sorted = filtered.sort(
             (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
           );
           setChats(sorted);
@@ -687,7 +709,7 @@ export default function ConversationsPage() {
                         </span>
                       </div>
                       {group.messages.map((msg) => (
-                        <MessageBubble key={msg.id} message={msg} />
+                        <MessageBubble key={msg.id} message={msg} isGroup={selectedChat?.isGroup || false} />
                       ))}
                     </div>
                   ))}
