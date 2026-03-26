@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -16,6 +17,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   ChevronDown,
+  X,
 } from 'lucide-react';
 import { useUIStore, useSessionStore } from '@/lib/store';
 
@@ -34,19 +36,44 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { sidebarCollapsed, toggleSidebar } = useUIStore();
+  const { sidebarCollapsed, toggleSidebar, mobileSidebarOpen, setMobileSidebarOpen } = useUIStore();
   const { sessions, activeSessionId, setActiveSession } = useSessionStore();
+
+  // Track screen size for responsive behavior
+  const [isTablet, setIsTablet] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      setIsMobile(window.innerWidth < 768);
+      setIsTablet(window.innerWidth >= 768 && window.innerWidth < 1024);
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // On tablet, always show collapsed
+  const effectiveCollapsed = isTablet ? true : sidebarCollapsed;
+
+  // Close mobile sidebar on navigation
+  useEffect(() => {
+    if (isMobile) {
+      setMobileSidebarOpen(false);
+    }
+  }, [pathname, isMobile, setMobileSidebarOpen]);
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
     return pathname.startsWith(href);
   };
 
-  return (
+  const sidebarWidth = effectiveCollapsed ? 70 : 260;
+
+  const sidebarContent = (
     <aside
-      className={`flex h-screen flex-col border-r border-wa-border bg-wa-panel transition-[width] duration-200 ${
-        sidebarCollapsed ? 'w-[70px]' : 'w-[260px]'
-      }`}
+      className="flex h-screen flex-col border-r border-wa-border bg-wa-panel transition-[width] duration-200"
+      style={{ width: isMobile ? 280 : sidebarWidth }}
     >
       {/* Brand */}
       <div className="flex h-14 items-center justify-between border-b border-wa-border px-4 shrink-0">
@@ -56,21 +83,31 @@ export function Sidebar() {
             alt="WAutoChat"
             className="h-8 w-8 shrink-0 rounded-lg"
           />
-          {!sidebarCollapsed && (
+          {(!effectiveCollapsed || isMobile) && (
             <span className="text-lg font-bold text-wa-teal whitespace-nowrap">WAutoChat</span>
           )}
         </Link>
-        <button
-          onClick={toggleSidebar}
-          className="shrink-0 rounded-lg p-1.5 text-wa-text-muted transition-colors hover:bg-wa-hover hover:text-wa-text"
-          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {sidebarCollapsed ? (
-            <PanelLeft className="h-5 w-5" />
-          ) : (
-            <PanelLeftClose className="h-5 w-5" />
-          )}
-        </button>
+        {isMobile ? (
+          <button
+            onClick={() => setMobileSidebarOpen(false)}
+            className="shrink-0 rounded-lg p-1.5 text-wa-text-muted transition-colors hover:bg-wa-hover hover:text-wa-text"
+            aria-label="Close sidebar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        ) : !isTablet ? (
+          <button
+            onClick={toggleSidebar}
+            className="shrink-0 rounded-lg p-1.5 text-wa-text-muted transition-colors hover:bg-wa-hover hover:text-wa-text"
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeft className="h-5 w-5" />
+            ) : (
+              <PanelLeftClose className="h-5 w-5" />
+            )}
+          </button>
+        ) : null}
       </div>
 
       {/* Navigation */}
@@ -79,20 +116,21 @@ export function Sidebar() {
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
+            const showLabel = !effectiveCollapsed || isMobile;
 
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
-                  title={sidebarCollapsed ? item.label : undefined}
+                  title={!showLabel ? item.label : undefined}
                   className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                     active
                       ? 'bg-wa-teal text-white'
                       : 'text-wa-text-secondary hover:bg-wa-hover hover:text-wa-text'
-                  } ${sidebarCollapsed ? 'justify-center' : ''}`}
+                  } ${!showLabel ? 'justify-center' : ''}`}
                 >
                   <Icon className="h-5 w-5 shrink-0" />
-                  {!sidebarCollapsed && <span>{item.label}</span>}
+                  {showLabel && <span>{item.label}</span>}
                 </Link>
               </li>
             );
@@ -102,7 +140,7 @@ export function Sidebar() {
 
       {/* Session Selector */}
       <div className="shrink-0 border-t border-wa-border p-3">
-        {sidebarCollapsed ? (
+        {effectiveCollapsed && !isMobile ? (
           <div
             className="flex h-10 w-10 items-center justify-center rounded-lg bg-wa-bg text-wa-teal mx-auto"
             title={sessions.find((s) => s.id === activeSessionId)?.name || 'No session'}
@@ -131,4 +169,26 @@ export function Sidebar() {
       </div>
     </aside>
   );
+
+  // Mobile: render as overlay
+  if (isMobile) {
+    if (!mobileSidebarOpen) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex">
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+        {/* Sidebar */}
+        <div className="relative z-50">
+          {sidebarContent}
+        </div>
+      </div>
+    );
+  }
+
+  // Tablet & Desktop: render inline
+  return sidebarContent;
 }

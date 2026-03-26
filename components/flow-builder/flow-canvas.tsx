@@ -39,7 +39,7 @@ import ActionNode from './nodes/action-node';
 import ConditionNode from './nodes/condition-node';
 import DelayNode from './nodes/delay-node';
 import LogicNode from './nodes/logic-node';
-import NodePalette from './node-palette';
+import NodePalette, { paletteItems, triggerTypeMap, type PaletteItem } from './node-palette';
 import NodeConfigPanel from './node-config-panel';
 import {
   Save,
@@ -48,6 +48,7 @@ import {
   LayoutGrid,
   Loader2,
   Workflow,
+  Plus,
 } from 'lucide-react';
 
 // ---- Undo/Redo store ----
@@ -153,6 +154,29 @@ function FlowCanvasInner({
   const [zoom, setZoom] = useState(1);
   const [logPanelVisible, setLogPanelVisible] = useState(false);
 
+  // Responsive state
+  const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+  const [showMobilePalette, setShowMobilePalette] = useState(false);
+  const [showMobileConfig, setShowMobileConfig] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      setIsMobile(window.innerWidth < 768);
+      setIsTablet(window.innerWidth >= 768 && window.innerWidth < 1024);
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  // When a node is selected on mobile, show config overlay
+  useEffect(() => {
+    if (isMobile && selectedNode) {
+      setShowMobileConfig(true);
+    }
+  }, [isMobile, selectedNode]);
+
   // Execution stream
   const { nodeStates, isConnected, activeExecutionId, executionLog, clearStates } = useFlowExecutionStream(flowId);
 
@@ -181,16 +205,13 @@ function FlowCanvasInner({
   );
 
   // Visual edge highlighting based on execution state
-  // Shows flow circulation: completed edges turn green solid, executing edges animate, errors turn red
   const visualEdges = useMemo(() => {
     if (Object.keys(nodeStates).length === 0) return edges;
     return edges.map((edge) => {
       const sourceState = nodeStates[edge.source];
       const targetState = nodeStates[edge.target];
 
-      // Source completed successfully - this edge has been traversed
       if (sourceState?.status === 'success' || sourceState?.status === 'executing') {
-        // Target is currently executing - animate the edge (data is flowing)
         if (targetState?.status === 'executing') {
           return {
             ...edge,
@@ -199,7 +220,6 @@ function FlowCanvasInner({
             animated: true,
           };
         }
-        // Target completed - solid green (data has flowed through)
         if (targetState?.status === 'success' || targetState?.status === 'error') {
           return {
             ...edge,
@@ -208,7 +228,6 @@ function FlowCanvasInner({
             animated: false,
           };
         }
-        // Source done but target not yet started - edge about to be traversed
         return {
           ...edge,
           style: { stroke: '#22c55e', strokeWidth: 2.5 },
@@ -217,7 +236,6 @@ function FlowCanvasInner({
         };
       }
 
-      // Source had an error
       if (sourceState?.status === 'error') {
         return {
           ...edge,
@@ -245,7 +263,6 @@ function FlowCanvasInner({
 
   const { pushState, undo, redo, canUndo, canRedo } = useUndoRedoStore();
 
-  // Save current state for undo
   const saveHistory = useCallback(() => {
     pushState({ nodes: [...nodes], edges: [...edges] });
   }, [nodes, edges, pushState]);
@@ -306,7 +323,8 @@ function FlowCanvasInner({
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
-  }, []);
+    if (isMobile) setShowMobileConfig(false);
+  }, [isMobile]);
 
   const onEdgeClick = useCallback(
     (_: React.MouseEvent, edge: Edge) => {
@@ -358,6 +376,37 @@ function FlowCanvasInner({
     [rfInstance, saveHistory]
   );
 
+  // Add node from mobile palette overlay
+  const handleMobilePaletteSelect = useCallback(
+    (item: PaletteItem) => {
+      saveHistory();
+
+      // Place in center of current viewport
+      const position = rfInstance
+        ? rfInstance.screenToFlowPosition({
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+          })
+        : { x: 200, y: 200 };
+
+      const newNode: Node<FlowNodeData> = {
+        id: `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        type: nodeTypeMap[item.nodeCategory] || 'logicNode',
+        position,
+        data: {
+          label: item.label,
+          type: item.type,
+          config: triggerTypeMap[item.label] ? { triggerType: triggerTypeMap[item.label] } : {},
+          description: '',
+        },
+      };
+
+      setNodes((nds) => [...nds, newNode]);
+      setShowMobilePalette(false);
+    },
+    [rfInstance, saveHistory]
+  );
+
   // Update node data from config panel
   const onUpdateNode = useCallback(
     (nodeId: string, data: FlowNodeData) => {
@@ -366,6 +415,7 @@ function FlowCanvasInner({
         nds.map((n) => (n.id === nodeId ? { ...n, data } : n))
       );
       setSelectedNode(null);
+      setShowMobileConfig(false);
     },
     [saveHistory]
   );
@@ -379,6 +429,7 @@ function FlowCanvasInner({
         eds.filter((e) => e.source !== nodeId && e.target !== nodeId)
       );
       setSelectedNode(null);
+      setShowMobileConfig(false);
     },
     [saveHistory]
   );
@@ -535,79 +586,90 @@ function FlowCanvasInner({
 
   const isEmpty = nodes.length === 0;
 
+  // Palette width for tablet / desktop
+  const paletteWidth = isTablet ? 240 : 300;
+
   return (
     <div className="flex w-full" style={{ height: '100%' }} onKeyDown={onKeyDown} tabIndex={0}>
-      {/* Left palette */}
-      <NodePalette />
+      {/* Left palette - hidden on mobile */}
+      {!isMobile && (
+        <div style={{ width: paletteWidth, minWidth: paletteWidth }} className="shrink-0">
+          <NodePalette />
+        </div>
+      )}
 
       {/* Canvas */}
       <div className="flex-1 relative" ref={reactFlowWrapper} style={{ minHeight: 0 }}>
         {/* Floating Toolbar - Top Center */}
         <div
-          className="absolute top-4 left-1/2 z-10 flex items-center gap-1 bg-white rounded-full border border-gray-200 px-2 py-1.5"
+          className="absolute top-3 md:top-4 left-1/2 z-10 flex items-center gap-0.5 md:gap-1 bg-white rounded-full border border-gray-200 px-1.5 md:px-2 py-1 md:py-1.5"
           style={{
             transform: 'translateX(-50%)',
             boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-            height: 44,
+            height: isMobile ? 38 : 44,
           }}
         >
           <button
             onClick={handleUndo}
             disabled={!canUndo()}
-            className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Undo (Ctrl+Z)"
           >
-            <Undo2 className="w-4 h-4 text-gray-600" />
+            <Undo2 className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-600" />
           </button>
           <button
             onClick={handleRedo}
             disabled={!canRedo()}
-            className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Redo (Ctrl+Shift+Z)"
           >
-            <Redo2 className="w-4 h-4 text-gray-600" />
+            <Redo2 className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-600" />
           </button>
 
-          <div className="w-px h-5 bg-gray-200 mx-1" />
+          <div className="w-px h-4 md:h-5 bg-gray-200 mx-0.5 md:mx-1" />
 
           <button
             onClick={handleAutoLayout}
-            className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+            className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
             title="Auto Layout"
           >
-            <LayoutGrid className="w-4 h-4 text-gray-600" />
+            <LayoutGrid className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-600" />
           </button>
 
-          <div className="w-px h-5 bg-gray-200 mx-1" />
+          {/* Hide zoom text on mobile */}
+          {!isMobile && (
+            <>
+              <div className="w-px h-5 bg-gray-200 mx-1" />
+              <span
+                className="text-xs font-medium text-gray-500 px-2 select-none"
+                style={{ minWidth: 42, textAlign: 'center' }}
+              >
+                {zoomPercent}%
+              </span>
+            </>
+          )}
 
-          <span
-            className="text-xs font-medium text-gray-500 px-2 select-none"
-            style={{ minWidth: 42, textAlign: 'center' }}
-          >
-            {zoomPercent}%
-          </span>
-
-          <div className="w-px h-5 bg-gray-200 mx-1" />
+          <div className="w-px h-4 md:h-5 bg-gray-200 mx-0.5 md:mx-1" />
 
           <button
             onClick={handleSave}
             disabled={saving}
             style={{ backgroundColor: saving ? '#6b7280' : '#25D366' }}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-white text-xs font-semibold disabled:opacity-60 transition-colors"
+            className="flex items-center gap-1 md:gap-1.5 px-3 md:px-4 py-1 md:py-1.5 rounded-full text-white text-xs font-semibold disabled:opacity-60 transition-colors"
           >
             {saving ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
               <Save className="w-3.5 h-3.5" />
             )}
-            Save
+            <span className="hidden md:inline">Save</span>
           </button>
 
           {/* Live indicator */}
           {activeExecutionId && (
             <>
-              <div className="w-px h-5 bg-gray-200 mx-1" />
-              <div className="flex items-center gap-1.5 px-2">
+              <div className="w-px h-4 md:h-5 bg-gray-200 mx-0.5 md:mx-1" />
+              <div className="flex items-center gap-1.5 px-1 md:px-2">
                 <span
                   style={{
                     width: 8,
@@ -618,7 +680,7 @@ function FlowCanvasInner({
                     animation: 'executionPulse 1.5s ease-in-out infinite',
                   }}
                 />
-                <span className="text-xs font-semibold" style={{ color: '#22c55e' }}>
+                <span className="text-xs font-semibold hidden md:inline" style={{ color: '#22c55e' }}>
                   Live
                 </span>
               </div>
@@ -655,7 +717,7 @@ function FlowCanvasInner({
           <div
             className="absolute inset-0 z-5 flex items-center justify-center pointer-events-none"
           >
-            <div className="flex flex-col items-center text-center">
+            <div className="flex flex-col items-center text-center px-4">
               <div
                 className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4"
               >
@@ -665,7 +727,9 @@ function FlowCanvasInner({
                 Start building your flow
               </h3>
               <p className="text-sm text-gray-400 max-w-xs">
-                Drag nodes from the panel on the left to get started
+                {isMobile
+                  ? 'Tap the + button to add nodes'
+                  : 'Drag nodes from the panel on the left to get started'}
               </p>
             </div>
           </div>
@@ -705,25 +769,68 @@ function FlowCanvasInner({
           proOptions={{ hideAttribution: true }}
         >
           <Controls position="bottom-left" />
-          <MiniMap
-            position="bottom-right"
-            nodeColor={(node) => {
-              const cat = getNodeCategory(node.data?.type || '');
-              switch (cat) {
-                case 'trigger': return '#22c55e';
-                case 'message': return '#075E54';
-                case 'action': return '#6366f1';
-                case 'condition': return '#f59e0b';
-                case 'delay': return '#8b5cf6';
-                case 'logic': return '#8b5cf6';
-                default: return '#94a3b8';
-              }
-            }}
-            maskColor="rgba(0, 0, 0, 0.06)"
-          />
+          {!isMobile && (
+            <MiniMap
+              position="bottom-right"
+              nodeColor={(node) => {
+                const cat = getNodeCategory(node.data?.type || '');
+                switch (cat) {
+                  case 'trigger': return '#22c55e';
+                  case 'message': return '#075E54';
+                  case 'action': return '#6366f1';
+                  case 'condition': return '#f59e0b';
+                  case 'delay': return '#8b5cf6';
+                  case 'logic': return '#8b5cf6';
+                  default: return '#94a3b8';
+                }
+              }}
+              maskColor="rgba(0, 0, 0, 0.06)"
+            />
+          )}
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#d1d5db" />
         </ReactFlow>
         </ExecutionContext.Provider>
+
+        {/* Mobile floating "+" button to open palette */}
+        {isMobile && (
+          <button
+            onClick={() => setShowMobilePalette(true)}
+            className="absolute z-10 flex items-center justify-center rounded-full text-white shadow-lg"
+            style={{
+              bottom: 24,
+              right: 24,
+              width: 56,
+              height: 56,
+              backgroundColor: '#25D366',
+            }}
+          >
+            <Plus className="w-6 h-6" />
+          </button>
+        )}
+
+        {/* Mobile palette overlay */}
+        {isMobile && showMobilePalette && (
+          <NodePalette
+            mode="overlay"
+            onClose={() => setShowMobilePalette(false)}
+            onItemSelect={handleMobilePaletteSelect}
+          />
+        )}
+
+        {/* Mobile config panel overlay */}
+        {isMobile && showMobileConfig && selectedNode && (
+          <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+            <NodeConfigPanel
+              node={selectedNode}
+              onClose={() => {
+                setSelectedNode(null);
+                setShowMobileConfig(false);
+              }}
+              onUpdate={onUpdateNode}
+              onDelete={onDeleteNode}
+            />
+          </div>
+        )}
 
         {/* Execution Log Panel */}
         <ExecutionLogPanel
@@ -734,8 +841,8 @@ function FlowCanvasInner({
         />
       </div>
 
-      {/* Right config panel */}
-      {selectedNode && (
+      {/* Right config panel - tablet & desktop only */}
+      {!isMobile && selectedNode && (
         <NodeConfigPanel
           node={selectedNode}
           onClose={() => setSelectedNode(null)}

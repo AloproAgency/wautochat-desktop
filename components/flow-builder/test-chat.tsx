@@ -69,10 +69,18 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isMobile, setIsMobile] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   // Auto-scroll to bottom
   const scrollToBottom = useCallback(() => {
@@ -218,10 +226,10 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
           onClick={() => setIsOpen(true)}
           className="fixed z-50 flex items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95"
           style={{
-            bottom: 24,
-            right: 24,
-            width: 56,
-            height: 56,
+            bottom: isMobile ? 16 : 24,
+            right: isMobile ? 16 : 24,
+            width: isMobile ? 48 : 56,
+            height: isMobile ? 48 : 56,
             backgroundColor: '#25D366',
           }}
           title="Test Flow Chat"
@@ -250,11 +258,13 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
         <div
           className="fixed z-50 flex flex-col overflow-hidden shadow-2xl"
           style={{
-            bottom: 24,
-            right: 24,
-            width: 400,
-            height: 600,
-            borderRadius: 16,
+            bottom: isMobile ? 0 : 24,
+            right: isMobile ? 0 : 24,
+            left: isMobile ? 0 : undefined,
+            top: isMobile ? 0 : undefined,
+            width: isMobile ? '100%' : 400,
+            height: isMobile ? '100%' : 600,
+            borderRadius: isMobile ? 0 : 16,
             animation: 'testChatOpen 0.25s ease-out',
             transformOrigin: 'bottom right',
           }}
