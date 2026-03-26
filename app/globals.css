@@ -1,26 +1,122 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --wa-green: #25D366;
+  --wa-green-dark: #128C7E;
+  --wa-teal: #075E54;
+  --wa-teal-dark: #054640;
+  --wa-light-green: #DCF8C6;
+  --wa-blue: #34B7F1;
+  --wa-bg: #f0f2f5;
+  --wa-bg-chat: #e5ddd5;
+  --wa-bg-sidebar: #ffffff;
+  --wa-border: #e9edef;
+  --wa-text: #111b21;
+  --wa-text-secondary: #667781;
+  --wa-text-muted: #8696a0;
+  --wa-header: #f0f2f5;
+  --wa-input-bg: #f0f2f5;
+  --wa-hover: #f5f6f6;
+  --wa-panel: #ffffff;
+  --wa-danger: #ea4335;
+  --wa-warning: #fbbc04;
+  --wa-success: #25D366;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-wa-green: var(--wa-green);
+  --color-wa-green-dark: var(--wa-green-dark);
+  --color-wa-teal: var(--wa-teal);
+  --color-wa-teal-dark: var(--wa-teal-dark);
+  --color-wa-light-green: var(--wa-light-green);
+  --color-wa-blue: var(--wa-blue);
+  --color-wa-bg: var(--wa-bg);
+  --color-wa-bg-chat: var(--wa-bg-chat);
+  --color-wa-bg-sidebar: var(--wa-bg-sidebar);
+  --color-wa-border: var(--wa-border);
+  --color-wa-text: var(--wa-text);
+  --color-wa-text-secondary: var(--wa-text-secondary);
+  --color-wa-text-muted: var(--wa-text-muted);
+  --color-wa-header: var(--wa-header);
+  --color-wa-input-bg: var(--wa-input-bg);
+  --color-wa-hover: var(--wa-hover);
+  --color-wa-panel: var(--wa-panel);
+  --color-wa-danger: var(--wa-danger);
+  --color-wa-warning: var(--wa-warning);
+  --color-wa-success: var(--wa-success);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cccccc transparent;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--wa-bg);
+  color: var(--wa-text);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Animations for UI components */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInFromRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Screen reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* React Flow - minimal overrides only, do NOT override .react-flow__node or .react-flow__handle */
+.react-flow__controls button {
+  background: white;
+  border: 1px solid var(--wa-border);
+}
+
+.react-flow__minimap {
+  border: 1px solid var(--wa-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Execution visualization animations */
+@keyframes executionPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+}
+
+@keyframes executionSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
