@@ -14,8 +14,12 @@ import {
   Tag,
   Briefcase,
   Settings,
+  PanelLeftClose,
+  PanelLeft,
+  ChevronDown,
+  X,
 } from 'lucide-react';
-import { useSessionStore } from '@/lib/store';
+import { useUIStore, useSessionStore } from '@/lib/store';
 
 const navItems = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -27,126 +31,164 @@ const navItems = [
   { label: 'Broadcasts', href: '/broadcasts', icon: Megaphone },
   { label: 'Labels', href: '/labels', icon: Tag },
   { label: 'Business', href: '/business', icon: Briefcase },
+  { label: 'Settings', href: '/settings', icon: Settings },
 ] as const;
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { sessions, activeSessionId } = useSessionStore();
+  const { sidebarCollapsed, toggleSidebar, mobileSidebarOpen, setMobileSidebarOpen } = useUIStore();
+  const { sessions, activeSessionId, setActiveSession } = useSessionStore();
 
+  // Track screen size for responsive behavior
+  const [isTablet, setIsTablet] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const check = () => {
       setIsMobile(window.innerWidth < 768);
+      setIsTablet(window.innerWidth >= 768 && window.innerWidth < 1024);
     };
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
 
+  // On tablet, always show collapsed
+  const effectiveCollapsed = isTablet ? true : sidebarCollapsed;
+
+  // Close mobile sidebar on navigation
+  useEffect(() => {
+    if (isMobile) {
+      setMobileSidebarOpen(false);
+    }
+  }, [pathname, isMobile, setMobileSidebarOpen]);
+
   const isActive = (href: string) => {
     if (href === '/') return pathname === '/';
     return pathname.startsWith(href);
   };
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const isConnected = activeSession?.status === 'connected';
+  const sidebarWidth = effectiveCollapsed ? 70 : 260;
 
-  // On mobile, hide entirely - the layout handles the mobile top bar
-  if (isMobile) return null;
-
-  return (
+  const sidebarContent = (
     <aside
-      className="flex flex-col items-center shrink-0"
-      style={{
-        width: 60,
-        minWidth: 60,
-        backgroundColor: '#075E54',
-        height: '100vh',
-      }}
+      className="flex h-screen flex-col border-r border-wa-border bg-wa-panel transition-[width] duration-200"
+      style={{ width: isMobile ? 280 : sidebarWidth }}
     >
-      {/* Logo */}
-      <div className="flex items-center justify-center py-4">
-        <Link href="/">
+      {/* Brand */}
+      <div className="flex h-14 items-center justify-between border-b border-wa-border px-4 shrink-0">
+        <Link href="/" className="flex items-center gap-2.5 overflow-hidden">
           <img
             src="/wautochat_logo.png"
             alt="WAutoChat"
-            className="rounded-full"
-            style={{
-              width: 36,
-              height: 36,
-              border: '2px solid rgba(255,255,255,0.8)',
-            }}
+            className="h-8 w-8 shrink-0 rounded-lg"
           />
+          {(!effectiveCollapsed || isMobile) && (
+            <span className="text-lg font-bold text-wa-teal whitespace-nowrap">WAutoChat</span>
+          )}
         </Link>
+        {isMobile ? (
+          <button
+            onClick={() => setMobileSidebarOpen(false)}
+            className="shrink-0 rounded-lg p-1.5 text-wa-text-muted transition-colors hover:bg-wa-hover hover:text-wa-text"
+            aria-label="Close sidebar"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        ) : !isTablet ? (
+          <button
+            onClick={toggleSidebar}
+            className="shrink-0 rounded-lg p-1.5 text-wa-text-muted transition-colors hover:bg-wa-hover hover:text-wa-text"
+            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeft className="h-5 w-5" />
+            ) : (
+              <PanelLeftClose className="h-5 w-5" />
+            )}
+          </button>
+        ) : null}
       </div>
 
-      {/* Navigation icons */}
-      <nav className="flex-1 flex flex-col items-center gap-3 py-2">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const active = isActive(item.href);
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto py-2 px-2">
+        <ul className="flex flex-col gap-0.5">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.href);
+            const showLabel = !effectiveCollapsed || isMobile;
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.label}
-              className="relative flex items-center justify-center rounded-full transition-all duration-150"
-              style={{
-                width: 36,
-                height: 36,
-                backgroundColor: active ? 'rgba(255,255,255,0.2)' : 'transparent',
-              }}
-            >
-              <Icon
-                style={{
-                  width: 22,
-                  height: 22,
-                  color: '#ffffff',
-                  opacity: active ? 1 : 0.6,
-                }}
-              />
-            </Link>
-          );
-        })}
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  title={!showLabel ? item.label : undefined}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                    active
+                      ? 'bg-wa-teal text-white'
+                      : 'text-wa-text-secondary hover:bg-wa-hover hover:text-wa-text'
+                  } ${!showLabel ? 'justify-center' : ''}`}
+                >
+                  <Icon className="h-5 w-5 shrink-0" />
+                  {showLabel && <span>{item.label}</span>}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       </nav>
 
-      {/* Bottom section: Settings + session indicator */}
-      <div className="flex flex-col items-center gap-3 pb-4">
-        <Link
-          href="/settings"
-          title="Settings"
-          className="relative flex items-center justify-center rounded-full transition-all duration-150"
-          style={{
-            width: 36,
-            height: 36,
-            backgroundColor: pathname.startsWith('/settings')
-              ? 'rgba(255,255,255,0.2)'
-              : 'transparent',
-          }}
-        >
-          <Settings
-            style={{
-              width: 22,
-              height: 22,
-              color: '#ffffff',
-              opacity: pathname.startsWith('/settings') ? 1 : 0.6,
-            }}
-          />
-        </Link>
-
-        {/* Session indicator dot */}
-        <div
-          title={isConnected ? 'Session connected' : 'Session disconnected'}
-          className="rounded-full"
-          style={{
-            width: 10,
-            height: 10,
-            backgroundColor: isConnected ? '#25D366' : '#ef4444',
-          }}
-        />
+      {/* Session Selector */}
+      <div className="shrink-0 border-t border-wa-border p-3">
+        {effectiveCollapsed && !isMobile ? (
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-lg bg-wa-bg text-wa-teal mx-auto"
+            title={sessions.find((s) => s.id === activeSessionId)?.name || 'No session'}
+          >
+            <Smartphone className="h-5 w-5" />
+          </div>
+        ) : (
+          <div className="relative">
+            <select
+              value={activeSessionId || ''}
+              onChange={(e) => setActiveSession(e.target.value || null)}
+              className="h-10 w-full appearance-none rounded-lg border border-wa-border bg-wa-input-bg px-3 pr-8 text-sm text-wa-text transition-colors focus:border-wa-green focus:outline-none focus:ring-2 focus:ring-wa-green/20"
+            >
+              <option value="">Select session</option>
+              {sessions.map((session) => (
+                <option key={session.id} value={session.id}>
+                  {session.name}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-wa-text-muted">
+              <ChevronDown className="h-4 w-4" />
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );
+
+  // Mobile: render as overlay
+  if (isMobile) {
+    if (!mobileSidebarOpen) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex">
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+        {/* Sidebar */}
+        <div className="relative z-50">
+          {sidebarContent}
+        </div>
+      </div>
+    );
+  }
+
+  // Tablet & Desktop: render inline
+  return sidebarContent;
 }
