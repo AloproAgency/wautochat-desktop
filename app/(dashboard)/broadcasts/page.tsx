@@ -29,6 +29,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
 import { useSessionStore, useContactStore } from '@/lib/store';
+import { useActiveSession } from '@/hooks/use-active-session';
 import type { Broadcast, Contact, MessageType } from '@/lib/types';
 
 // ---- Inline utility components ----
@@ -174,7 +175,8 @@ const messageTypeIcon: Record<string, React.ReactNode> = {
 };
 
 export default function BroadcastsPage() {
-  const { sessions, activeSessionId } = useSessionStore();
+  const activeSessionId = useActiveSession();
+  const { sessions } = useSessionStore();
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);

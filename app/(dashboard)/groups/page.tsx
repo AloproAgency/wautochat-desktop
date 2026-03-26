@@ -27,7 +27,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
-import { useSessionStore } from '@/lib/store';
+import { useActiveSession } from '@/hooks/use-active-session';
 import type { Group, GroupParticipant, Contact } from '@/lib/types';
 
 // ---- Modal Component (inline since not all UI components exist as files) ----
@@ -187,7 +187,7 @@ function Toggle({
 }
 
 export default function GroupsPage() {
-  const { activeSessionId } = useSessionStore();
+  const activeSessionId = useActiveSession();
   const [groups, setGroups] = useState<Group[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);

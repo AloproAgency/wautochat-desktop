@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
-import { useSessionStore } from '@/lib/store';
+import { useActiveSession } from '@/hooks/use-active-session';
 import type { Product, Collection } from '@/lib/types';
 
 // ---- Inline utility components ----
@@ -203,7 +203,7 @@ function formatPrice(price: number, currency: string): string {
 }
 
 export default function BusinessPage() {
-  const { activeSessionId } = useSessionStore();
+  const activeSessionId = useActiveSession();
   const [activeTab, setActiveTab] = useState<'products' | 'collections'>('products');
   const [products, setProducts] = useState<Product[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);

@@ -22,6 +22,7 @@ import { SearchInput } from '@/components/ui/search-input';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { useToast } from '@/components/ui/toast';
 import { useContactStore } from '@/lib/store';
+import { useActiveSession } from '@/hooks/use-active-session';
 import { formatPhoneNumber, formatTimestamp } from '@/lib/utils';
 import type { Contact, ApiResponse } from '@/lib/types';
 
@@ -36,6 +37,7 @@ const labelColors: Record<string, string> = {
 };
 
 export default function ContactsPage() {
+  const activeSessionId = useActiveSession();
   const { contacts, setContacts, updateContact } = useContactStore();
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -48,9 +50,10 @@ export default function ContactsPage() {
   const { toast } = useToast();
 
   const fetchContacts = useCallback(async () => {
+    if (!activeSessionId) { setLoading(false); return; }
     try {
       setLoading(true);
-      const res = await fetch('/api/contacts');
+      const res = await fetch(`/api/contacts?sessionId=${activeSessionId}`);
       if (res.ok) {
         const data: ApiResponse<Contact[]> = await res.json();
         if (data.success && data.data) {
@@ -62,21 +65,27 @@ export default function ContactsPage() {
     } finally {
       setLoading(false);
     }
-  }, [setContacts, toast]);
+  }, [activeSessionId, setContacts, toast]);
 
   useEffect(() => {
     fetchContacts();
   }, [fetchContacts]);
 
   const handleSync = async () => {
+    if (!activeSessionId) return;
     try {
       setSyncing(true);
-      const res = await fetch('/api/contacts', { method: 'POST' });
-      if (res.ok) {
-        toast({ title: 'Contacts sync started', variant: 'success' });
-        setTimeout(() => fetchContacts(), 2000);
+      const res = await fetch('/api/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast({ title: data.data?.message || 'Contacts synced', variant: 'success' });
+        await fetchContacts();
       } else {
-        toast({ title: 'Failed to sync contacts', variant: 'error' });
+        toast({ title: data.error || 'Failed to sync contacts', variant: 'error' });
       }
     } catch {
       toast({ title: 'Failed to sync contacts', variant: 'error' });

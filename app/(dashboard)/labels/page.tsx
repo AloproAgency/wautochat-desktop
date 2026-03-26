@@ -17,7 +17,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardBody } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { Avatar } from '@/components/ui/avatar';
-import { useSessionStore, useLabelStore } from '@/lib/store';
+import { useLabelStore } from '@/lib/store';
+import { useActiveSession } from '@/hooks/use-active-session';
 import type { Label, Contact, Chat } from '@/lib/types';
 
 // ---- Inline utility components ----
@@ -154,7 +155,7 @@ const PRESET_COLORS = [
 ];
 
 export default function LabelsPage() {
-  const { activeSessionId } = useSessionStore();
+  const activeSessionId = useActiveSession();
   const { labels, setLabels } = useLabelStore();
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

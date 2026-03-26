@@ -30,7 +30,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardBody, CardHeader, CardFooter } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
-import { useSessionStore } from '@/lib/store';
+import { useActiveSession } from '@/hooks/use-active-session';
 
 // ---- Toggle ----
 function Toggle({
@@ -128,7 +128,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export default function SettingsPage() {
-  const { activeSessionId } = useSessionStore();
+  const activeSessionId = useActiveSession();
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [loaded, setLoaded] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
