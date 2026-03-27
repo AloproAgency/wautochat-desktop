@@ -21,6 +21,13 @@ import {
   ArrowLeft,
   RefreshCw,
   Phone,
+  Video,
+  Info,
+  Camera,
+  Images,
+  Copy,
+  PhoneCall,
+  Share2 as Share2Icon,
 } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
@@ -29,24 +36,40 @@ import { formatTimestamp, truncate } from '@/lib/utils';
 import type { Chat, Message, ApiResponse } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
-// Constants
+// Constants & Theme
 // ---------------------------------------------------------------------------
 
-const WHATSAPP_GREEN = '#25D366';
-const WHATSAPP_SENT_BG = '#d9fdd3';
-const WHATSAPP_CHAT_BG = '#efeae2';
-const WHATSAPP_INPUT_BG = '#f0f2f5';
-const WHATSAPP_HEADER_BG = '#ffffff';
-const WHATSAPP_TEAL = '#008069';
-const WHATSAPP_BLUE_CHECK = '#53bdeb';
+const THEME = {
+  primary: '#075E54',
+  primaryDark: '#054640',
+  sent: '#DCF8C6',
+  received: '#ffffff',
+  chatBg: '#efeae2',
+  inputBg: '#f0f2f5',
+  headerBg: '#ffffff',
+  teal: '#075E54',
+  green: '#25D366',
+  blueCheck: '#53bdeb',
+  textPrimary: '#111b21',
+  textSecondary: '#667781',
+  textMuted: '#8696a0',
+  border: '#e9edef',
+  hoverBg: '#f5f6f6',
+  selectedBg: '#eef5f3',
+};
 
-// Deterministic avatar colors
+const CHAT_PATTERN = `url("data:image/svg+xml,%3Csvg width='400' height='400' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3Cpattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'%3E%3Cpath d='M10 10c2-2 5-1 6 1s0 5-2 6-5 0-6-2 0-4 2-5zm50 20c1.5-1 4 0 4 2s-2 4-4 3.5-2.5-3-1.5-4.5zm-30 35c2 0 3 2 2.5 4s-3 3-4.5 1.5 0-5 2-5.5zm55 10c1 1 1 3-.5 4s-4 .5-4-1.5 3-4 4.5-2.5zM25 65c1.5.5 2 3 .5 4.5s-4 1-4.5-.5 2.5-4.5 4-4z' fill='%23d4cfc6' fill-opacity='.35'/%3E%3Ccircle cx='60' cy='12' r='1.5' fill='%23d4cfc6' fill-opacity='.3'/%3E%3Ccircle cx='15' cy='50' r='1' fill='%23d4cfc6' fill-opacity='.25'/%3E%3Ccircle cx='70' cy='55' r='1.2' fill='%23d4cfc6' fill-opacity='.3'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='400' height='400' fill='%23efeae2'/%3E%3Crect width='400' height='400' fill='url(%23p)'/%3E%3C/svg%3E")`;
+
 const AVATAR_COLORS = [
   '#00a884', '#02735e', '#025144', '#128c7e', '#0d7377',
   '#075e54', '#1fa855', '#25d366', '#34b7f1', '#00bcd4',
   '#009688', '#4caf50', '#607d8b', '#795548', '#ff5722',
   '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
 ];
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function getAvatarColor(name: string): string {
   let hash = 0;
@@ -61,10 +84,6 @@ function getInitials(name: string): string {
   if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function isBase64(str: string): boolean {
   if (!str || str.length < 50) return false;
@@ -114,7 +133,7 @@ function groupMessagesByDate(messages: Message[]): { date: string; messages: Mes
 
 function formatMessageTime(timestamp: string): string {
   const d = new Date(timestamp);
-  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -125,37 +144,32 @@ function InlineAvatar({
   name,
   src,
   size = 46,
+  online,
 }: {
   name: string;
   src?: string;
   size?: number;
+  online?: boolean;
 }) {
-  if (src) {
-    return (
-      <img
-        src={src}
-        alt={name}
-        style={{
-          width: size,
-          height: size,
-          borderRadius: '50%',
-          objectFit: 'cover',
-          flexShrink: 0,
-        }}
-      />
-    );
-  }
-
-  const initials = getInitials(name);
-  const bgColor = getAvatarColor(name);
-
-  return (
+  const content = src ? (
+    <img
+      src={src}
+      alt={name}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        objectFit: 'cover',
+        flexShrink: 0,
+      }}
+    />
+  ) : (
     <div
       style={{
         width: size,
         height: size,
         borderRadius: '50%',
-        backgroundColor: bgColor,
+        backgroundColor: getAvatarColor(name),
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -166,7 +180,29 @@ function InlineAvatar({
         lineHeight: 1,
       }}
     >
-      {initials}
+      {getInitials(name)}
+    </div>
+  );
+
+  if (online === undefined) return content;
+
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      {content}
+      {online && (
+        <span
+          style={{
+            position: 'absolute',
+            bottom: 1,
+            right: 1,
+            width: size * 0.26,
+            height: size * 0.26,
+            borderRadius: '50%',
+            backgroundColor: THEME.primary,
+            border: '2px solid #ffffff',
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -174,13 +210,13 @@ function InlineAvatar({
 function MessageStatusIcon({ status }: { status: Message['status'] }) {
   switch (status) {
     case 'pending':
-      return <Clock style={{ width: 14, height: 14, color: '#8696a0' }} />;
+      return <Clock style={{ width: 14, height: 14, color: THEME.textMuted }} />;
     case 'sent':
-      return <Check style={{ width: 14, height: 14, color: '#8696a0' }} />;
+      return <Check style={{ width: 14, height: 14, color: THEME.textMuted }} />;
     case 'delivered':
-      return <CheckCheck style={{ width: 14, height: 14, color: '#8696a0' }} />;
+      return <CheckCheck style={{ width: 14, height: 14, color: THEME.textMuted }} />;
     case 'read':
-      return <CheckCheck style={{ width: 14, height: 14, color: WHATSAPP_BLUE_CHECK }} />;
+      return <CheckCheck style={{ width: 14, height: 14, color: THEME.blueCheck }} />;
     case 'failed':
       return <AlertCircle style={{ width: 14, height: 14, color: '#ea4335' }} />;
     default:
@@ -197,7 +233,7 @@ function MessageContent({ message }: { message: Message }) {
             <img
               src={message.mediaUrl}
               alt={message.caption || 'Image'}
-              style={{ maxWidth: 280, borderRadius: 6, display: 'block' }}
+              style={{ maxWidth: 280, borderRadius: 8, display: 'block', width: '100%' }}
             />
           ) : (
             <div
@@ -205,13 +241,13 @@ function MessageContent({ message }: { message: Message }) {
                 width: 280,
                 height: 160,
                 backgroundColor: 'rgba(0,0,0,0.06)',
-                borderRadius: 6,
+                borderRadius: 8,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <ImageIcon style={{ width: 40, height: 40, color: '#8696a0' }} />
+              <ImageIcon style={{ width: 40, height: 40, color: THEME.textMuted }} />
             </div>
           )}
           {(message.caption || message.body) && !isBase64(message.body) && (
@@ -228,7 +264,7 @@ function MessageContent({ message }: { message: Message }) {
           {message.mediaUrl ? (
             <video
               src={message.mediaUrl}
-              style={{ maxWidth: 280, borderRadius: 6 }}
+              style={{ maxWidth: 280, borderRadius: 8 }}
               controls
             />
           ) : (
@@ -237,7 +273,7 @@ function MessageContent({ message }: { message: Message }) {
                 width: 280,
                 height: 160,
                 backgroundColor: 'rgba(0,0,0,0.08)',
-                borderRadius: 6,
+                borderRadius: 8,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -260,10 +296,10 @@ function MessageContent({ message }: { message: Message }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 200 }}>
           <button
             style={{
-              width: 32,
-              height: 32,
+              width: 34,
+              height: 34,
               borderRadius: '50%',
-              backgroundColor: '#075E54',
+              backgroundColor: THEME.primary,
               border: 'none',
               display: 'flex',
               alignItems: 'center',
@@ -276,9 +312,9 @@ function MessageContent({ message }: { message: Message }) {
           </button>
           <div style={{ flex: 1 }}>
             <div style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(134,150,160,0.3)' }}>
-              <div style={{ height: 4, width: '33%', borderRadius: 2, backgroundColor: WHATSAPP_TEAL }} />
+              <div style={{ height: 4, width: '33%', borderRadius: 2, backgroundColor: THEME.primary }} />
             </div>
-            <p style={{ marginTop: 4, fontSize: 12, color: '#8696a0' }}>0:00</p>
+            <p style={{ marginTop: 4, fontSize: 12, color: THEME.textMuted }}>0:00</p>
           </div>
         </div>
       );
@@ -290,18 +326,31 @@ function MessageContent({ message }: { message: Message }) {
             display: 'flex',
             alignItems: 'center',
             gap: 12,
-            borderRadius: 6,
+            borderRadius: 8,
             padding: 12,
             minWidth: 200,
             backgroundColor: 'rgba(0,0,0,0.04)',
           }}
         >
-          <File style={{ width: 32, height: 32, flexShrink: 0, color: WHATSAPP_TEAL }} />
+          <div
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 8,
+              backgroundColor: '#ff5252',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <File style={{ width: 20, height: 20, color: '#ffffff' }} />
+          </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {message.body || 'Document'}
             </p>
-            <p style={{ fontSize: 12, color: '#8696a0' }}>{message.mediaType || 'File'}</p>
+            <p style={{ fontSize: 12, color: THEME.textMuted }}>{message.mediaType || 'File'}</p>
           </div>
         </div>
       );
@@ -313,7 +362,7 @@ function MessageContent({ message }: { message: Message }) {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            borderRadius: 6,
+            borderRadius: 8,
             padding: 12,
             minWidth: 200,
             backgroundColor: 'rgba(0,0,0,0.04)',
@@ -322,7 +371,7 @@ function MessageContent({ message }: { message: Message }) {
           <MapPin style={{ width: 24, height: 24, flexShrink: 0, color: '#ea4335' }} />
           <div>
             <p style={{ fontSize: 14, fontWeight: 500 }}>Location</p>
-            <p style={{ fontSize: 12, color: '#8696a0' }}>{message.body || 'Shared location'}</p>
+            <p style={{ fontSize: 12, color: THEME.textMuted }}>{message.body || 'Shared location'}</p>
           </div>
         </div>
       );
@@ -334,16 +383,16 @@ function MessageContent({ message }: { message: Message }) {
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            borderRadius: 6,
+            borderRadius: 8,
             padding: 12,
             minWidth: 200,
             backgroundColor: 'rgba(0,0,0,0.04)',
           }}
         >
-          <UserCircle style={{ width: 24, height: 24, flexShrink: 0, color: WHATSAPP_TEAL }} />
+          <UserCircle style={{ width: 24, height: 24, flexShrink: 0, color: THEME.primary }} />
           <div>
             <p style={{ fontSize: 14, fontWeight: 500 }}>Contact</p>
-            <p style={{ fontSize: 12, color: '#8696a0' }}>{message.body || 'Shared contact'}</p>
+            <p style={{ fontSize: 12, color: THEME.textMuted }}>{message.body || 'Shared contact'}</p>
           </div>
         </div>
       );
@@ -354,15 +403,15 @@ function MessageContent({ message }: { message: Message }) {
           {message.mediaUrl ? (
             <img src={message.mediaUrl} alt="Sticker" style={{ maxWidth: 120, maxHeight: 120 }} />
           ) : (
-            <Smile style={{ width: 64, height: 64, color: '#8696a0' }} />
+            <Smile style={{ width: 64, height: 64, color: THEME.textMuted }} />
           )}
         </div>
       );
 
     default: {
       const body = message.body || '';
-      if (isBase64(body)) return <p style={{ fontSize: 14, fontStyle: 'italic', color: '#8696a0' }}>Media</p>;
-      return <p style={{ fontSize: 14, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>{body}</p>;
+      if (isBase64(body)) return <p style={{ fontSize: 14, fontStyle: 'italic', color: THEME.textMuted }}>Media</p>;
+      return <p style={{ fontSize: 14, whiteSpace: 'pre-wrap', overflowWrap: 'break-word', margin: 0 }}>{body}</p>;
     }
   }
 }
@@ -380,55 +429,138 @@ function MessageBubble({
   const time = formatMessageTime(message.timestamp);
   const body = message.body || message.caption || '';
 
-  // Skip completely empty text messages
   if (!body && !message.mediaUrl && message.type === 'text') {
     return null;
   }
+
+  const hasMedia = message.type === 'image' || message.type === 'video' || message.type === 'sticker';
 
   return (
     <div
       style={{
         display: 'flex',
         justifyContent: isSent ? 'flex-end' : 'flex-start',
-        marginBottom: 2,
-        paddingLeft: 8,
-        paddingRight: 8,
+        marginBottom: 3,
+        paddingLeft: 12,
+        paddingRight: 12,
       }}
     >
       <div
         style={{
           position: 'relative',
-          maxWidth: isMobile ? '85%' : '65%',
-          backgroundColor: isSent ? WHATSAPP_SENT_BG : '#ffffff',
-          borderRadius: isSent ? '12px 4px 12px 12px' : '4px 12px 12px 12px',
-          padding: '6px 8px',
-          boxShadow: '0 1px 1px rgba(0,0,0,0.06)',
+          maxWidth: isMobile ? '85%' : '60%',
+          backgroundColor: isSent ? THEME.sent : THEME.received,
+          borderRadius: isSent ? '10px 0px 10px 10px' : '0px 10px 10px 10px',
+          padding: hasMedia ? '4px 4px 6px 4px' : '7px 10px 6px 10px',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
         }}
       >
-        {/* Sender name in groups for received messages */}
+        {/* Bubble tail */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            width: 0,
+            height: 0,
+            ...(isSent
+              ? { right: -8, borderLeft: `8px solid ${THEME.sent}`, borderBottom: '8px solid transparent' }
+              : { left: -8, borderRight: `8px solid ${THEME.received}`, borderBottom: '8px solid transparent' }),
+          }}
+        />
+
+        {/* Sender name in groups */}
         {!isSent && isGroup && message.senderName && (
-          <p style={{ marginBottom: 2, fontSize: 12, fontWeight: 600, color: WHATSAPP_TEAL }}>
+          <p style={{ marginBottom: 2, fontSize: 12, fontWeight: 600, color: THEME.primary, padding: hasMedia ? '0 4px' : 0 }}>
             {message.senderName}
           </p>
         )}
+
         <MessageContent message={message} />
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gap: 3,
-            marginTop: 2,
-            marginBottom: -2,
-          }}
-        >
-          <span style={{ fontSize: 11, color: '#8696a0' }}>{time}</span>
-          {isSent && <MessageStatusIcon status={message.status} />}
-        </div>
+
+        {/* Time & status */}
+        {hasMedia && message.mediaUrl ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: 3,
+              marginTop: -22,
+              marginBottom: 2,
+              paddingRight: 6,
+              position: 'relative',
+              zIndex: 1,
+            }}
+          >
+            <span style={{ fontSize: 11, color: '#ffffff', textShadow: '0 1px 3px rgba(0,0,0,0.6)' }}>{time}</span>
+            {isSent && (
+              <span style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }}>
+                <MessageStatusIcon status={message.status} />
+              </span>
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              gap: 3,
+              marginTop: 2,
+            }}
+          >
+            <span style={{ fontSize: 11, color: THEME.textMuted }}>{time}</span>
+            {isSent && <MessageStatusIcon status={message.status} />}
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Icon Button helper
+// ---------------------------------------------------------------------------
+
+function IconBtn({
+  children,
+  onClick,
+  size = 36,
+  color = THEME.textSecondary,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  size?: number;
+  color?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        border: 'none',
+        backgroundColor: 'transparent',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color,
+        flexShrink: 0,
+        transition: 'background-color 0.15s',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = THEME.inputBg; }}
+      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Chat List Item
+// ---------------------------------------------------------------------------
 
 function ChatListItem({
   chat,
@@ -457,13 +589,13 @@ function ChatListItem({
         border: 'none',
         cursor: 'pointer',
         transition: 'background-color 0.15s ease',
-        backgroundColor: isSelected ? '#f0fdf4' : 'transparent',
-        borderLeft: isSelected ? `3px solid ${WHATSAPP_GREEN}` : '3px solid transparent',
-        borderBottom: '1px solid #f0f2f5',
+        backgroundColor: isSelected ? THEME.selectedBg : 'transparent',
+        borderLeft: isSelected ? `3px solid ${THEME.primary}` : '3px solid transparent',
+        borderBottom: `1px solid ${THEME.border}`,
         position: 'relative',
       }}
       onMouseEnter={(e) => {
-        if (!isSelected) e.currentTarget.style.backgroundColor = '#f5f6f6';
+        if (!isSelected) e.currentTarget.style.backgroundColor = THEME.hoverBg;
       }}
       onMouseLeave={(e) => {
         if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
@@ -476,10 +608,11 @@ function ChatListItem({
             style={{
               fontSize: 14,
               fontWeight: 600,
-              color: '#111b21',
+              color: THEME.textPrimary,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
+              margin: 0,
             }}
           >
             {chat.name}
@@ -489,7 +622,7 @@ function ChatListItem({
               flexShrink: 0,
               marginLeft: 8,
               fontSize: 12,
-              color: chat.unreadCount > 0 ? WHATSAPP_GREEN : '#8696a0',
+              color: chat.unreadCount > 0 ? THEME.primary : THEME.textMuted,
               fontWeight: chat.unreadCount > 0 ? 600 : 400,
             }}
           >
@@ -500,11 +633,12 @@ function ChatListItem({
           <p
             style={{
               fontSize: 13,
-              color: '#667781',
+              color: THEME.textSecondary,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
               paddingRight: 8,
+              margin: 0,
             }}
           >
             {lastMessagePreview(chat)}
@@ -523,7 +657,7 @@ function ChatListItem({
                 fontSize: 11,
                 fontWeight: 600,
                 color: '#ffffff',
-                backgroundColor: WHATSAPP_GREEN,
+                backgroundColor: THEME.primary,
                 flexShrink: 0,
               }}
             >
@@ -537,7 +671,7 @@ function ChatListItem({
 }
 
 // ---------------------------------------------------------------------------
-// Main page
+// Main Page
 // ---------------------------------------------------------------------------
 
 export default function ConversationsPage() {
@@ -568,9 +702,9 @@ export default function ConversationsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [messageText, setMessageText] = useState('');
   const [chatFilter, setChatFilter] = useState<'all' | 'unread' | 'groups'>('all');
+  const [leftTab, setLeftTab] = useState<'chat' | 'call' | 'contact'>('chat');
+  const [contactFilter, setContactFilter] = useState<'direct' | 'group'>('direct');
   const [searchOpen, setSearchOpen] = useState(false);
-
-  // Mobile: track if we are viewing messages (vs chat list)
   const [mobileShowMessages, setMobileShowMessages] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -669,7 +803,6 @@ export default function ConversationsPage() {
     };
   }, [selectedChat, fetchMessages]);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -683,7 +816,6 @@ export default function ConversationsPage() {
     if (!messageText.trim() || !selectedChat || !activeSessionId) return;
 
     const text = messageText.trim();
-
     const tempId = `temp-${Date.now()}`;
     const tempMsg: Message = {
       id: tempId,
@@ -762,9 +894,6 @@ export default function ConversationsPage() {
     }
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Select a chat
-  // ---------------------------------------------------------------------------
   const handleSelectChat = useCallback(
     (chat: Chat) => {
       setSelectedChat(chat);
@@ -790,16 +919,22 @@ export default function ConversationsPage() {
         chat.name.toLowerCase().includes(q) ||
         (chat.lastMessage as { body?: string } | undefined)?.body?.toLowerCase().includes(q);
 
+      // Apply contact filter (Direct / Group)
+      if (contactFilter === 'group') {
+        if (!chat.isGroup) return false;
+      } else {
+        if (chat.isGroup) return false;
+      }
+
       if (chatFilter === 'unread') return matchesSearch && chat.unreadCount > 0;
       if (chatFilter === 'groups') return matchesSearch && chat.isGroup;
       return matchesSearch;
     });
-  }, [chats, searchQuery, chatFilter]);
+  }, [chats, searchQuery, chatFilter, contactFilter]);
 
   const messageGroups = useMemo(() => groupMessagesByDate(messages), [messages]);
 
-  // Compute left panel width
-  const leftPanelWidth = isMobile ? '100%' : isTablet ? 300 : 380;
+  const leftPanelWidth = isMobile ? '100%' : isTablet ? 320 : 380;
 
   // ---------------------------------------------------------------------------
   // Render
@@ -810,7 +945,7 @@ export default function ConversationsPage() {
       <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
           <Spinner size="lg" />
-          <p style={{ marginTop: 16, fontSize: 14, color: '#8696a0' }}>Connecting to session...</p>
+          <p style={{ marginTop: 16, fontSize: 14, color: THEME.textMuted }}>Connecting to session...</p>
         </div>
       </div>
     );
@@ -825,7 +960,7 @@ export default function ConversationsPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Chat list panel
+  // LEFT PANEL
   // ---------------------------------------------------------------------------
   const chatListPanel = (
     <div
@@ -835,133 +970,174 @@ export default function ConversationsPage() {
         width: isMobile ? '100%' : leftPanelWidth,
         minWidth: isMobile ? undefined : leftPanelWidth,
         maxWidth: isMobile ? undefined : leftPanelWidth,
-        borderRight: isMobile ? 'none' : '1px solid #e9edef',
+        borderRight: isMobile ? 'none' : `1px solid ${THEME.border}`,
         backgroundColor: '#ffffff',
         height: '100%',
       }}
     >
-      {/* Header */}
+      {/* Profile header */}
       <div
         style={{
-          padding: '12px 16px 0 16px',
-          backgroundColor: '#ffffff',
-          borderBottom: '1px solid #e9edef',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 16px 12px 16px',
+          borderBottom: `1px solid ${THEME.border}`,
         }}
       >
-        {/* Title row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111b21', margin: 0 }}>Messages</h1>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: 22,
-                minWidth: 22,
-                borderRadius: 11,
-                padding: '0 6px',
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#ffffff',
-                backgroundColor: WHATSAPP_GREEN,
-              }}
-            >
-              {chats.length}
-            </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <InlineAvatar name="User" size={40} />
+          <div>
+            <p style={{ fontSize: 15, fontWeight: 700, color: THEME.textPrimary, margin: 0 }}>WAutoChat</p>
+            <p style={{ fontSize: 12, color: THEME.primary, margin: 0 }}>Connected</p>
           </div>
-          <button
+        </div>
+        <IconBtn>
+          <Info style={{ width: 20, height: 20 }} />
+        </IconBtn>
+      </div>
+
+      {/* Status section */}
+      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${THEME.border}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <p style={{ fontSize: 13, fontWeight: 600, color: THEME.textPrimary, margin: 0 }}>Status</p>
+          <span style={{ fontSize: 12, color: THEME.primary, cursor: 'pointer', fontWeight: 500 }}>View All</span>
+        </div>
+        <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
+          {chats.slice(0, 6).map((chat) => (
+            <div key={chat.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 50 }}>
+              <div
+                style={{
+                  width: 46,
+                  height: 46,
+                  borderRadius: '50%',
+                  padding: 2,
+                  border: `2px solid ${THEME.primary}`,
+                }}
+              >
+                <InlineAvatar name={chat.name} src={chat.profilePicUrl} size={38} />
+              </div>
+              <span style={{ fontSize: 10, color: THEME.textSecondary, maxWidth: 50, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
+                {chat.name.split(' ')[0]}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Message count + search */}
+      <div style={{ padding: '12px 16px 0 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <p style={{ fontSize: 16, fontWeight: 700, color: THEME.textPrimary, margin: 0 }}>
+              Message ({chats.length})
+            </p>
+          </div>
+          <IconBtn
             onClick={() => {
               setSearchOpen(!searchOpen);
-              if (!searchOpen) {
-                setTimeout(() => searchInputRef.current?.focus(), 100);
-              } else {
-                setSearchQuery('');
-              }
+              if (!searchOpen) setTimeout(() => searchInputRef.current?.focus(), 100);
+              else setSearchQuery('');
             }}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              border: 'none',
-              backgroundColor: 'transparent',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#54656f',
-              transition: 'background-color 0.15s',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f0f2f5'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
           >
-            <Search style={{ width: 20, height: 20 }} />
-          </button>
+            <Search style={{ width: 18, height: 18 }} />
+          </IconBtn>
         </div>
 
         {/* Search input */}
-        <div
-          style={{
-            position: 'relative',
-            marginBottom: 10,
-            display: searchOpen || searchQuery ? 'block' : 'none',
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 12,
-              bottom: 0,
-              display: 'flex',
-              alignItems: 'center',
-              pointerEvents: 'none',
-              color: '#8696a0',
-            }}
-          >
-            <Search style={{ width: 16, height: 16 }} />
+        {(searchOpen || searchQuery) && (
+          <div style={{ position: 'relative', marginBottom: 10 }}>
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 12,
+                bottom: 0,
+                display: 'flex',
+                alignItems: 'center',
+                pointerEvents: 'none',
+                color: THEME.textMuted,
+              }}
+            >
+              <Search style={{ width: 16, height: 16 }} />
+            </div>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search conversations..."
+              style={{
+                width: '100%',
+                height: 36,
+                borderRadius: 18,
+                border: 'none',
+                backgroundColor: THEME.inputBg,
+                paddingLeft: 36,
+                paddingRight: 12,
+                fontSize: 14,
+                color: THEME.textPrimary,
+                outline: 'none',
+              }}
+            />
           </div>
-          <input
-            ref={searchInputRef}
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search conversations..."
-            style={{
-              width: '100%',
-              height: 36,
-              borderRadius: 18,
-              border: 'none',
-              backgroundColor: WHATSAPP_INPUT_BG,
-              paddingLeft: 36,
-              paddingRight: 12,
-              fontSize: 14,
-              color: '#111b21',
-              outline: 'none',
-            }}
-          />
+        )}
+
+        {/* Tabs: Chat / Call / Contact */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          {(['chat', 'call', 'contact'] as const).map((tab) => {
+            const isActive = leftTab === tab;
+            const icons = { chat: MessageSquare, call: Phone, contact: UserCircle };
+            const Icon = icons[tab];
+            const label = tab.charAt(0).toUpperCase() + tab.slice(1);
+            return (
+              <button
+                key={tab}
+                onClick={() => setLeftTab(tab)}
+                style={{
+                  flex: 1,
+                  height: 32,
+                  borderRadius: 16,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  transition: 'all 0.15s ease',
+                  backgroundColor: isActive ? THEME.primary : THEME.inputBg,
+                  color: isActive ? '#ffffff' : THEME.textSecondary,
+                }}
+              >
+                <Icon style={{ width: 14, height: 14 }} />
+                {label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Filter tabs */}
-        <div style={{ display: 'flex', gap: 6, paddingBottom: 10 }}>
-          {(['all', 'unread', 'groups'] as const).map((filter) => {
-            const isActive = chatFilter === filter;
-            const label = filter === 'all' ? 'All' : filter === 'unread' ? 'Unread' : 'Groups';
+        {/* Filters: Direct / Group */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          {(['direct', 'group'] as const).map((filter) => {
+            const isActive = contactFilter === filter;
+            const label = filter.charAt(0).toUpperCase() + filter.slice(1);
             return (
               <button
                 key={filter}
-                onClick={() => setChatFilter(filter)}
+                onClick={() => setContactFilter(filter)}
                 style={{
-                  height: 28,
-                  borderRadius: 14,
-                  padding: '0 14px',
+                  flex: 1,
+                  height: 30,
+                  borderRadius: 15,
+                  border: isActive ? 'none' : `1px solid ${THEME.border}`,
+                  cursor: 'pointer',
                   fontSize: 13,
                   fontWeight: 500,
-                  border: 'none',
-                  cursor: 'pointer',
                   transition: 'all 0.15s ease',
-                  backgroundColor: isActive ? WHATSAPP_GREEN : WHATSAPP_INPUT_BG,
-                  color: isActive ? '#ffffff' : '#54656f',
+                  backgroundColor: isActive ? THEME.primary : 'transparent',
+                  color: isActive ? '#ffffff' : THEME.textSecondary,
                 }}
               >
                 {label}
@@ -980,12 +1156,12 @@ export default function ConversationsPage() {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '64px 16px',
+              padding: '48px 16px',
               textAlign: 'center',
             }}
           >
-            <MessageSquare style={{ width: 40, height: 40, color: '#8696a0', marginBottom: 12 }} />
-            <p style={{ fontSize: 14, color: '#8696a0' }}>
+            <MessageSquare style={{ width: 40, height: 40, color: THEME.textMuted, marginBottom: 12 }} />
+            <p style={{ fontSize: 14, color: THEME.textMuted, margin: 0 }}>
               {searchQuery ? 'No conversations match your search' : 'No conversations yet'}
             </p>
           </div>
@@ -1004,7 +1180,7 @@ export default function ConversationsPage() {
   );
 
   // ---------------------------------------------------------------------------
-  // Messages panel
+  // RIGHT PANEL (Messages)
   // ---------------------------------------------------------------------------
   const messagesPanel = (
     <div style={{ display: 'flex', flex: 1, flexDirection: 'column', minWidth: 0, height: '100%' }}>
@@ -1017,13 +1193,27 @@ export default function ConversationsPage() {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: '#f0f2f5',
+            backgroundImage: CHAT_PATTERN,
+            backgroundSize: '400px 400px',
           }}
         >
-          <MessageSquare style={{ width: 64, height: 64, color: '#d1d5db', marginBottom: 24 }} />
+          <div
+            style={{
+              width: 80,
+              height: 80,
+              borderRadius: '50%',
+              backgroundColor: THEME.primary,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 24,
+            }}
+          >
+            <MessageSquare style={{ width: 36, height: 36, color: '#ffffff' }} />
+          </div>
           <h2 style={{ fontSize: 24, fontWeight: 600, color: '#4b5563', margin: 0 }}>WAutoChat</h2>
           <p style={{ marginTop: 12, fontSize: 14, color: '#9ca3af', textAlign: 'center', maxWidth: 320 }}>
-            Send and receive messages
+            Select a conversation to start messaging
           </p>
         </div>
       ) : (
@@ -1034,42 +1224,32 @@ export default function ConversationsPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              height: 56,
+              height: 60,
               paddingLeft: isMobile ? 8 : 16,
-              paddingRight: 8,
-              backgroundColor: WHATSAPP_HEADER_BG,
-              borderBottom: '1px solid #e9edef',
+              paddingRight: 12,
+              backgroundColor: THEME.headerBg,
+              borderBottom: `1px solid ${THEME.border}`,
               flexShrink: 0,
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, minWidth: 0 }}>
               {isMobile && (
-                <button
-                  onClick={handleBackToList}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: '50%',
-                    border: 'none',
-                    backgroundColor: 'transparent',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#54656f',
-                    flexShrink: 0,
-                  }}
-                >
+                <IconBtn onClick={handleBackToList}>
                   <ArrowLeft style={{ width: 22, height: 22 }} />
-                </button>
+                </IconBtn>
               )}
-              <InlineAvatar name={selectedChat.name} src={selectedChat.profilePicUrl} size={40} />
+              <InlineAvatar
+                name={selectedChat.name}
+                src={selectedChat.profilePicUrl}
+                size={42}
+                online={!selectedChat.isGroup}
+              />
               <div style={{ minWidth: 0 }}>
                 <p
                   style={{
                     fontSize: 15,
                     fontWeight: 600,
-                    color: '#111b21',
+                    color: THEME.textPrimary,
                     margin: 0,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -1078,34 +1258,27 @@ export default function ConversationsPage() {
                 >
                   {selectedChat.name}
                 </p>
-                <p style={{ fontSize: 12, color: WHATSAPP_GREEN, margin: 0 }}>
+                <p style={{ fontSize: 12, color: THEME.primary, margin: 0 }}>
                   {selectedChat.isGroup ? 'Group' : 'Online'}
                 </p>
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              {[RefreshCw, Search, Phone, MoreVertical].map((Icon, i) => (
-                <button
-                  key={i}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: '50%',
-                    border: 'none',
-                    backgroundColor: 'transparent',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#54656f',
-                    transition: 'background-color 0.15s',
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f0f2f5'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-                >
-                  <Icon style={{ width: 20, height: 20 }} />
-                </button>
-              ))}
+              <IconBtn onClick={() => fetchMessages(selectedChat)}>
+                <RefreshCw style={{ width: 18, height: 18 }} />
+              </IconBtn>
+              <IconBtn>
+                <Search style={{ width: 18, height: 18 }} />
+              </IconBtn>
+              <IconBtn>
+                <Video style={{ width: 18, height: 18 }} />
+              </IconBtn>
+              <IconBtn>
+                <Phone style={{ width: 18, height: 18 }} />
+              </IconBtn>
+              <IconBtn>
+                <MoreVertical style={{ width: 18, height: 18 }} />
+              </IconBtn>
             </div>
           </div>
 
@@ -1115,11 +1288,10 @@ export default function ConversationsPage() {
             style={{
               flex: 1,
               overflowY: 'auto',
-              paddingTop: 8,
-              paddingBottom: 8,
-              paddingLeft: 16,
-              paddingRight: 16,
-              backgroundColor: WHATSAPP_CHAT_BG,
+              paddingTop: 12,
+              paddingBottom: 12,
+              backgroundImage: CHAT_PATTERN,
+              backgroundSize: '400px 400px',
             }}
           >
             {messagesLoading ? (
@@ -1130,12 +1302,12 @@ export default function ConversationsPage() {
               <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
                 <p
                   style={{
-                    backgroundColor: 'rgba(255,255,255,0.85)',
-                    borderRadius: 8,
-                    padding: '8px 16px',
+                    backgroundColor: 'rgba(255,255,255,0.9)',
+                    borderRadius: 10,
+                    padding: '10px 20px',
                     fontSize: 14,
-                    color: '#8696a0',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+                    color: THEME.textMuted,
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                   }}
                 >
                   No messages yet. Start the conversation!
@@ -1151,10 +1323,10 @@ export default function ConversationsPage() {
                         style={{
                           backgroundColor: '#ffffff',
                           borderRadius: 8,
-                          padding: '4px 12px',
+                          padding: '5px 14px',
                           fontSize: 12,
                           fontWeight: 500,
-                          color: '#54656f',
+                          color: THEME.textSecondary,
                           boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
                         }}
                       >
@@ -1181,57 +1353,27 @@ export default function ConversationsPage() {
             style={{
               display: 'flex',
               alignItems: 'flex-end',
-              gap: isMobile ? 6 : 8,
-              padding: '8px 12px',
+              gap: 6,
+              padding: '10px 14px',
               backgroundColor: '#ffffff',
-              borderTop: '1px solid #e9edef',
+              borderTop: `1px solid ${THEME.border}`,
               minHeight: 60,
               flexShrink: 0,
             }}
           >
-            {/* Paperclip */}
-            <button
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: '50%',
-                border: 'none',
-                backgroundColor: 'transparent',
-                cursor: 'pointer',
-                display: isMobile ? 'none' : 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#54656f',
-                flexShrink: 0,
-                transition: 'background-color 0.15s',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f0f2f5'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-            >
-              <Paperclip style={{ width: 22, height: 22 }} />
-            </button>
-
-            {/* Emoji */}
-            <button
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: '50%',
-                border: 'none',
-                backgroundColor: 'transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#54656f',
-                flexShrink: 0,
-                transition: 'background-color 0.15s',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f0f2f5'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-            >
-              <Smile style={{ width: 22, height: 22 }} />
-            </button>
+            {!isMobile && (
+              <>
+                <IconBtn size={38}>
+                  <Camera style={{ width: 20, height: 20 }} />
+                </IconBtn>
+                <IconBtn size={38}>
+                  <Images style={{ width: 20, height: 20 }} />
+                </IconBtn>
+              </>
+            )}
+            <IconBtn size={38}>
+              <Smile style={{ width: 20, height: 20 }} />
+            </IconBtn>
 
             {/* Text area */}
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -1243,17 +1385,17 @@ export default function ConversationsPage() {
                   handleTextareaInput();
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="Type a message"
+                placeholder="Write your message..."
                 rows={1}
                 style={{
                   width: '100%',
                   resize: 'none',
-                  borderRadius: 20,
-                  border: 'none',
-                  backgroundColor: WHATSAPP_INPUT_BG,
-                  padding: '10px 16px',
+                  borderRadius: 22,
+                  border: `1px solid ${THEME.border}`,
+                  backgroundColor: '#ffffff',
+                  padding: '10px 18px',
                   fontSize: 14,
-                  color: '#111b21',
+                  color: THEME.textPrimary,
                   outline: 'none',
                   maxHeight: 120,
                   lineHeight: '20px',
@@ -1272,7 +1414,7 @@ export default function ConversationsPage() {
                   height: 40,
                   borderRadius: '50%',
                   border: 'none',
-                  backgroundColor: WHATSAPP_GREEN,
+                  backgroundColor: THEME.primary,
                   cursor: sending ? 'default' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
@@ -1283,29 +1425,12 @@ export default function ConversationsPage() {
                   transition: 'opacity 0.15s',
                 }}
               >
-                <Send style={{ width: 20, height: 20 }} />
+                <Send style={{ width: 18, height: 18 }} />
               </button>
             ) : (
-              <button
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: '50%',
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#54656f',
-                  flexShrink: 0,
-                  transition: 'background-color 0.15s',
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f0f2f5'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
-              >
-                <Mic style={{ width: 22, height: 22 }} />
-              </button>
+              <IconBtn size={40}>
+                <Mic style={{ width: 20, height: 20 }} />
+              </IconBtn>
             )}
           </div>
         </>
@@ -1314,21 +1439,154 @@ export default function ConversationsPage() {
   );
 
   // ---------------------------------------------------------------------------
+  // RIGHT SIDEBAR (Action buttons)
+  // ---------------------------------------------------------------------------
+  const rightSidebar = (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: 56,
+        minWidth: 56,
+        backgroundColor: '#ffffff',
+        borderLeft: `1px solid ${THEME.border}`,
+        padding: '16px 0',
+        height: '100%',
+      }}
+    >
+      {/* Top: user avatar with online indicator */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+        <InlineAvatar name="User" size={38} online />
+
+        {/* Action buttons */}
+        {[
+          { icon: RefreshCw, color: THEME.primary, bg: '#e8faf4', tooltip: 'Refresh' },
+          { icon: Share2Icon, color: THEME.primary, bg: '#e8faf4', tooltip: 'Share' },
+          { icon: Copy, color: THEME.primary, bg: '#e8faf4', tooltip: 'Copy' },
+          { icon: Paperclip, color: THEME.primary, bg: '#e8faf4', tooltip: 'Attach' },
+        ].map((item, i) => (
+          <button
+            key={i}
+            title={item.tooltip}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: '50%',
+              border: 'none',
+              backgroundColor: item.bg,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: item.color,
+              transition: 'transform 0.15s, box-shadow 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'scale(1.1)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'scale(1)';
+              e.currentTarget.style.boxShadow = 'none';
+            }}
+          >
+            <item.icon style={{ width: 18, height: 18 }} />
+          </button>
+        ))}
+      </div>
+
+      {/* Bottom: colored action buttons */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+        {/* RTL button */}
+        <button
+          title="RTL"
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: '50%',
+            border: 'none',
+            backgroundColor: '#3b82f6',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#ffffff',
+            fontSize: 11,
+            fontWeight: 700,
+            boxShadow: '0 2px 6px rgba(59,130,246,0.4)',
+          }}
+        >
+          RTL
+        </button>
+        {/* Green circle */}
+        <button
+          title="New chat"
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: '50%',
+            border: 'none',
+            backgroundColor: THEME.primary,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#ffffff',
+            boxShadow: `0 2px 6px rgba(44,222,168,0.4)`,
+          }}
+        >
+          <MessageSquare style={{ width: 18, height: 18 }} />
+        </button>
+        {/* Red circle */}
+        <button
+          title="Close"
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: '50%',
+            border: 'none',
+            backgroundColor: '#ef4444',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#ffffff',
+            boxShadow: '0 2px 6px rgba(239,68,68,0.4)',
+          }}
+        >
+          <ArrowLeft style={{ width: 18, height: 18, transform: 'rotate(-90deg)' }} />
+        </button>
+      </div>
+    </div>
+  );
+
+  // ---------------------------------------------------------------------------
   // Layout
   // ---------------------------------------------------------------------------
 
+  // Full-bleed wrapper to break out of the parent padding/max-width
+  const fullBleedStyle: React.CSSProperties = {
+    margin: isMobile ? '-16px' : '-24px',
+    height: isMobile ? 'calc(100vh - 56px)' : '100vh',
+    display: 'flex',
+    overflow: 'hidden',
+  };
+
   if (isMobile) {
     return (
-      <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+      <div style={fullBleedStyle}>
         {mobileShowMessages && selectedChat ? messagesPanel : chatListPanel}
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+    <div style={fullBleedStyle}>
       {chatListPanel}
       {messagesPanel}
+      {rightSidebar}
     </div>
   );
 }
