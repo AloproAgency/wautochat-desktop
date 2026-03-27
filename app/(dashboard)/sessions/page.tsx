@@ -71,23 +71,41 @@ export default function SessionsPage() {
   }, [fetchSessions]);
 
   // QR Polling
+  const [qrStatus, setQrStatus] = useState<string>('');
+  const qrPollCountRef = useRef(0);
+
   useEffect(() => {
     if (showQrModal) {
+      qrPollCountRef.current = 0;
+      setQrStatus('Initializing browser...');
+
       const pollQr = async () => {
+        qrPollCountRef.current++;
         try {
           const res = await fetch(`/api/sessions/${showQrModal}/qr`);
           if (res.ok) {
-            const data: ApiResponse<{ qrCode: string; status: string }> = await res.json();
+            const data: ApiResponse<{ qrCode: string; status: string; message?: string }> = await res.json();
             if (data.success && data.data) {
               if (data.data.status === 'connected') {
                 setShowQrModal(null);
                 setQrImage(null);
+                setQrStatus('');
                 updateSession(showQrModal, { status: 'connected' });
                 toast({ title: 'Session connected!', variant: 'success' });
                 return;
               }
               if (data.data.qrCode) {
                 setQrImage(data.data.qrCode);
+                setQrStatus('Scan the QR code with WhatsApp');
+              } else {
+                // No QR yet — update status based on poll count
+                if (qrPollCountRef.current < 5) {
+                  setQrStatus('Initializing browser...');
+                } else if (qrPollCountRef.current < 15) {
+                  setQrStatus('Loading WhatsApp Web...');
+                } else {
+                  setQrStatus('Generating QR code, please wait...');
+                }
               }
             }
           }
@@ -97,13 +115,14 @@ export default function SessionsPage() {
       };
 
       pollQr();
-      qrIntervalRef.current = setInterval(pollQr, 3000);
+      qrIntervalRef.current = setInterval(pollQr, 1500);
 
       return () => {
         if (qrIntervalRef.current) clearInterval(qrIntervalRef.current);
       };
     } else {
       if (qrIntervalRef.current) clearInterval(qrIntervalRef.current);
+      setQrStatus('');
     }
   }, [showQrModal, updateSession, toast]);
 
@@ -380,13 +399,14 @@ export default function SessionsPage() {
               />
             </div>
           ) : (
-            <div className="flex h-64 w-64 items-center justify-center rounded-xl border border-wa-border bg-gray-50">
+            <div className="flex h-64 w-64 flex-col items-center justify-center gap-3 rounded-xl border border-wa-border bg-gray-50">
               <Spinner size="lg" />
+              <p className="text-xs text-wa-text-secondary px-4 text-center">{qrStatus || 'Initializing...'}</p>
             </div>
           )}
           <div className="mt-4 flex items-center gap-2 text-sm text-wa-text-secondary">
             <Spinner size="sm" />
-            <span>Waiting for scan...</span>
+            <span>{qrImage ? 'Waiting for scan...' : qrStatus || 'Initializing...'}</span>
           </div>
         </div>
       </Modal>
