@@ -711,6 +711,7 @@ export default function ConversationsPage() {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showAllRecent, setShowAllRecent] = useState(false);
   const [chatPresence, setChatPresence] = useState<{ isOnline: boolean; lastSeen: string | null }>({ isOnline: false, lastSeen: null });
+  const [statusContacts, setStatusContacts] = useState<{ id: string; name: string; profilePicUrl: string; totalCount: number }[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -774,6 +775,16 @@ export default function ConversationsPage() {
     if (!activeSessionId) return;
     setLoading(true);
     syncAndFetchChats().finally(() => setLoading(false));
+
+    // Fetch WhatsApp statuses
+    fetch(`/api/whatsapp-status?sessionId=${activeSessionId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.data) {
+          setStatusContacts(data.data);
+        }
+      })
+      .catch(() => {});
   }, [activeSessionId, syncAndFetchChats]);
 
   // ---------------------------------------------------------------------------
@@ -1285,77 +1296,85 @@ export default function ConversationsPage() {
         )}
       </div>
 
-      {/* Recent contacts - quick access */}
-      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${THEME.border}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: THEME.textPrimary, margin: 0 }}>Recent</p>
-          <button
-            onClick={() => setShowAllRecent(!showAllRecent)}
-            style={{ fontSize: 12, color: THEME.primary, cursor: 'pointer', fontWeight: 500, border: 'none', backgroundColor: 'transparent', padding: 0 }}
+      {/* WhatsApp Status - only contacts who posted a status */}
+      {statusContacts.length > 0 && (
+        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${THEME.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: THEME.textPrimary, margin: 0 }}>Status</p>
+            <button
+              onClick={() => setShowAllRecent(!showAllRecent)}
+              style={{ fontSize: 12, color: THEME.primary, cursor: 'pointer', fontWeight: 500, border: 'none', backgroundColor: 'transparent', padding: 0 }}
+            >
+              {showAllRecent ? 'Show Less' : 'View All'}
+            </button>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              overflowX: showAllRecent ? 'visible' : 'auto',
+              flexWrap: showAllRecent ? 'wrap' : 'nowrap',
+              paddingBottom: 4,
+            }}
           >
-            {showAllRecent ? 'Show Less' : 'View All'}
-          </button>
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            gap: 10,
-            overflowX: showAllRecent ? 'visible' : 'auto',
-            flexWrap: showAllRecent ? 'wrap' : 'nowrap',
-            paddingBottom: 4,
-          }}
-        >
-          {(showAllRecent ? chats : chats.slice(0, 8)).map((chat) => {
-            const isActive = selectedChat?.id === chat.id;
-            return (
-              <button
-                key={chat.id}
-                onClick={() => handleSelectChat(chat)}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 4,
-                  minWidth: 52,
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  cursor: 'pointer',
-                  padding: 2,
-                }}
-              >
-                <div
+            {(showAllRecent ? statusContacts : statusContacts.slice(0, 8)).map((sc) => {
+              // Find matching chat to open conversation
+              const matchingChat = chats.find((c) => c.wppId === sc.id);
+              return (
+                <button
+                  key={sc.id}
+                  onClick={() => {
+                    if (matchingChat) handleSelectChat(matchingChat);
+                  }}
                   style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: '50%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 4,
+                    minWidth: 52,
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    cursor: matchingChat ? 'pointer' : 'default',
                     padding: 2,
-                    border: `2px solid ${isActive ? THEME.primary : chat.unreadCount > 0 ? '#25D366' : THEME.border}`,
-                    transition: 'border-color 0.15s',
                   }}
                 >
-                  <InlineAvatar name={chat.name} src={chat.profilePicUrl} size={40} />
-                </div>
-                <span
-                  style={{
-                    fontSize: 10,
-                    color: isActive ? THEME.primary : THEME.textSecondary,
-                    fontWeight: isActive ? 600 : 400,
-                    maxWidth: 52,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    textAlign: 'center',
-                    display: 'block',
-                    width: '100%',
-                  }}
-                >
-                  {chat.name.split(' ')[0]}
-                </span>
-              </button>
-            );
-          })}
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '50%',
+                      padding: 2,
+                      background: `conic-gradient(#25D366 0deg, #25D366 360deg)`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <div style={{ width: 42, height: 42, borderRadius: '50%', overflow: 'hidden', backgroundColor: '#ffffff', padding: 1 }}>
+                      <InlineAvatar name={sc.name || sc.id} src={sc.profilePicUrl || undefined} size={40} />
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: THEME.textSecondary,
+                      maxWidth: 52,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      textAlign: 'center',
+                      display: 'block',
+                      width: '100%',
+                    }}
+                  >
+                    {(sc.name || sc.id).split(' ')[0]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Message count + search */}
       <div style={{ padding: '12px 16px 0 16px' }}>

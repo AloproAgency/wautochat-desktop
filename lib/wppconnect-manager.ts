@@ -90,44 +90,76 @@ class WppConnectManager {
 
     try {
       this.updateSessionStatus(sessionId, 'connecting');
+      console.log(`[${sessionId}] Starting WPPConnect browser...`);
 
-      const client = await create({
-        session: sessionId,
-        headless: true,
-        useChrome: false,
-        autoClose: 0,
-        deviceName: deviceName || 'WAutoChat',
-        logQR: false,
-        disableWelcome: true,
-        folderNameToken: TOKENS_PATH,
-        updatesLog: false,
-        catchQR: (
-          base64Qr: string,
-          _asciiQR: string,
-          _attempts: number,
-          _urlCode: string | undefined
-        ) => {
-          this.qrCodes.set(sessionId, base64Qr);
-          this.updateSessionStatus(sessionId, 'qr_ready');
-        },
-        statusFind: (statusSession: string, _session: string) => {
-          if (
-            statusSession === 'isLogged' ||
-            statusSession === 'inChat' ||
-            statusSession === 'qrReadSuccess'
-          ) {
-            this.updateSessionStatus(sessionId, 'connected');
-            this.qrCodes.delete(sessionId);
-          } else if (
-            statusSession === 'notLogged' ||
-            statusSession === 'browserClose' ||
-            statusSession === 'desconnectedMobile' ||
-            statusSession === 'deleteToken'
-          ) {
-            this.updateSessionStatus(sessionId, 'disconnected');
-          }
-        },
-      });
+      // Wrap create() with a timeout to avoid infinite hanging
+      const createWithTimeout = (timeoutMs: number) => {
+        return new Promise<Awaited<ReturnType<typeof create>>>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            reject(new Error(`WPPConnect create() timed out after ${timeoutMs / 1000}s`));
+          }, timeoutMs);
+
+          create({
+            session: sessionId,
+            headless: true,
+            useChrome: false,
+            autoClose: 0,
+            deviceName: deviceName || 'WAutoChat',
+            logQR: false,
+            disableWelcome: true,
+            folderNameToken: TOKENS_PATH,
+            updatesLog: false,
+            browserArgs: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu',
+              '--no-first-run',
+              '--disable-extensions',
+            ],
+            catchQR: (
+              base64Qr: string,
+              _asciiQR: string,
+              attempts: number,
+              _urlCode: string | undefined
+            ) => {
+              console.log(`[${sessionId}] QR code generated (attempt ${attempts})`);
+              this.qrCodes.set(sessionId, base64Qr);
+              this.updateSessionStatus(sessionId, 'qr_ready');
+            },
+            statusFind: (statusSession: string, _session: string) => {
+              console.log(`[${sessionId}] Status: ${statusSession}`);
+              if (
+                statusSession === 'isLogged' ||
+                statusSession === 'inChat' ||
+                statusSession === 'qrReadSuccess'
+              ) {
+                this.updateSessionStatus(sessionId, 'connected');
+                this.qrCodes.delete(sessionId);
+              } else if (
+                statusSession === 'notLogged' ||
+                statusSession === 'browserClose' ||
+                statusSession === 'desconnectedMobile' ||
+                statusSession === 'deleteToken'
+              ) {
+                this.updateSessionStatus(sessionId, 'disconnected');
+              }
+            },
+          })
+            .then((client) => {
+              clearTimeout(timer);
+              resolve(client);
+            })
+            .catch((err) => {
+              clearTimeout(timer);
+              reject(err);
+            });
+        });
+      };
+
+      const client = await createWithTimeout(120000); // 2 min timeout
+
+      console.log(`[${sessionId}] Browser started successfully.`);
 
       this.sessions.set(sessionId, {
         client,
@@ -138,18 +170,23 @@ class WppConnectManager {
       this.updateSessionStatus(sessionId, 'connected');
       this.qrCodes.delete(sessionId);
 
-      const hostDevice = await client.getHostDevice();
-      if (hostDevice && (hostDevice as unknown as Record<string, unknown>).wid) {
-        const wid = (hostDevice as unknown as Record<string, unknown>).wid as Record<string, unknown>;
-        const phone = (wid.user as string) || '';
-        db.prepare(`UPDATE sessions SET phone = ?, updated_at = datetime('now') WHERE id = ?`).run(
-          phone,
-          sessionId
-        );
+      try {
+        const hostDevice = await client.getHostDevice();
+        if (hostDevice && (hostDevice as unknown as Record<string, unknown>).wid) {
+          const wid = (hostDevice as unknown as Record<string, unknown>).wid as Record<string, unknown>;
+          const phone = (wid.user as string) || '';
+          db.prepare(`UPDATE sessions SET phone = ?, updated_at = datetime('now') WHERE id = ?`).run(
+            phone,
+            sessionId
+          );
+        }
+      } catch {
+        console.log(`[${sessionId}] Could not get host device info (may not be logged in yet).`);
       }
 
       this.registerEventHandlers(sessionId, client);
     } catch (error) {
+      console.error(`[${sessionId}] initClient failed:`, error);
       this.updateSessionStatus(sessionId, 'failed');
       throw error;
     }
