@@ -90,44 +90,76 @@ class WppConnectManager {
 
     try {
       this.updateSessionStatus(sessionId, 'connecting');
+      console.log(`[${sessionId}] Starting WPPConnect browser...`);
 
-      const client = await create({
-        session: sessionId,
-        headless: true,
-        useChrome: false,
-        autoClose: 0,
-        deviceName: deviceName || 'WAutoChat',
-        logQR: false,
-        disableWelcome: true,
-        folderNameToken: TOKENS_PATH,
-        updatesLog: false,
-        catchQR: (
-          base64Qr: string,
-          _asciiQR: string,
-          _attempts: number,
-          _urlCode: string | undefined
-        ) => {
-          this.qrCodes.set(sessionId, base64Qr);
-          this.updateSessionStatus(sessionId, 'qr_ready');
-        },
-        statusFind: (statusSession: string, _session: string) => {
-          if (
-            statusSession === 'isLogged' ||
-            statusSession === 'inChat' ||
-            statusSession === 'qrReadSuccess'
-          ) {
-            this.updateSessionStatus(sessionId, 'connected');
-            this.qrCodes.delete(sessionId);
-          } else if (
-            statusSession === 'notLogged' ||
-            statusSession === 'browserClose' ||
-            statusSession === 'desconnectedMobile' ||
-            statusSession === 'deleteToken'
-          ) {
-            this.updateSessionStatus(sessionId, 'disconnected');
-          }
-        },
-      });
+      // Wrap create() with a timeout to avoid infinite hanging
+      const createWithTimeout = (timeoutMs: number) => {
+        return new Promise<Awaited<ReturnType<typeof create>>>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            reject(new Error(`WPPConnect create() timed out after ${timeoutMs / 1000}s`));
+          }, timeoutMs);
+
+          create({
+            session: sessionId,
+            headless: true,
+            useChrome: false,
+            autoClose: 0,
+            deviceName: deviceName || 'WAutoChat',
+            logQR: false,
+            disableWelcome: true,
+            folderNameToken: TOKENS_PATH,
+            updatesLog: false,
+            browserArgs: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu',
+              '--no-first-run',
+              '--disable-extensions',
+            ],
+            catchQR: (
+              base64Qr: string,
+              _asciiQR: string,
+              attempts: number,
+              _urlCode: string | undefined
+            ) => {
+              console.log(`[${sessionId}] QR code generated (attempt ${attempts})`);
+              this.qrCodes.set(sessionId, base64Qr);
+              this.updateSessionStatus(sessionId, 'qr_ready');
+            },
+            statusFind: (statusSession: string, _session: string) => {
+              console.log(`[${sessionId}] Status: ${statusSession}`);
+              if (
+                statusSession === 'isLogged' ||
+                statusSession === 'inChat' ||
+                statusSession === 'qrReadSuccess'
+              ) {
+                this.updateSessionStatus(sessionId, 'connected');
+                this.qrCodes.delete(sessionId);
+              } else if (
+                statusSession === 'notLogged' ||
+                statusSession === 'browserClose' ||
+                statusSession === 'desconnectedMobile' ||
+                statusSession === 'deleteToken'
+              ) {
+                this.updateSessionStatus(sessionId, 'disconnected');
+              }
+            },
+          })
+            .then((client) => {
+              clearTimeout(timer);
+              resolve(client);
+            })
+            .catch((err) => {
+              clearTimeout(timer);
+              reject(err);
+            });
+        });
+      };
+
+      const client = await createWithTimeout(120000); // 2 min timeout
+
+      console.log(`[${sessionId}] Browser started successfully.`);
 
       this.sessions.set(sessionId, {
         client,
@@ -138,18 +170,23 @@ class WppConnectManager {
       this.updateSessionStatus(sessionId, 'connected');
       this.qrCodes.delete(sessionId);
 
-      const hostDevice = await client.getHostDevice();
-      if (hostDevice && (hostDevice as unknown as Record<string, unknown>).wid) {
-        const wid = (hostDevice as unknown as Record<string, unknown>).wid as Record<string, unknown>;
-        const phone = (wid.user as string) || '';
-        db.prepare(`UPDATE sessions SET phone = ?, updated_at = datetime('now') WHERE id = ?`).run(
-          phone,
-          sessionId
-        );
+      try {
+        const hostDevice = await client.getHostDevice();
+        if (hostDevice && (hostDevice as unknown as Record<string, unknown>).wid) {
+          const wid = (hostDevice as unknown as Record<string, unknown>).wid as Record<string, unknown>;
+          const phone = (wid.user as string) || '';
+          db.prepare(`UPDATE sessions SET phone = ?, updated_at = datetime('now') WHERE id = ?`).run(
+            phone,
+            sessionId
+          );
+        }
+      } catch {
+        console.log(`[${sessionId}] Could not get host device info (may not be logged in yet).`);
       }
 
       this.registerEventHandlers(sessionId, client);
     } catch (error) {
+      console.error(`[${sessionId}] initClient failed:`, error);
       this.updateSessionStatus(sessionId, 'failed');
       throw error;
     }
@@ -174,12 +211,24 @@ class WppConnectManager {
     });
 
     client.onStateChange((state) => {
-      if (state === 'CONFLICT' || state === 'UNPAIRED' || state === 'UNLAUNCHED') {
-        this.updateSessionStatus(sessionId, 'disconnected');
-      } else if (state === 'CONNECTED') {
+      console.log(`[${sessionId}] State changed: ${state}`);
+      if (state === 'CONNECTED') {
         this.updateSessionStatus(sessionId, 'connected');
+      } else if (state === 'CONFLICT') {
+        // CONFLICT means another device took over — force reconnect
+        client.useHere().catch(() => {});
+      } else if (state === 'UNPAIRED' || state === 'UNLAUNCHED') {
+        this.updateSessionStatus(sessionId, 'disconnected');
+        // Attempt auto-reconnect after a short delay
+        setTimeout(() => {
+          console.log(`[${sessionId}] Attempting auto-reconnect after ${state}...`);
+          this.reconnectSession(sessionId).catch((err) => {
+            console.error(`[${sessionId}] Auto-reconnect failed:`, err);
+          });
+        }, 5000);
       }
     });
+
 
     client.onIncomingCall(async (call) => {
       // Log incoming calls - can be extended with flow triggers
@@ -190,6 +239,7 @@ class WppConnectManager {
       const db = getDb();
       const chatData = chat as unknown as Record<string, unknown>;
       const groupId = uuidv4();
+      const chatId = uuidv4();
       const wppId = (chatData.id as Record<string, unknown>)?._serialized as string || (chatData.id as string) || '';
       const name = (chatData.contact as Record<string, unknown>)?.name as string
         || (chatData.name as string)
@@ -203,7 +253,28 @@ class WppConnectManager {
       db.prepare(
         `INSERT OR IGNORE INTO chats (id, session_id, wpp_id, name, is_group, updated_at)
          VALUES (?, ?, ?, ?, 1, datetime('now'))`
-      ).run(uuidv4(), sessionId, wppId, name);
+      ).run(chatId, sessionId, wppId, name);
+
+      // Fetch group profile pic in background
+      try {
+        const activeSession = this.sessions.get(sessionId);
+        if (activeSession) {
+          const pic = await activeSession.client.getProfilePicFromServer(wppId);
+          let picUrl = '';
+          const picAny = pic as unknown;
+          if (typeof picAny === 'string' && picAny.startsWith('http')) picUrl = picAny;
+          else if (picAny && typeof picAny === 'object') {
+            const picObj = picAny as Record<string, unknown>;
+            picUrl = (picObj.eurl as string) || (picObj.imgFull as string) || '';
+          }
+          if (picUrl) {
+            db.prepare(`UPDATE chats SET profile_pic_url = ? WHERE session_id = ? AND wpp_id = ?`).run(picUrl, sessionId, wppId);
+            db.prepare(`UPDATE groups_table SET profile_pic_url = ? WHERE session_id = ? AND wpp_id = ?`).run(picUrl, sessionId, wppId);
+          }
+        }
+      } catch {
+        // Profile pic may not be available
+      }
     });
 
     client.onParticipantsChanged(async (participantChange) => {
@@ -316,10 +387,28 @@ class WppConnectManager {
       type = 'poll';
     }
 
+    // Helper: fetch profile pic URL from WPPConnect (non-blocking)
+    const fetchProfilePic = async (contactId: string): Promise<string> => {
+      try {
+        const activeSession = this.sessions.get(sessionId);
+        if (!activeSession) return '';
+        const pic = await activeSession.client.getProfilePicFromServer(contactId);
+        const picAny = pic as unknown;
+        if (typeof picAny === 'string' && picAny.startsWith('http')) return picAny;
+        if (picAny && typeof picAny === 'object') {
+          const picObj = picAny as Record<string, unknown>;
+          return (picObj.eurl as string) || (picObj.imgFull as string) || '';
+        }
+        return '';
+      } catch {
+        return '';
+      }
+    };
+
     // Ensure chat exists
     let chatRow = db.prepare(
-      `SELECT id FROM chats WHERE session_id = ? AND wpp_id = ?`
-    ).get(sessionId, wppChatId) as { id: string } | undefined;
+      `SELECT id, profile_pic_url FROM chats WHERE session_id = ? AND wpp_id = ?`
+    ).get(sessionId, wppChatId) as { id: string; profile_pic_url?: string } | undefined;
 
     if (!chatRow) {
       const chatId = uuidv4();
@@ -334,6 +423,20 @@ class WppConnectManager {
       ).run(chatId, sessionId, wppChatId, chatName, isGroup ? 1 : 0);
 
       chatRow = { id: chatId };
+
+      // Fetch profile pic in background for new chat
+      fetchProfilePic(wppChatId).then((picUrl) => {
+        if (picUrl) {
+          db.prepare(`UPDATE chats SET profile_pic_url = ? WHERE id = ?`).run(picUrl, chatId);
+        }
+      });
+    } else if (!chatRow.profile_pic_url) {
+      // Update profile pic for existing chat that has none
+      fetchProfilePic(wppChatId).then((picUrl) => {
+        if (picUrl) {
+          db.prepare(`UPDATE chats SET profile_pic_url = ? WHERE id = ?`).run(picUrl, chatRow!.id);
+        }
+      });
     }
 
     // Store message
@@ -376,14 +479,29 @@ class WppConnectManager {
     if (!isGroup && !fromMe) {
       const contactWppId = sender;
       const existing = db.prepare(
-        `SELECT id FROM contacts WHERE session_id = ? AND wpp_id = ?`
-      ).get(sessionId, contactWppId);
+        `SELECT id, profile_pic_url FROM contacts WHERE session_id = ? AND wpp_id = ?`
+      ).get(sessionId, contactWppId) as { id: string; profile_pic_url?: string } | undefined;
 
       if (!existing) {
+        const contactId = uuidv4();
         db.prepare(
           `INSERT INTO contacts (id, session_id, wpp_id, name, push_name, phone, is_wa_contact, created_at)
            VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'))`
-        ).run(uuidv4(), sessionId, contactWppId, senderName || contactWppId, senderName, contactWppId.replace('@c.us', ''));
+        ).run(contactId, sessionId, contactWppId, senderName || contactWppId, senderName, contactWppId.replace('@c.us', ''));
+
+        // Fetch profile pic in background for new contact
+        fetchProfilePic(contactWppId).then((picUrl) => {
+          if (picUrl) {
+            db.prepare(`UPDATE contacts SET profile_pic_url = ? WHERE id = ?`).run(picUrl, contactId);
+          }
+        });
+      } else if (!existing.profile_pic_url) {
+        // Update profile pic for existing contact that has none
+        fetchProfilePic(contactWppId).then((picUrl) => {
+          if (picUrl) {
+            db.prepare(`UPDATE contacts SET profile_pic_url = ? WHERE id = ?`).run(picUrl, existing.id);
+          }
+        });
       }
     }
 
@@ -601,6 +719,33 @@ class WppConnectManager {
       console.error(`[${sessionId}] Failed to reconnect client:`, error);
       this.updateSessionStatus(sessionId, 'failed');
     });
+  }
+
+  async reconnectSession(sessionId: string): Promise<void> {
+    // Don't reconnect if already connected
+    const existing = this.sessions.get(sessionId);
+    if (existing && existing.status === 'connected') return;
+
+    // Clean up old client if any
+    if (existing) {
+      try { await existing.client.close(); } catch { /* ignore */ }
+      this.sessions.delete(sessionId);
+    }
+
+    const db = getDb();
+    const row = db.prepare(`SELECT device_name FROM sessions WHERE id = ?`).get(sessionId) as Record<string, unknown> | undefined;
+    if (!row) return;
+
+    console.log(`[${sessionId}] Reconnecting...`);
+    this.updateSessionStatus(sessionId, 'connecting');
+
+    try {
+      await this.initClient(sessionId, row.device_name as string);
+      console.log(`[${sessionId}] Reconnected successfully.`);
+    } catch (err) {
+      console.error(`[${sessionId}] Reconnect failed:`, err);
+      this.updateSessionStatus(sessionId, 'disconnected');
+    }
   }
 
   async disconnectSession(sessionId: string): Promise<void> {
