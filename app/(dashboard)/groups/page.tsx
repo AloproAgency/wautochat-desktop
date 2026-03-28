@@ -245,10 +245,21 @@ export default function GroupsPage() {
     }
   }, [activeSessionId]);
 
+  // Sync groups from WhatsApp on load, then fetch from DB
   useEffect(() => {
-    fetchGroups();
+    if (!activeSessionId) return;
+    // Sync first, then fetch
+    fetch('/api/groups', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: activeSessionId }),
+    })
+      .catch(() => {})
+      .finally(() => {
+        fetchGroups();
+      });
     fetchContacts();
-  }, [fetchGroups, fetchContacts]);
+  }, [activeSessionId, fetchGroups, fetchContacts]);
 
   const filteredGroups = groups.filter(
     (g) =>
@@ -532,12 +543,13 @@ export default function GroupsPage() {
                 onClick={() => openDetailPanel(group)}
               >
                 <CardBody>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3 min-w-0 flex-1 overflow-hidden">
                       <Avatar
                         src={group.profilePicUrl}
                         name={group.name}
                         size="lg"
+                        className="shrink-0"
                       />
                       <div className="min-w-0 flex-1">
                         <h3 className="truncate font-semibold text-wa-text">

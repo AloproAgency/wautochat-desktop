@@ -44,6 +44,84 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// PUT: Sync all groups from WhatsApp
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { sessionId } = body;
+
+    if (!sessionId) {
+      return Response.json(
+        { success: false, error: 'sessionId is required' },
+        { status: 400 }
+      );
+    }
+
+    let client = manager.getClient(sessionId);
+    if (!client) {
+      try {
+        await manager.reconnectSession(sessionId);
+        client = manager.getClient(sessionId);
+      } catch { /* ignore */ }
+    }
+    if (!client) {
+      return Response.json(
+        { success: false, error: 'Session is not connected' },
+        { status: 400 }
+      );
+    }
+
+    const db = getDb();
+    const wppChats = await client.getAllChats();
+    const groupChats = (wppChats as unknown as Record<string, unknown>[]).filter((c) => !!(c.isGroup));
+
+    let synced = 0;
+
+    const insertStmt = db.prepare(
+      `INSERT OR IGNORE INTO groups_table (id, session_id, wpp_id, name, description, profile_pic_url, participant_count, admins, is_admin, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, '[]', 0, datetime('now'))`
+    );
+    const updateStmt = db.prepare(
+      `UPDATE groups_table SET name = ?, participant_count = ? WHERE session_id = ? AND wpp_id = ?`
+    );
+
+    const transaction = db.transaction(() => {
+      for (const chat of groupChats) {
+        const c = chat as Record<string, unknown>;
+        const wppId = (c.id as Record<string, unknown>)?._serialized as string || (c.id as string) || '';
+        if (!wppId) continue;
+
+        const name = (c.contact as Record<string, unknown>)?.name as string
+          || (c.name as string)
+          || wppId;
+        const participantCount = (c.groupMetadata as Record<string, unknown>)?.participants
+          ? ((c.groupMetadata as Record<string, unknown>).participants as unknown[]).length
+          : 0;
+        const description = (c.groupMetadata as Record<string, unknown>)?.desc as string || '';
+
+        const result = insertStmt.run(uuidv4(), sessionId, wppId, name, description || null, null, participantCount);
+        if (result.changes === 0) {
+          updateStmt.run(name, participantCount, sessionId, wppId);
+        }
+        synced++;
+      }
+    });
+
+    transaction();
+
+    return Response.json({
+      success: true,
+      data: { synced, message: `${synced} groups synced` },
+    });
+  } catch (error) {
+    return Response.json(
+      { success: false, error: error instanceof Error ? error.message : 'Failed to sync groups' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST: Create a new group
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
