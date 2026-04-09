@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   MessageSquare,
   Search,
@@ -679,6 +680,8 @@ export default function ConversationsPage() {
   const activeSessionId = useActiveSession();
   const { sessions, setActiveSession } = useSessionStore();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const chatParam = searchParams.get('chat');
   const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false);
 
   // Responsive
@@ -699,6 +702,7 @@ export default function ConversationsPage() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [showChatMenu, setShowChatMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -1065,6 +1069,42 @@ export default function ConversationsPage() {
   const handleBackToList = useCallback(() => {
     setMobileShowMessages(false);
   }, []);
+
+  // Auto-select chat from URL param ?chat=wppId
+  useEffect(() => {
+    if (!chatParam || chats.length === 0 || selectedChat || !activeSessionId) return;
+
+    // Try exact match first
+    let match = chats.find((c) => c.wppId === chatParam);
+
+    // Try matching by phone number (strip @c.us, @lid, etc.)
+    if (!match) {
+      const phone = chatParam.replace(/@.*$/, '');
+      match = chats.find((c) => c.wppId.replace(/@.*$/, '') === phone);
+    }
+
+    if (match) {
+      handleSelectChat(match);
+    } else {
+      // No chat exists yet — create a temporary one so user can start messaging
+      const phone = chatParam.replace(/@.*$/, '');
+      const wppId = chatParam.includes('@') ? chatParam : `${chatParam}@c.us`;
+      const tempChat: Chat = {
+        id: `new-${phone}`,
+        sessionId: activeSessionId,
+        wppId,
+        name: phone,
+        isGroup: false,
+        unreadCount: 0,
+        isArchived: false,
+        isPinned: false,
+        isMuted: false,
+        updatedAt: new Date().toISOString(),
+      };
+      setChats((prev) => [tempChat, ...prev]);
+      handleSelectChat(tempChat);
+    }
+  }, [chatParam, chats, selectedChat, activeSessionId, handleSelectChat]);
 
   // ---------------------------------------------------------------------------
   // Filtering
@@ -1589,18 +1629,127 @@ export default function ConversationsPage() {
               <IconBtn onClick={() => fetchMessages(selectedChat)}>
                 <RefreshCw style={{ width: 18, height: 18 }} />
               </IconBtn>
-              <IconBtn>
+              <IconBtn onClick={() => {
+                setSearchOpen(!searchOpen);
+                if (!searchOpen) setTimeout(() => searchInputRef.current?.focus(), 100);
+              }}>
                 <Search style={{ width: 18, height: 18 }} />
               </IconBtn>
-              <IconBtn>
+              <IconBtn onClick={() => {
+                if (selectedChat) {
+                  window.open(`https://web.whatsapp.com/send?phone=${selectedChat.wppId.replace('@c.us', '').replace('@g.us', '')}`, '_blank');
+                }
+              }}>
                 <Video style={{ width: 18, height: 18 }} />
               </IconBtn>
-              <IconBtn>
+              <IconBtn onClick={() => {
+                if (selectedChat) {
+                  const phone = selectedChat.wppId.replace('@c.us', '').replace('@g.us', '');
+                  window.open(`tel:${phone}`);
+                }
+              }}>
                 <Phone style={{ width: 18, height: 18 }} />
               </IconBtn>
-              <IconBtn>
-                <MoreVertical style={{ width: 18, height: 18 }} />
-              </IconBtn>
+              {/* Menu dropdown */}
+              <div style={{ position: 'relative' }}>
+                <IconBtn onClick={() => setShowChatMenu(!showChatMenu)}>
+                  <MoreVertical style={{ width: 18, height: 18 }} />
+                </IconBtn>
+                {showChatMenu && (
+                  <>
+                    <div
+                      style={{ position: 'fixed', inset: 0, zIndex: 10 }}
+                      onClick={() => setShowChatMenu(false)}
+                    />
+                    <div
+                      style={{
+                        position: 'absolute',
+                        right: 0,
+                        top: '100%',
+                        marginTop: 4,
+                        zIndex: 20,
+                        minWidth: 220,
+                        backgroundColor: '#ffffff',
+                        borderRadius: 10,
+                        border: `1px solid ${THEME.border}`,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {[
+                        {
+                          label: 'Contact info',
+                          icon: UserCircle,
+                          action: () => {
+                            if (selectedChat) window.location.href = `/contacts`;
+                          },
+                        },
+                        {
+                          label: 'Search messages',
+                          icon: Search,
+                          action: () => {
+                            setSearchOpen(!searchOpen);
+                            if (!searchOpen) setTimeout(() => searchInputRef.current?.focus(), 100);
+                          },
+                        },
+                        {
+                          label: 'Refresh messages',
+                          icon: RefreshCw,
+                          action: () => { if (selectedChat) fetchMessages(selectedChat); },
+                        },
+                        {
+                          label: 'Copy chat ID',
+                          icon: Copy,
+                          action: () => {
+                            if (selectedChat) {
+                              navigator.clipboard.writeText(selectedChat.wppId);
+                              toast({ title: 'Chat ID copied', variant: 'success' });
+                            }
+                          },
+                        },
+                        {
+                          label: 'Send file',
+                          icon: Paperclip,
+                          action: () => fileInputRef.current?.click(),
+                        },
+                        {
+                          label: 'Close chat',
+                          icon: ArrowLeft,
+                          action: () => { setSelectedChat(null); setMessages([]); },
+                          danger: true,
+                        },
+                      ].map((item, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            item.action();
+                            setShowChatMenu(false);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            width: '100%',
+                            padding: '10px 16px',
+                            border: 'none',
+                            backgroundColor: 'transparent',
+                            cursor: 'pointer',
+                            fontSize: 14,
+                            color: item.danger ? '#ef4444' : THEME.textPrimary,
+                            textAlign: 'left',
+                            transition: 'background-color 0.1s',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = THEME.hoverBg; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                        >
+                          <item.icon style={{ width: 16, height: 16, color: item.danger ? '#ef4444' : THEME.textMuted }} />
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1839,7 +1988,7 @@ export default function ConversationsPage() {
   );
 
   // ---------------------------------------------------------------------------
-  // RIGHT SIDEBAR (Action buttons)
+  // RIGHT SIDEBAR
   // ---------------------------------------------------------------------------
   const rightSidebar = (
     <div
@@ -1856,52 +2005,14 @@ export default function ConversationsPage() {
         height: '100%',
       }}
     >
-      {/* Top: user avatar with online indicator */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-        <InlineAvatar name="User" size={38} online />
+      {/* Profile avatar */}
+      <InlineAvatar name="User" size={38} online />
 
-        {/* Action buttons */}
-        {[
-          { icon: RefreshCw, color: THEME.primary, bg: '#e8faf4', tooltip: 'Refresh' },
-          { icon: Share2Icon, color: THEME.primary, bg: '#e8faf4', tooltip: 'Share' },
-          { icon: Copy, color: THEME.primary, bg: '#e8faf4', tooltip: 'Copy' },
-          { icon: Paperclip, color: THEME.primary, bg: '#e8faf4', tooltip: 'Attach' },
-        ].map((item, i) => (
-          <button
-            key={i}
-            title={item.tooltip}
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: '50%',
-              border: 'none',
-              backgroundColor: item.bg,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: item.color,
-              transition: 'transform 0.15s, box-shadow 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.1)';
-              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = 'none';
-            }}
-          >
-            <item.icon style={{ width: 18, height: 18 }} />
-          </button>
-        ))}
-      </div>
-
-      {/* Bottom: colored action buttons */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-        {/* RTL button */}
+        {/* Scroll to bottom */}
         <button
-          title="RTL"
+          title="Scroll to bottom"
+          onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
           style={{
             width: 38,
             height: 38,
@@ -1913,47 +2024,7 @@ export default function ConversationsPage() {
             alignItems: 'center',
             justifyContent: 'center',
             color: '#ffffff',
-            fontSize: 11,
-            fontWeight: 700,
             boxShadow: '0 2px 6px rgba(59,130,246,0.4)',
-          }}
-        >
-          RTL
-        </button>
-        {/* Green circle */}
-        <button
-          title="New chat"
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: '50%',
-            border: 'none',
-            backgroundColor: THEME.primary,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            boxShadow: `0 2px 6px rgba(44,222,168,0.4)`,
-          }}
-        >
-          <MessageSquare style={{ width: 18, height: 18 }} />
-        </button>
-        {/* Red circle */}
-        <button
-          title="Close"
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: '50%',
-            border: 'none',
-            backgroundColor: '#ef4444',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            boxShadow: '0 2px 6px rgba(239,68,68,0.4)',
           }}
         >
           <ArrowLeft style={{ width: 18, height: 18, transform: 'rotate(-90deg)' }} />

@@ -22,11 +22,11 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       rows = db.prepare(
-        `SELECT * FROM contacts WHERE session_id = ? AND (name LIKE ? OR push_name LIKE ? OR phone LIKE ?) ORDER BY name ASC`
+        `SELECT * FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@lid' AND (name LIKE ? OR push_name LIKE ? OR phone LIKE ?) ORDER BY created_at DESC`
       ).all(sessionId, `%${search}%`, `%${search}%`, `%${search}%`) as Record<string, unknown>[];
     } else {
       rows = db.prepare(
-        `SELECT * FROM contacts WHERE session_id = ? ORDER BY name ASC`
+        `SELECT * FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@lid' ORDER BY created_at DESC`
       ).all(sessionId) as Record<string, unknown>[];
     }
 
@@ -100,6 +100,10 @@ export async function POST(request: NextRequest) {
         const wppId = (c.id as Record<string, unknown>)?._serialized as string || (c.id as string) || '';
 
         if (!wppId || wppId === 'status@broadcast') continue;
+        // Skip @lid contacts (they are duplicates of @c.us contacts)
+        if (wppId.endsWith('@lid')) continue;
+        // Skip group IDs
+        if (wppId.endsWith('@g.us')) continue;
 
         const existingRow = db.prepare(
           `SELECT id, labels FROM contacts WHERE session_id = ? AND wpp_id = ?`
@@ -107,9 +111,9 @@ export async function POST(request: NextRequest) {
 
         const contactId = existingRow?.id || uuidv4();
         const existingLabels = existingRow?.labels || '[]';
-        const phone = (wppId.replace('@c.us', '').replace('@g.us', '').replace('@lid', '')) || '';
-        const name = (c.name as string) || (c.pushname as string) || (c.shortName as string) || phone;
+        const phone = wppId.replace('@c.us', '') || '';
         const pushName = (c.pushname as string) || '';
+        const name = (c.name as string) || pushName || (c.shortName as string) || (phone ? `+${phone}` : wppId);
         const profilePicUrl = (c.profilePicThumbObj as Record<string, unknown>)?.eurl as string || '';
         const isMyContact = !!(c.isMyContact);
         const isWAContact = !!(c.isWAContact ?? true);

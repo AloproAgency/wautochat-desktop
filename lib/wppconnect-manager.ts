@@ -9,6 +9,37 @@ import { executeFlow, resumeFlowAfterWait } from '@/lib/flow-engine';
 // Store wppconnect tokens outside the project to avoid Turbopack crashes
 const TOKENS_PATH = path.join(os.tmpdir(), 'wautochat-tokens');
 
+// Lock file to prevent multiple browser instances from hot-reloads
+const LOCK_FILE = path.join(os.tmpdir(), 'wautochat-browser.lock');
+
+import fs from 'fs';
+
+function isAlreadyRunning(): boolean {
+  try {
+    if (fs.existsSync(LOCK_FILE)) {
+      const pid = parseInt(fs.readFileSync(LOCK_FILE, 'utf-8').trim(), 10);
+      if (pid && !isNaN(pid)) {
+        try {
+          process.kill(pid, 0); // Check if process exists (doesn't kill it)
+          return true; // Process is running
+        } catch {
+          // Process doesn't exist, stale lock file
+          fs.unlinkSync(LOCK_FILE);
+        }
+      }
+    }
+  } catch { /* ignore */ }
+  return false;
+}
+
+function writeLock(pid: number): void {
+  try { fs.writeFileSync(LOCK_FILE, String(pid)); } catch { /* ignore */ }
+}
+
+function clearLock(): void {
+  try { if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
+}
+
 interface ActiveSession {
   client: Whatsapp;
   sessionId: string;
@@ -34,30 +65,9 @@ class WppConnectManager {
    * Called once on first API access.
    */
   async autoReconnect(): Promise<void> {
-    if (this.autoReconnectDone) return;
-    this.autoReconnectDone = true;
-
-    try {
-      const db = getDb();
-      const rows = db.prepare(
-        `SELECT id, device_name FROM sessions WHERE status = 'connected' OR status = 'qr_ready'`
-      ).all() as Record<string, unknown>[];
-
-      for (const row of rows) {
-        const sid = row.id as string;
-        if (!this.sessions.has(sid)) {
-          console.log(`[auto-reconnect] Reconnecting session ${sid}...`);
-          // Mark as connecting
-          db.prepare(`UPDATE sessions SET status = 'connecting', updated_at = datetime('now') WHERE id = ?`).run(sid);
-          this.initClient(sid, row.device_name as string).catch((err) => {
-            console.error(`[auto-reconnect] Failed to reconnect ${sid}:`, err);
-            db.prepare(`UPDATE sessions SET status = 'disconnected', updated_at = datetime('now') WHERE id = ?`).run(sid);
-          });
-        }
-      }
-    } catch (err) {
-      console.error('[auto-reconnect] Error:', err);
-    }
+    // Completely disabled - connect manually via Sessions page
+    // This prevents zombie Chrome processes from hot-reloads
+    return;
   }
 
   async createSession(
@@ -161,6 +171,12 @@ class WppConnectManager {
 
       console.log(`[${sessionId}] Browser started successfully.`);
 
+      // Write lock with browser PID to prevent duplicate browsers
+      try {
+        const pid = await client.getPID();
+        if (pid) writeLock(pid);
+      } catch { /* ignore */ }
+
       this.sessions.set(sessionId, {
         client,
         sessionId,
@@ -215,17 +231,18 @@ class WppConnectManager {
       if (state === 'CONNECTED') {
         this.updateSessionStatus(sessionId, 'connected');
       } else if (state === 'CONFLICT') {
-        // CONFLICT means another device took over — force reconnect
+        // CONFLICT means WhatsApp is open on another device
+        // Just call useHere() to reclaim, don't reconnect
+        console.log(`[${sessionId}] CONFLICT detected, reclaiming session...`);
         client.useHere().catch(() => {});
-      } else if (state === 'UNPAIRED' || state === 'UNLAUNCHED') {
+      } else if (state === 'UNPAIRED') {
+        // Session was logged out from phone - mark as disconnected
+        // Don't auto-reconnect to avoid zombie browser loops
+        console.log(`[${sessionId}] UNPAIRED - session logged out`);
         this.updateSessionStatus(sessionId, 'disconnected');
-        // Attempt auto-reconnect after a short delay
-        setTimeout(() => {
-          console.log(`[${sessionId}] Attempting auto-reconnect after ${state}...`);
-          this.reconnectSession(sessionId).catch((err) => {
-            console.error(`[${sessionId}] Auto-reconnect failed:`, err);
-          });
-        }, 5000);
+      } else if (state === 'UNLAUNCHED') {
+        console.log(`[${sessionId}] UNLAUNCHED - browser closed`);
+        this.updateSessionStatus(sessionId, 'disconnected');
       }
     });
 
@@ -728,6 +745,13 @@ class WppConnectManager {
 
     // Clean up old client if any
     if (existing) {
+      try {
+        // Try to get the browser PID and kill it
+        const pid = await existing.client.getPID();
+        if (pid) {
+          try { process.kill(pid); } catch { /* ignore */ }
+        }
+      } catch { /* ignore */ }
       try { await existing.client.close(); } catch { /* ignore */ }
       this.sessions.delete(sessionId);
     }
@@ -762,6 +786,7 @@ class WppConnectManager {
         // Ignore close errors
       }
       this.sessions.delete(sessionId);
+      clearLock();
     }
     this.qrCodes.delete(sessionId);
     this.updateSessionStatus(sessionId, 'disconnected');

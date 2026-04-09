@@ -108,14 +108,31 @@ export async function POST(request: NextRequest) {
 
     const insertStmt = db.prepare(
       `INSERT OR IGNORE INTO chats (id, session_id, wpp_id, name, is_group, unread_count, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
     );
     const updateStmt = db.prepare(
-      `UPDATE chats SET name = CASE WHEN name = wpp_id THEN ? ELSE name END, unread_count = ?, updated_at = datetime('now') WHERE session_id = ? AND wpp_id = ?`
+      `UPDATE chats SET name = ?, unread_count = ?, updated_at = ? WHERE session_id = ? AND wpp_id = ?`
     );
 
+    // Also insert last message for preview
+    const upsertLastMsg = db.prepare(
+      `INSERT OR REPLACE INTO messages (id, session_id, chat_id, wpp_id, type, body, sender, sender_name, from_me, timestamp, status, is_forwarded)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'delivered', 0)`
+    );
+
+    // Sort wppChats by timestamp descending so we know the order
+    const sortedChats = [...wppChats].sort((a, b) => {
+      const aChat = a as unknown as Record<string, unknown>;
+      const bChat = b as unknown as Record<string, unknown>;
+      const aT = (aChat.t as number) || (aChat.timestamp as number) || 0;
+      const bT = (bChat.t as number) || (bChat.timestamp as number) || 0;
+      return bT - aT;
+    });
+
     const transaction = db.transaction(() => {
-      for (const chat of wppChats) {
+      // Use rank to ensure unique timestamps even if chat.t is missing
+      let rank = sortedChats.length;
+      for (const chat of sortedChats) {
         const c = chat as unknown as Record<string, unknown>;
         const wppId = (c.id as Record<string, unknown>)?._serialized as string || (c.id as string) || '';
 
@@ -128,17 +145,93 @@ export async function POST(request: NextRequest) {
           || wppId;
         const unreadCount = (c.unreadCount as number) || 0;
 
-        // Try insert (won't overwrite existing)
-        const result = insertStmt.run(uuidv4(), sessionId, wppId, name, isGroup ? 1 : 0, unreadCount);
-        if (result.changes === 0) {
-          // Already exists, update name if it was just the wppId and update unread count
-          updateStmt.run(name, unreadCount, sessionId, wppId);
+        // Get the real timestamp from WhatsApp
+        const lastMsgTimestamp = (c.t as number) || (c.timestamp as number) || 0;
+        let updatedAt: string;
+        if (lastMsgTimestamp > 0) {
+          updatedAt = new Date(lastMsgTimestamp * 1000).toISOString();
+        } else {
+          // No timestamp - use rank to maintain WhatsApp's original order
+          updatedAt = new Date(Date.now() - rank * 1000).toISOString();
         }
+
+        // Try insert first
+        const chatUuid = uuidv4();
+        const result = insertStmt.run(chatUuid, sessionId, wppId, name, isGroup ? 1 : 0, unreadCount, updatedAt);
+        if (result.changes === 0) {
+          // Already exists - always update name, unread and timestamp
+          updateStmt.run(name, unreadCount, updatedAt, sessionId, wppId);
+        }
+
         synced++;
+        rank--;
       }
     });
 
     transaction();
+
+    // Fetch last message previews from WhatsApp browser
+    const page = (client as unknown as { waPage?: { evaluate: (fn: string) => Promise<unknown> } }).waPage;
+    if (page) {
+      try {
+        const previews = await page.evaluate(`
+          (async () => {
+            try {
+              if (!window.Store || !window.Store.Chat) return [];
+              const chats = window.Store.Chat.getModelsArray
+                ? window.Store.Chat.getModelsArray()
+                : (window.Store.Chat._models || []);
+
+              return chats.slice(0, 100).map(c => {
+                const id = c.id ? (c.id._serialized || '') : '';
+                let body = '';
+                let fromMe = false;
+                let type = 'text';
+
+                // Get last message from msgs collection
+                if (c.msgs && c.msgs._models && c.msgs._models.length > 0) {
+                  const last = c.msgs._models[c.msgs._models.length - 1];
+                  body = last.__x_body || last.body || '';
+                  fromMe = !!(last.__x_isFromMe || last.fromMe);
+                  type = last.__x_type || last.type || 'chat';
+                  if (type === 'chat') type = 'text';
+                }
+
+                if (!body) return null;
+                return { id, body: body.substring(0, 100), fromMe, type };
+              }).filter(Boolean);
+            } catch(e) { return []; }
+          })()
+        `) as { id: string; body: string; fromMe: boolean; type: string }[] | null;
+
+        if (previews && previews.length > 0) {
+          for (const preview of previews) {
+            if (!preview.id || !preview.body) continue;
+            const chatRow = db.prepare(
+              `SELECT id FROM chats WHERE session_id = ? AND wpp_id = ?`
+            ).get(sessionId, preview.id) as { id: string } | undefined;
+            if (!chatRow) continue;
+
+            // Only insert if no messages exist for this chat
+            const msgExists = db.prepare(
+              `SELECT id FROM messages WHERE chat_id = ? AND session_id = ? LIMIT 1`
+            ).get(chatRow.id, sessionId);
+            if (!msgExists) {
+              upsertLastMsg.run(
+                uuidv4(), sessionId, chatRow.id, '',
+                preview.type, preview.body, preview.fromMe ? 'me' : preview.id,
+                '', preview.fromMe ? 1 : 0,
+                db.prepare(`SELECT updated_at FROM chats WHERE id = ?`).get(chatRow.id)
+                  ? (db.prepare(`SELECT updated_at FROM chats WHERE id = ?`).get(chatRow.id) as { updated_at: string }).updated_at
+                  : new Date().toISOString()
+              );
+            }
+          }
+        }
+      } catch {
+        // Preview fetch failed, not critical
+      }
+    }
 
     // Fetch profile pics in background for chats without one
     const chatsWithoutPic = db.prepare(

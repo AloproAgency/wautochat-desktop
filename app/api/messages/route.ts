@@ -20,6 +20,137 @@ export async function GET(request: NextRequest) {
     }
 
     const db = getDb();
+
+    // Check if we have messages in DB for this chat
+    const msgCount = (db.prepare(
+      `SELECT COUNT(*) as c FROM messages WHERE chat_id = ? AND session_id = ?`
+    ).get(chatId, sessionId) as { c: number }).c;
+
+    // If no messages in DB, try to fetch from WhatsApp
+    if (msgCount === 0) {
+      const client = manager.getClient(sessionId);
+      if (client) {
+        try {
+          // Get the wppId for this chat
+          const chatRow = db.prepare(
+            `SELECT wpp_id FROM chats WHERE id = ? AND session_id = ?`
+          ).get(chatId, sessionId) as { wpp_id: string } | undefined;
+
+          if (chatRow) {
+            // Try WPP.chat.getMessages via page evaluate (more reliable than client.getMessages)
+            let wppMessages: Record<string, unknown>[] = [];
+            const page = (client as unknown as { waPage?: { evaluate: (fn: string) => Promise<unknown> } }).waPage;
+            if (page) {
+              try {
+                const result = await page.evaluate(`
+                  (async () => {
+                    try {
+                      if (typeof WPP !== 'undefined' && WPP.chat) {
+                        const msgs = await WPP.chat.getMessages('${chatRow.wpp_id}', { count: ${limit} });
+                        if (msgs && Array.isArray(msgs)) {
+                          return msgs.map(m => ({
+                            id: m.id ? (m.id._serialized || m.id) : '',
+                            fromMe: !!m.fromMe,
+                            from: m.from ? (m.from._serialized || m.from) : '',
+                            to: m.to ? (m.to._serialized || m.to) : '',
+                            body: m.body || '',
+                            type: m.type || 'chat',
+                            t: m.t || 0,
+                            notifyName: m.notifyName || '',
+                            caption: m.caption || '',
+                            mimetype: m.mimetype || '',
+                            isForwarded: !!m.isForwarded,
+                          }));
+                        }
+                      }
+                      return [];
+                    } catch(e) { return []; }
+                  })()
+                `);
+                if (result && Array.isArray(result)) {
+                  wppMessages = result as Record<string, unknown>[];
+                }
+              } catch {
+                // Fallback to client.getMessages
+                try {
+                  const fallback = await client.getMessages(chatRow.wpp_id, { count: limit });
+                  if (fallback && Array.isArray(fallback)) {
+                    wppMessages = fallback as unknown as Record<string, unknown>[];
+                  }
+                } catch { /* ignore */ }
+              }
+            }
+
+            console.log(`[messages] Fetched ${wppMessages.length} messages from WhatsApp for ${chatRow.wpp_id}`);
+
+            if (wppMessages.length > 0) {
+              const insertMsg = db.prepare(
+                `INSERT OR IGNORE INTO messages (id, session_id, chat_id, wpp_id, type, body, sender, sender_name, from_me, timestamp, status, quoted_msg_id, media_url, media_type, caption, is_forwarded)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              );
+
+              const transaction = db.transaction(() => {
+                for (const msg of wppMessages) {
+                  const m = msg as unknown as Record<string, unknown>;
+                  const wppMsgId = (m.id as Record<string, unknown>)?._serialized as string || (m.id as string) || '';
+                  if (!wppMsgId) continue;
+
+                  const fromMe = !!(m.fromMe);
+                  const sender = (m.from as Record<string, unknown>)?._serialized as string || (m.from as string) || '';
+                  const senderName = (m.sender as Record<string, unknown>)?.pushname as string
+                    || (m.sender as Record<string, unknown>)?.name as string
+                    || (m.notifyName as string)
+                    || '';
+
+                  let type = 'text';
+                  const rawType = (m.type as string) || 'chat';
+                  if (rawType === 'image' || rawType === 'video' || rawType === 'audio' || rawType === 'ptt' || rawType === 'document' || rawType === 'sticker') {
+                    type = rawType;
+                  }
+
+                  const body = (m.body as string) || (m.caption as string) || '';
+                  const mediaUrl = (m.mediaUrl as string) || '';
+                  const mediaType = (m.mimetype as string) || '';
+                  const caption = (m.caption as string) || '';
+                  const isForwarded = !!(m.isForwarded);
+
+                  // Convert timestamp
+                  const t = (m.t as number) || (m.timestamp as number) || 0;
+                  const timestamp = t > 0 ? new Date(t * 1000).toISOString() : new Date().toISOString();
+
+                  const status = fromMe ? 'read' : 'delivered';
+
+                  insertMsg.run(
+                    uuidv4(),
+                    sessionId,
+                    chatId,
+                    wppMsgId,
+                    type,
+                    body,
+                    sender,
+                    senderName || null,
+                    fromMe ? 1 : 0,
+                    timestamp,
+                    status,
+                    null,
+                    mediaUrl || null,
+                    mediaType || null,
+                    caption || null,
+                    isForwarded ? 1 : 0
+                  );
+                }
+              });
+
+              transaction();
+            }
+          }
+        } catch (err) {
+          console.error(`[messages] Failed to fetch from WhatsApp for chat ${chatId}:`, err);
+        }
+      }
+    }
+
+    // Now read from DB
     const rows = db.prepare(
       `SELECT * FROM messages WHERE chat_id = ? AND session_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?`
     ).all(chatId, sessionId, limit, offset) as Record<string, unknown>[];

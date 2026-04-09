@@ -27,7 +27,7 @@ const navItems = [
   { label: 'Flows', href: '/flows', icon: GitBranch },
   { label: 'Conversations', href: '/conversations', icon: MessageSquare },
   { label: 'Contacts', href: '/contacts', icon: Users },
-  { label: 'Groups', href: '/groups', icon: UsersRound },
+
   { label: 'Broadcasts', href: '/broadcasts', icon: Megaphone },
   { label: 'Labels', href: '/labels', icon: Tag },
   { label: 'Business', href: '/business', icon: Briefcase },
