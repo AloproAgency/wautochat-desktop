@@ -182,27 +182,67 @@ export async function POST(request: NextRequest) {
                 ? window.Store.Chat.getModelsArray()
                 : (window.Store.Chat._models || []);
 
-              return chats.slice(0, 100).map(c => {
+              const results = [];
+              const top = chats.slice(0, 100);
+
+              for (const c of top) {
                 const id = c.id ? (c.id._serialized || '') : '';
+                if (!id || id === 'status@broadcast') continue;
+
                 let body = '';
                 let fromMe = false;
                 let type = 'text';
+                let timestamp = 0;
 
-                // Get last message from msgs collection
-                if (c.msgs && c.msgs._models && c.msgs._models.length > 0) {
-                  const last = c.msgs._models[c.msgs._models.length - 1];
-                  body = last.__x_body || last.body || '';
-                  fromMe = !!(last.__x_isFromMe || last.fromMe);
-                  type = last.__x_type || last.type || 'chat';
-                  if (type === 'chat') type = 'text';
+                // Try 1: msgs collection
+                if (c.msgs) {
+                  const models = c.msgs.getModelsArray
+                    ? c.msgs.getModelsArray()
+                    : (c.msgs._models || []);
+                  if (models.length > 0) {
+                    const last = models[models.length - 1];
+                    body = last.__x_body || last.body || last.caption || '';
+                    fromMe = !!(last.__x_isFromMe || last.fromMe);
+                    type = last.__x_type || last.type || 'chat';
+                    timestamp = last.__x_t || last.t || 0;
+                  }
                 }
 
-                if (!body) return null;
-                return { id, body: body.substring(0, 100), fromMe, type };
-              }).filter(Boolean);
+                // Try 2: Use WPP.chat.getMessages as fallback
+                if (!body && typeof WPP !== 'undefined' && WPP.chat && WPP.chat.getMessages) {
+                  try {
+                    const msgs = await WPP.chat.getMessages(id, { count: 1 });
+                    if (msgs && msgs.length > 0) {
+                      const last = msgs[msgs.length - 1];
+                      body = last.body || last.caption || '';
+                      fromMe = !!last.fromMe;
+                      type = last.type || 'chat';
+                      timestamp = last.t || 0;
+                    }
+                  } catch(e) {}
+                }
+
+                // Normalize type
+                if (type === 'chat') type = 'text';
+
+                // Media types: show friendly label if no body
+                if (!body && (type === 'image' || type === 'video' || type === 'audio' || type === 'ptt' || type === 'document' || type === 'sticker')) {
+                  body = type.charAt(0).toUpperCase() + type.slice(1);
+                }
+
+                if (!body) continue;
+                results.push({
+                  id,
+                  body: body.substring(0, 100),
+                  fromMe,
+                  type,
+                  timestamp,
+                });
+              }
+              return results;
             } catch(e) { return []; }
           })()
-        `) as { id: string; body: string; fromMe: boolean; type: string }[] | null;
+        `) as { id: string; body: string; fromMe: boolean; type: string; timestamp: number }[] | null;
 
         if (previews && previews.length > 0) {
           for (const preview of previews) {
@@ -212,21 +252,24 @@ export async function POST(request: NextRequest) {
             ).get(sessionId, preview.id) as { id: string } | undefined;
             if (!chatRow) continue;
 
-            // Only insert if no messages exist for this chat
-            const msgExists = db.prepare(
-              `SELECT id FROM messages WHERE chat_id = ? AND session_id = ? LIMIT 1`
-            ).get(chatRow.id, sessionId);
-            if (!msgExists) {
+            const msgTimestamp = preview.timestamp > 0
+              ? new Date(preview.timestamp * 1000).toISOString()
+              : new Date().toISOString();
+
+            // Check if we already have this message (by body + chat)
+            const existing = db.prepare(
+              `SELECT id FROM messages WHERE chat_id = ? AND session_id = ? AND body = ? LIMIT 1`
+            ).get(chatRow.id, sessionId, preview.body);
+
+            if (!existing) {
               upsertLastMsg.run(
                 uuidv4(), sessionId, chatRow.id, '',
                 preview.type, preview.body, preview.fromMe ? 'me' : preview.id,
-                '', preview.fromMe ? 1 : 0,
-                db.prepare(`SELECT updated_at FROM chats WHERE id = ?`).get(chatRow.id)
-                  ? (db.prepare(`SELECT updated_at FROM chats WHERE id = ?`).get(chatRow.id) as { updated_at: string }).updated_at
-                  : new Date().toISOString()
+                '', preview.fromMe ? 1 : 0, msgTimestamp
               );
             }
           }
+          console.log(`[chats-sync] Inserted last message previews for ${previews.length} chats`);
         }
       } catch {
         // Preview fetch failed, not critical
