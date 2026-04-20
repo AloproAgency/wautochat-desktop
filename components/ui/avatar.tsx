@@ -1,4 +1,6 @@
-import { type ImgHTMLAttributes } from 'react';
+'use client';
+
+import { type ImgHTMLAttributes, useState } from 'react';
 
 const sizeClasses = {
   sm: 'h-8 w-8 text-xs',
@@ -35,21 +37,22 @@ function hashColor(name: string): string {
 }
 
 export function Avatar({ size = 'md', name, src, className = '', alt, ...props }: AvatarProps) {
+  const [imgError, setImgError] = useState(false);
   const sizeClass = sizeClasses[size];
+  const initials = name ? getInitials(name) : '?';
+  const bgColor = name ? hashColor(name) : 'bg-gray-400';
 
-  if (src) {
+  if (src && !imgError) {
     return (
       <img
         src={src}
         alt={alt || name || 'Avatar'}
         className={`${sizeClass} rounded-full object-cover ${className}`}
+        onError={() => setImgError(true)}
         {...props}
       />
     );
   }
-
-  const initials = name ? getInitials(name) : '?';
-  const bgColor = name ? hashColor(name) : 'bg-gray-400';
 
   return (
     <div

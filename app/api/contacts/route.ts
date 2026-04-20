@@ -22,11 +22,11 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       rows = db.prepare(
-        `SELECT * FROM contacts WHERE session_id = ? AND (name LIKE ? OR push_name LIKE ? OR phone LIKE ?) ORDER BY name ASC`
+        `SELECT * FROM contacts WHERE session_id = ? AND is_my_contact = 1 AND (name LIKE ? OR push_name LIKE ? OR phone LIKE ?) ORDER BY name ASC`
       ).all(sessionId, `%${search}%`, `%${search}%`, `%${search}%`) as Record<string, unknown>[];
     } else {
       rows = db.prepare(
-        `SELECT * FROM contacts WHERE session_id = ? ORDER BY name ASC`
+        `SELECT * FROM contacts WHERE session_id = ? AND is_my_contact = 1 ORDER BY name ASC`
       ).all(sessionId) as Record<string, unknown>[];
     }
 
@@ -88,6 +88,9 @@ export async function POST(request: NextRequest) {
     const wppContacts = await client.getAllContacts();
     const db = getDb();
 
+    // Clean up duplicate entries (e.g. @lid variants) before syncing
+    db.prepare(`DELETE FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@c.us'`).run(sessionId);
+
     let synced = 0;
     const insertStmt = db.prepare(
       `INSERT OR REPLACE INTO contacts (id, session_id, wpp_id, name, push_name, phone, profile_pic_url, is_my_contact, is_wa_contact, is_blocked, labels, created_at)
@@ -100,6 +103,8 @@ export async function POST(request: NextRequest) {
         const wppId = (c.id as Record<string, unknown>)?._serialized as string || (c.id as string) || '';
 
         if (!wppId || wppId === 'status@broadcast') continue;
+        // Skip non-contact IDs (group chats, LID duplicates) to avoid duplicates
+        if (!wppId.endsWith('@c.us')) continue;
 
         const existingRow = db.prepare(
           `SELECT id, labels FROM contacts WHERE session_id = ? AND wpp_id = ?`
