@@ -12,14 +12,47 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);
 
-    if (!chatId || !sessionId) {
+    const db = getDb();
+
+    // Support both conversation view and dashboard overview.
+    if (!chatId) {
+      const rows = sessionId
+        ? db.prepare(
+          `SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?`
+        ).all(sessionId, limit, offset) as Record<string, unknown>[]
+        : db.prepare(
+          `SELECT * FROM messages ORDER BY timestamp DESC LIMIT ? OFFSET ?`
+        ).all(limit, offset) as Record<string, unknown>[];
+
+      const messages: Message[] = rows.map((row) => ({
+        id: row.id as string,
+        sessionId: row.session_id as string,
+        chatId: row.chat_id as string,
+        wppId: row.wpp_id as string,
+        type: row.type as Message['type'],
+        body: row.body as string,
+        sender: row.sender as string,
+        senderName: (row.sender_name as string) || undefined,
+        fromMe: !!(row.from_me),
+        timestamp: row.timestamp as string,
+        status: row.status as Message['status'],
+        quotedMsgId: (row.quoted_msg_id as string) || undefined,
+        mediaUrl: (row.media_url as string) || undefined,
+        mediaType: (row.media_type as string) || undefined,
+        caption: (row.caption as string) || undefined,
+        isForwarded: !!(row.is_forwarded),
+        labels: JSON.parse((row.labels as string) || '[]'),
+      }));
+
+      return Response.json({ success: true, data: messages });
+    }
+
+    if (!sessionId) {
       return Response.json(
-        { success: false, error: 'chatId and sessionId are required' },
+        { success: false, error: 'sessionId is required when chatId is provided' },
         { status: 400 }
       );
     }
-
-    const db = getDb();
 
     // Check if we have messages in DB for this chat
     const msgCount = (db.prepare(

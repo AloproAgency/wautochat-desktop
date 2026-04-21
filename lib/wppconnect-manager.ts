@@ -9,35 +9,89 @@ import { executeFlow, resumeFlowAfterWait } from '@/lib/flow-engine';
 // Store wppconnect tokens outside the project to avoid Turbopack crashes
 const TOKENS_PATH = path.join(os.tmpdir(), 'wautochat-tokens');
 
-// Lock file to prevent multiple browser instances from hot-reloads
-const LOCK_FILE = path.join(os.tmpdir(), 'wautochat-browser.lock');
-
 import fs from 'fs';
 
-function isAlreadyRunning(): boolean {
+function browserDataDirFor(sessionId: string): string {
+  return path.join(TOKENS_PATH, sessionId);
+}
+
+// Per-session lock files to support multiple WhatsApp accounts simultaneously
+function lockFileFor(sessionId: string): string {
+  return path.join(os.tmpdir(), `wautochat-browser-${sessionId}.lock`);
+}
+
+function readLockPid(sessionId: string): number | null {
   try {
-    if (fs.existsSync(LOCK_FILE)) {
-      const pid = parseInt(fs.readFileSync(LOCK_FILE, 'utf-8').trim(), 10);
-      if (pid && !isNaN(pid)) {
-        try {
-          process.kill(pid, 0); // Check if process exists (doesn't kill it)
-          return true; // Process is running
-        } catch {
-          // Process doesn't exist, stale lock file
-          fs.unlinkSync(LOCK_FILE);
-        }
-      }
+    const lockFile = lockFileFor(sessionId);
+    if (!fs.existsSync(lockFile)) return null;
+
+    const pid = parseInt(fs.readFileSync(lockFile, 'utf-8').trim(), 10);
+    return Number.isNaN(pid) ? null : pid;
+  } catch {
+    return null;
+  }
+}
+
+function isPidRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isSessionRunning(sessionId: string): boolean {
+  try {
+    const pid = readLockPid(sessionId);
+    if (!pid) {
+      clearLock(sessionId);
+      return false;
     }
+
+    if (isPidRunning(pid)) {
+      return true;
+    }
+
+    clearLock(sessionId);
   } catch { /* ignore */ }
   return false;
 }
 
-function writeLock(pid: number): void {
-  try { fs.writeFileSync(LOCK_FILE, String(pid)); } catch { /* ignore */ }
+function writeLock(sessionId: string, pid: number): void {
+  try { fs.writeFileSync(lockFileFor(sessionId), String(pid)); } catch { /* ignore */ }
 }
 
-function clearLock(): void {
-  try { if (fs.existsSync(LOCK_FILE)) fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
+function clearLock(sessionId: string): void {
+  try {
+    const lockFile = lockFileFor(sessionId);
+    if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+  } catch { /* ignore */ }
+}
+
+async function terminateLockedBrowser(sessionId: string, reason: string): Promise<void> {
+  const pid = readLockPid(sessionId);
+  if (!pid) {
+    clearLock(sessionId);
+    return;
+  }
+
+  if (pid === process.pid) {
+    clearLock(sessionId);
+    return;
+  }
+
+  if (isPidRunning(pid)) {
+    console.log(`[${sessionId}] ${reason}. Stopping orphaned browser PID ${pid}...`);
+    try {
+      process.kill(pid);
+    } catch {
+      // Browser may already be exiting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  clearLock(sessionId);
 }
 
 interface ActiveSession {
@@ -59,15 +113,28 @@ class WppConnectManager {
   private qrCodes: Map<string, string> = new Map();
   private pausedConversations: Map<string, PausedConversation> = new Map();
   private autoReconnectDone = false;
+  private reconnectPromises: Map<string, Promise<void>> = new Map();
+  // Sessions that WhatsApp has reported as Unpaired - stop auto-reconnect
+  private blockedSessions: Set<string> = new Set();
 
   /**
    * Auto-reconnect all sessions that were previously connected.
    * Called once on first API access.
    */
   async autoReconnect(): Promise<void> {
-    // Completely disabled - connect manually via Sessions page
-    // This prevents zombie Chrome processes from hot-reloads
-    return;
+    if (this.autoReconnectDone) return;
+    this.autoReconnectDone = true;
+
+    const db = getDb();
+    const rows = db.prepare(
+      `SELECT id FROM sessions WHERE status IN ('connected', 'connecting', 'qr_ready') ORDER BY updated_at DESC`
+    ).all() as { id: string }[];
+
+    for (const row of rows) {
+      void this.reconnectSession(row.id).catch((error) => {
+        console.error(`[${row.id}] Auto-reconnect failed:`, error);
+      });
+    }
   }
 
   async createSession(
@@ -76,6 +143,9 @@ class WppConnectManager {
     deviceName?: string
   ): Promise<string> {
     const db = getDb();
+
+    // Unblock this session (user is explicitly creating it)
+    this.blockedSessions.delete(sessionId);
 
     db.prepare(
       `INSERT INTO sessions (id, name, status, device_name, created_at, updated_at)
@@ -97,10 +167,12 @@ class WppConnectManager {
     deviceName?: string
   ): Promise<void> {
     const db = getDb();
+    const userDataDir = browserDataDirFor(sessionId);
 
     try {
       this.updateSessionStatus(sessionId, 'connecting');
       console.log(`[${sessionId}] Starting WPPConnect browser...`);
+      fs.mkdirSync(userDataDir, { recursive: true });
 
       // Wrap create() with a timeout to avoid infinite hanging
       const createWithTimeout = (timeoutMs: number) => {
@@ -119,6 +191,9 @@ class WppConnectManager {
             disableWelcome: true,
             folderNameToken: TOKENS_PATH,
             updatesLog: false,
+            puppeteerOptions: {
+              userDataDir,
+            },
             browserArgs: [
               '--no-sandbox',
               '--disable-setuid-sandbox',
@@ -130,29 +205,42 @@ class WppConnectManager {
             catchQR: (
               base64Qr: string,
               _asciiQR: string,
-              attempts: number,
-              _urlCode: string | undefined
+              attempts: number
             ) => {
               console.log(`[${sessionId}] QR code generated (attempt ${attempts})`);
               this.qrCodes.set(sessionId, base64Qr);
               this.updateSessionStatus(sessionId, 'qr_ready');
             },
-            statusFind: (statusSession: string, _session: string) => {
+            statusFind: (statusSession: string) => {
               console.log(`[${sessionId}] Status: ${statusSession}`);
               if (
                 statusSession === 'isLogged' ||
-                statusSession === 'inChat' ||
                 statusSession === 'qrReadSuccess'
               ) {
                 this.updateSessionStatus(sessionId, 'connected');
                 this.qrCodes.delete(sessionId);
+              } else if (statusSession === 'inChat') {
+                // "inChat" can also appear before a QR is shown on unpaired sessions.
+                // Only treat it as connected when no QR is pending for this session.
+                if (!this.qrCodes.has(sessionId)) {
+                  this.updateSessionStatus(sessionId, 'connected');
+                }
+              } else if (statusSession === 'notLogged') {
+                this.updateSessionStatus(
+                  sessionId,
+                  this.qrCodes.has(sessionId) ? 'qr_ready' : 'connecting'
+                );
               } else if (
-                statusSession === 'notLogged' ||
                 statusSession === 'browserClose' ||
+                statusSession === 'disconnectedMobile' ||
                 statusSession === 'desconnectedMobile' ||
                 statusSession === 'deleteToken'
               ) {
                 this.updateSessionStatus(sessionId, 'disconnected');
+                // Block this session from being auto-reconnected again
+                this.blockedSessions.add(sessionId);
+                // Session was logged out from the phone - stop auto-reconnect loop
+                void this.disconnectSession(sessionId).catch(() => {});
               }
             },
           })
@@ -171,10 +259,10 @@ class WppConnectManager {
 
       console.log(`[${sessionId}] Browser started successfully.`);
 
-      // Write lock with browser PID to prevent duplicate browsers
+      // Write lock with browser PID for THIS session only
       try {
         const pid = await client.getPID();
-        if (pid) writeLock(pid);
+        if (pid) writeLock(sessionId, pid);
       } catch { /* ignore */ }
 
       this.sessions.set(sessionId, {
@@ -557,6 +645,11 @@ class WppConnectManager {
       (message.chatId as string) ||
       (message.from as string) || '';
 
+    // Ignore system chats (status broadcasts)
+    if (chatId === 'status@broadcast' || chatId.endsWith('@broadcast')) {
+      return;
+    }
+
     // First: check for any paused conversations waiting for a reply from this chat
     let resumedAny = false;
     for (const [key, paused] of this.pausedConversations.entries()) {
@@ -717,36 +810,60 @@ class WppConnectManager {
       throw new Error('Session not found');
     }
 
-    if (this.sessions.has(sessionId)) {
-      const activeSession = this.sessions.get(sessionId)!;
-      try {
-        const state = await activeSession.client.getConnectionState();
-        if (state === 'CONNECTED') {
-          this.updateSessionStatus(sessionId, 'connected');
-          return;
-        }
-      } catch {
-        // Client may be stale, reinitialize
-      }
-      this.sessions.delete(sessionId);
-    }
-
-    // Start client initialization in the background
-    this.initClient(sessionId, session.device_name as string).catch((error) => {
+    void this.reconnectSession(sessionId).catch((error) => {
       console.error(`[${sessionId}] Failed to reconnect client:`, error);
       this.updateSessionStatus(sessionId, 'failed');
     });
   }
 
   async reconnectSession(sessionId: string): Promise<void> {
-    // Don't reconnect if already connected
-    const existing = this.sessions.get(sessionId);
-    if (existing && existing.status === 'connected') return;
+    // Skip if this session is blocked (phone unpaired it)
+    if (this.blockedSessions.has(sessionId)) {
+      console.log(`[${sessionId}] Session is unpaired - skipping reconnect. Delete and recreate session to use again.`);
+      return;
+    }
 
-    // Clean up old client if any
+    const inFlight = this.reconnectPromises.get(sessionId);
+    if (inFlight) {
+      await inFlight;
+      return;
+    }
+
+    const reconnectPromise = this.performReconnectSession(sessionId);
+    this.reconnectPromises.set(sessionId, reconnectPromise);
+
+    try {
+      await reconnectPromise;
+    } finally {
+      this.reconnectPromises.delete(sessionId);
+    }
+  }
+
+  private async performReconnectSession(sessionId: string): Promise<void> {
+    const existing = this.sessions.get(sessionId);
     if (existing) {
       try {
-        // Try to get the browser PID and kill it
+        const state = await existing.client.getConnectionState();
+        if (state === 'CONNECTED') {
+          this.updateSessionStatus(sessionId, 'connected');
+          return;
+        }
+      } catch {
+        // Client handle is stale and needs a clean restart.
+      }
+    }
+
+    // If Fast Refresh or a server restart dropped our in-memory handle but left
+    // the headless browser alive, recover by stopping that orphaned browser first.
+    if (!existing && isSessionRunning(sessionId)) {
+      await terminateLockedBrowser(
+        sessionId,
+        'Recovering session after server reload'
+      );
+    }
+
+    if (existing) {
+      try {
         const pid = await existing.client.getPID();
         if (pid) {
           try { process.kill(pid); } catch { /* ignore */ }
@@ -754,6 +871,8 @@ class WppConnectManager {
       } catch { /* ignore */ }
       try { await existing.client.close(); } catch { /* ignore */ }
       this.sessions.delete(sessionId);
+      clearLock(sessionId);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     const db = getDb();
@@ -786,7 +905,7 @@ class WppConnectManager {
         // Ignore close errors
       }
       this.sessions.delete(sessionId);
-      clearLock();
+      clearLock(sessionId);
     }
     this.qrCodes.delete(sessionId);
     this.updateSessionStatus(sessionId, 'disconnected');
@@ -825,7 +944,8 @@ class WppConnectManager {
 
   getClient(sessionId: string): Whatsapp | null {
     const activeSession = this.sessions.get(sessionId);
-    return activeSession?.client || null;
+    if (!activeSession || activeSession.status !== 'connected') return null;
+    return activeSession.client;
   }
 
   getQrCode(sessionId: string): string | null {

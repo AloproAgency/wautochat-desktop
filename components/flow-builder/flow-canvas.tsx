@@ -39,7 +39,7 @@ import ActionNode from './nodes/action-node';
 import ConditionNode from './nodes/condition-node';
 import DelayNode from './nodes/delay-node';
 import LogicNode from './nodes/logic-node';
-import NodePalette, { paletteItems, triggerTypeMap, type PaletteItem } from './node-palette';
+import NodePalette, { triggerTypeMap, type PaletteItem } from './node-palette';
 import NodeConfigPanel from './node-config-panel';
 import {
   Save,
@@ -821,6 +821,7 @@ function FlowCanvasInner({
         {isMobile && showMobileConfig && selectedNode && (
           <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
             <NodeConfigPanel
+              key={selectedNode.id}
               node={selectedNode}
               onClose={() => {
                 setSelectedNode(null);
@@ -844,6 +845,7 @@ function FlowCanvasInner({
       {/* Right config panel - tablet & desktop only */}
       {!isMobile && selectedNode && (
         <NodeConfigPanel
+          key={selectedNode.id}
           node={selectedNode}
           onClose={() => setSelectedNode(null)}
           onUpdate={onUpdateNode}

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import NextImage from 'next/image';
 import type { Node } from 'reactflow';
 import type { FlowNodeData, FlowNodeType } from '@/lib/types';
 import {
   X, Trash2, Save, Copy, Check, Info, Plus, Minus,
-  MessageSquare, Type, Image, FileText, Headphones, Video, MapPin, Contact,
+  MessageSquare, Type, Image as ImageIcon, FileText, Headphones, Video, MapPin, Contact,
   Smile, List, BarChart3, LayoutGrid, SmilePlus, Forward, CheckCheck, Keyboard,
   Tag, TagsIcon, UserPlus, UserMinus, Ban, ShieldCheck, GitBranch, Timer,
   Variable, Globe, BrainCircuit, ExternalLink, CircleStop, Clock,
@@ -15,7 +16,7 @@ import {
 const nodeIconConfig: Record<string, { icon: React.ElementType; bg: string }> = {
   'trigger': { icon: MessageSquare, bg: '#22c55e' },
   'send-message': { icon: Type, bg: '#075E54' },
-  'send-image': { icon: Image, bg: '#075E54' },
+  'send-image': { icon: ImageIcon, bg: '#075E54' },
   'send-file': { icon: FileText, bg: '#075E54' },
   'send-audio': { icon: Headphones, bg: '#075E54' },
   'send-video': { icon: Video, bg: '#075E54' },
@@ -58,17 +59,11 @@ export default function NodeConfigPanel({
   onUpdate,
   onDelete,
 }: NodeConfigPanelProps) {
-  const [config, setConfig] = useState<Record<string, unknown>>({});
-  const [label, setLabel] = useState('');
+  const [config, setConfig] = useState<Record<string, unknown>>(
+    () => ({ ...(node?.data.config ?? {}) })
+  );
+  const [label, setLabel] = useState(() => node?.data.label ?? '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-
-  useEffect(() => {
-    if (node) {
-      setConfig({ ...node.data.config });
-      setLabel(node.data.label);
-      setShowDeleteConfirm(false);
-    }
-  }, [node]);
 
   const updateConfig = useCallback((key: string, value: unknown) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
@@ -523,8 +518,11 @@ interface ConfigProps {
 function TriggerConfig({ config, updateConfig }: ConfigProps) {
   const triggerType = (config.triggerType as string) || 'message_received';
   const [copied, setCopied] = useState(false);
+  const generatedWebhookPath = useState(
+    () => `/webhook/${Math.random().toString(36).slice(2, 10)}`
+  )[0];
 
-  const webhookPath = (config.path as string) || `/webhook/${Date.now().toString(36)}`;
+  const webhookPath = (config.path as string) || generatedWebhookPath;
 
   function copyWebhookPath() {
     navigator.clipboard.writeText(webhookPath);
@@ -838,10 +836,14 @@ function SendMediaConfig({ config, updateConfig, nodeType }: ConfigProps & { nod
 
       {url && (nodeType === 'send-image' || nodeType === 'send-sticker') && (
         <div className="rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
-          <img
+          <NextImage
             src={url}
             alt="Preview"
+            width={512}
+            height={128}
+            unoptimized
             className="w-full h-32 object-contain"
+            style={{ height: '8rem' }}
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
         </div>

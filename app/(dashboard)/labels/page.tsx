@@ -11,6 +11,7 @@ import {
   X,
   MessageSquare,
   User,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -158,6 +159,7 @@ export default function LabelsPage() {
   const activeSessionId = useActiveSession();
   const { labels, setLabels } = useLabelStore();
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingLabel, setEditingLabel] = useState<Label | null>(null);
@@ -190,6 +192,28 @@ export default function LabelsPage() {
       setLoading(false);
     }
   }, [activeSessionId, setLabels]);
+
+  const handleSyncLabels = useCallback(async () => {
+    if (!activeSessionId || syncing) return;
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/labels/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchLabels();
+      } else {
+        alert(data.error || 'Failed to sync labels. Make sure your WhatsApp session is connected.');
+      }
+    } catch (err) {
+      alert('Error syncing labels: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      setSyncing(false);
+    }
+  }, [activeSessionId, syncing, fetchLabels]);
 
   useEffect(() => {
     // Sync labels from WhatsApp first, then fetch from DB
@@ -322,16 +346,26 @@ export default function LabelsPage() {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-wa-text">Labels</h1>
           <p className="mt-1 text-sm text-wa-text-secondary">
             Organize your contacts and chats with labels
           </p>
         </div>
-        <Button icon={<Plus className="h-4 w-4" />} onClick={openCreateModal}>
-          Create Label
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            icon={<RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />}
+            onClick={handleSyncLabels}
+            disabled={syncing}
+          >
+            {syncing ? 'Syncing...' : 'Sync Labels'}
+          </Button>
+          <Button icon={<Plus className="h-4 w-4" />} onClick={openCreateModal}>
+            Create Label
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
