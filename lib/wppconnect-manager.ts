@@ -130,10 +130,18 @@ class WppConnectManager {
       `SELECT id FROM sessions WHERE status IN ('connected', 'connecting', 'qr_ready') ORDER BY updated_at DESC`
     ).all() as { id: string }[];
 
+    // Clean up orphaned browsers from previous dev server runs
+    // These are browsers that were opened by a prior Node.js process that's now dead
+    for (const row of rows) {
+      await terminateLockedBrowser(row.id, 'Cleaning up orphaned browser from previous run');
+    }
+
+    // Start sessions sequentially with 3s delay to avoid overload
     for (const row of rows) {
       void this.reconnectSession(row.id).catch((error) => {
         console.error(`[${row.id}] Auto-reconnect failed:`, error);
       });
+      await new Promise((r) => setTimeout(r, 3000));
     }
   }
 
@@ -226,10 +234,15 @@ class WppConnectManager {
                   this.updateSessionStatus(sessionId, 'connected');
                 }
               } else if (statusSession === 'notLogged') {
-                this.updateSessionStatus(
-                  sessionId,
-                  this.qrCodes.has(sessionId) ? 'qr_ready' : 'connecting'
-                );
+                // Only downgrade status if we're NOT already connected.
+                // WPPConnect sometimes emits notLogged spuriously after login.
+                const currentSession = this.sessions.get(sessionId);
+                if (!currentSession || currentSession.status !== 'connected') {
+                  this.updateSessionStatus(
+                    sessionId,
+                    this.qrCodes.has(sessionId) ? 'qr_ready' : 'connecting'
+                  );
+                }
               } else if (
                 statusSession === 'browserClose' ||
                 statusSession === 'disconnectedMobile' ||
@@ -312,6 +325,11 @@ class WppConnectManager {
       else if (ackValue === 3) status = 'read';
 
       db.prepare(`UPDATE messages SET status = ? WHERE wpp_id = ?`).run(status, wppId);
+
+      // Trigger "Message Read" flows when ack = 3 (read)
+      if (ackValue === 3) {
+        this.triggerFlowsByEvent(sessionId, 'message_read', ackData).catch(() => {});
+      }
     });
 
     client.onStateChange((state) => {
@@ -336,8 +354,16 @@ class WppConnectManager {
 
 
     client.onIncomingCall(async (call) => {
-      // Log incoming calls - can be extended with flow triggers
-      console.log(`[${sessionId}] Incoming call from:`, (call as unknown as Record<string, unknown>).peerJid);
+      const callData = call as unknown as Record<string, unknown>;
+      console.log(`[${sessionId}] Incoming call from:`, callData.peerJid);
+      const isVideo = !!callData.isVideo;
+      this.triggerFlowsByEvent(sessionId, 'incoming_call', callData, (config) => {
+        const callType = (config.callType as string) || 'any';
+        if (callType === 'any') return true;
+        if (callType === 'video') return isVideo;
+        if (callType === 'voice') return !isVideo;
+        return true;
+      }).catch(() => {});
     });
 
     client.onAddedToGroup(async (chat) => {
@@ -380,6 +406,9 @@ class WppConnectManager {
       } catch {
         // Profile pic may not be available
       }
+
+      // Trigger "Added to Group" flows
+      this.triggerFlowsByEvent(sessionId, 'added_to_group', chatData).catch(() => {});
     });
 
     client.onParticipantsChanged(async (participantChange) => {
@@ -399,6 +428,17 @@ class WppConnectManager {
         } catch {
           // Group may no longer be accessible
         }
+      }
+
+      // Trigger group_joined / group_left flows
+      const triggerType = data.action === 'add' ? 'group_joined' :
+                          data.action === 'remove' ? 'group_left' : null;
+      if (triggerType) {
+        this.triggerFlowsByEvent(sessionId, triggerType, data, (config) => {
+          const filterGroupId = (config.groupId as string) || '';
+          if (filterGroupId && filterGroupId !== groupId) return false;
+          return true;
+        }).catch(() => {});
       }
     });
 
@@ -423,6 +463,13 @@ class WppConnectManager {
            VALUES (?, ?, ?, ?, 'reaction', ?, ?, 0, datetime('now'), 'delivered', ?)`
         ).run(msgId, sessionId, chatRow.id, '', body, sender, parentMsgId);
       }
+
+      // Trigger reaction_received flows
+      this.triggerFlowsByEvent(sessionId, 'reaction_received', reactionData, (config) => {
+        const filterEmoji = (config.emoji as string) || '';
+        if (filterEmoji && filterEmoji !== body) return false;
+        return true;
+      }).catch(() => {});
     });
 
     client.onPollResponse(async (pollResponse) => {
@@ -444,7 +491,67 @@ class WppConnectManager {
            VALUES (?, ?, ?, ?, 'poll', ?, ?, 0, datetime('now'), 'delivered')`
         ).run(msgId, sessionId, chatRow.id, '', selectedOptions, sender);
       }
+
+      // Trigger poll_response flows
+      this.triggerFlowsByEvent(sessionId, 'poll_response', pollData).catch(() => {});
     });
+
+    // Message Edit trigger
+    try {
+      const clientAny = client as unknown as { onMessageEdit?: (cb: (m: unknown) => void) => void };
+      if (typeof clientAny.onMessageEdit === 'function') {
+        clientAny.onMessageEdit((edited: unknown) => {
+          const editData = edited as Record<string, unknown>;
+          this.triggerFlowsByEvent(sessionId, 'message_edited', editData).catch(() => {});
+        });
+      }
+    } catch { /* event not available in this version */ }
+
+    // Message Revoked/Deleted trigger
+    try {
+      const clientAny = client as unknown as { onRevokedMessage?: (cb: (m: unknown) => void) => void };
+      if (typeof clientAny.onRevokedMessage === 'function') {
+        clientAny.onRevokedMessage((revoked: unknown) => {
+          const revokedData = revoked as Record<string, unknown>;
+          this.triggerFlowsByEvent(sessionId, 'message_deleted', revokedData).catch(() => {});
+        });
+      }
+    } catch { /* event not available */ }
+
+    // Presence Changed trigger
+    try {
+      const clientAny = client as unknown as { onPresenceChanged?: (cb: (p: unknown) => void) => void };
+      if (typeof clientAny.onPresenceChanged === 'function') {
+        clientAny.onPresenceChanged((presence: unknown) => {
+          const pData = presence as Record<string, unknown>;
+          const state = (pData.isOnline as boolean) ? 'available' :
+                        (pData.isTyping as boolean) ? 'composing' :
+                        (pData.isRecording as boolean) ? 'recording' :
+                        (pData.state as string) || 'unavailable';
+          this.triggerFlowsByEvent(sessionId, 'presence_changed', pData, (config) => {
+            const filterState = (config.presenceState as string) || 'any';
+            if (filterState === 'any') return true;
+            return filterState === state;
+          }).catch(() => {});
+        });
+      }
+    } catch { /* event not available */ }
+
+    // Label Updated trigger
+    try {
+      const clientAny = client as unknown as { onUpdateLabel?: (cb: (l: unknown) => void) => void };
+      if (typeof clientAny.onUpdateLabel === 'function') {
+        clientAny.onUpdateLabel((labelUpdate: unknown) => {
+          const lData = labelUpdate as Record<string, unknown>;
+          const labelName = (lData.name as string) || '';
+          this.triggerFlowsByEvent(sessionId, 'label_updated', lData, (config) => {
+            const filterLabel = (config.labelName as string) || '';
+            if (!filterLabel) return true;
+            return filterLabel === labelName;
+          }).catch(() => {});
+        });
+      }
+    } catch { /* event not available */ }
   }
 
   private async handleIncomingMessage(
@@ -581,6 +688,7 @@ class WppConnectManager {
     ).run(msgId, fromMe ? 1 : 0, chatRow.id);
 
     // Ensure contact exists for non-group direct messages
+    let isNewContact = false;
     if (!isGroup && !fromMe) {
       const contactWppId = sender;
       const existing = db.prepare(
@@ -588,6 +696,7 @@ class WppConnectManager {
       ).get(sessionId, contactWppId) as { id: string; profile_pic_url?: string } | undefined;
 
       if (!existing) {
+        isNewContact = true;
         const contactId = uuidv4();
         db.prepare(
           `INSERT INTO contacts (id, session_id, wpp_id, name, push_name, phone, is_wa_contact, created_at)
@@ -608,6 +717,11 @@ class WppConnectManager {
           }
         });
       }
+    }
+
+    // Trigger "New Contact" flows when first message from unknown contact
+    if (isNewContact) {
+      this.triggerFlowsByEvent(sessionId, 'new_contact', message).catch(() => {});
     }
 
     // --- Trigger active flows ---
@@ -725,7 +839,7 @@ class WppConnectManager {
         if (!triggerNode) continue;
 
         const triggerType = (triggerNode.data.config?.triggerType as string) || 'message_received';
-        const shouldTrigger = this.checkTrigger(triggerType, triggerNode.data.config, body, msgType, isGroup);
+        const shouldTrigger = this.checkTrigger(triggerType, triggerNode.data.config, body, msgType, isGroup, message);
 
         if (shouldTrigger) {
           console.log(`[${sessionId}] Triggering flow "${flow.name}" (${triggerType})`);
@@ -738,29 +852,194 @@ class WppConnectManager {
     }
   }
 
+  /**
+   * Trigger flows for event-based triggers (not message-based).
+   * Used for: reaction, call, presence, edit, delete, poll, ack, label, group events.
+   */
+  private async triggerFlowsByEvent(
+    sessionId: string,
+    triggerType: string,
+    eventData: Record<string, unknown>,
+    matcher?: (config: Record<string, unknown>) => boolean
+  ): Promise<void> {
+    const db = getDb();
+    const session = this.getSession(sessionId);
+    if (!session) return;
+
+    const flowRows = db.prepare(
+      `SELECT * FROM flows WHERE session_id = ? AND is_active = 1`
+    ).all(sessionId) as Record<string, unknown>[];
+
+    for (const row of flowRows) {
+      try {
+        const flow: Flow = {
+          id: row.id as string,
+          sessionId: row.session_id as string,
+          name: row.name as string,
+          description: (row.description as string) || undefined,
+          isActive: true,
+          trigger: JSON.parse((row.trigger_config as string) || '{}'),
+          nodes: JSON.parse((row.nodes as string) || '[]'),
+          edges: JSON.parse((row.edges as string) || '[]'),
+          variables: JSON.parse((row.variables as string) || '{}'),
+          createdAt: row.created_at as string,
+          updatedAt: row.updated_at as string,
+        };
+
+        if (flow.nodes.length === 0) continue;
+        const triggerNode = flow.nodes.find((n) => n.data.type === 'trigger');
+        if (!triggerNode) continue;
+
+        const flowTriggerType = (triggerNode.data.config?.triggerType as string) || '';
+        if (flowTriggerType !== triggerType) continue;
+
+        // Optional custom matcher (ex: specific emoji, presence state)
+        if (matcher && !matcher(triggerNode.data.config || {})) continue;
+
+        console.log(`[${sessionId}] Triggering flow "${flow.name}" (${triggerType})`);
+        const log = await executeFlow(flow, eventData, session);
+        console.log(`[${sessionId}] Flow "${flow.name}" completed:`, log.length, 'steps');
+      } catch (err) {
+        console.error(`[${sessionId}] Error in event flow "${row.name}":`, err);
+      }
+    }
+  }
+
   private checkTrigger(
     triggerType: string,
     config: Record<string, unknown>,
     body: string,
     msgType: string,
-    isGroup: boolean
+    isGroup: boolean,
+    message?: Record<string, unknown>
   ): boolean {
+    const chatId =
+      (message?.chatId as Record<string, unknown>)?._serialized as string ||
+      (message?.chatId as string) ||
+      (message?.from as string) || '';
+    const caption = (message?.caption as string) || '';
+    const sender =
+      (message?.from as Record<string, unknown>)?._serialized as string ||
+      (message?.from as string) ||
+      (message?.author as string) || '';
+
+    // Advanced filters — applied to all message-based triggers
+    const applyCommonFilters = (): boolean => {
+      if (!message) return true;
+
+      // Legacy: ignore own messages
+      const ignoreOwn = (config?.ignoreOwnMessages as boolean) !== false;
+      if (ignoreOwn && message.fromMe) return false;
+
+      // Legacy: ignore forwarded
+      const ignoreForwarded = (config?.ignoreForwarded as boolean) || false;
+      if (ignoreForwarded && message.isForwarded) return false;
+
+      // ============ NEW FILTER SELECTOR LOGIC ============
+      const filters = (config?.filters as Record<string, unknown>) || {};
+
+      // 1. Keyword filter
+      const keywordFilter = (filters.keyword as Record<string, unknown>) || {};
+      if (keywordFilter.enabled === true) {
+        const words = ((keywordFilter.words as string) || '')
+          .split(/[,\n]/)
+          .map((w) => w.trim().toLowerCase())
+          .filter(Boolean);
+        if (words.length > 0) {
+          const searchText = (body + ' ' + caption).toLowerCase();
+          const mode = (keywordFilter.mode as string) || 'contains';
+          const matched = words.some((w) => {
+            if (mode === 'exact') return body.toLowerCase() === w;
+            if (mode === 'startsWith') return searchText.startsWith(w);
+            return searchText.includes(w);
+          });
+          if (!matched) return false;
+        }
+      }
+
+      // 2. Media type filter
+      const mediaTypeFilter = (filters.mediaType as string) || 'none';
+      if (mediaTypeFilter !== 'none') {
+        const mediaTypes = ['image', 'video', 'audio', 'ptt', 'document', 'sticker', 'location', 'contact', 'vcard', 'multi_vcard'];
+        const isMedia = mediaTypes.includes(msgType);
+        if (mediaTypeFilter === 'text_only' && isMedia) return false;
+        if (mediaTypeFilter === 'any_media' && !isMedia) return false;
+        if (mediaTypeFilter === 'image' && msgType !== 'image') return false;
+        if (mediaTypeFilter === 'video' && msgType !== 'video') return false;
+        if (mediaTypeFilter === 'audio' && !['audio', 'ptt'].includes(msgType)) return false;
+        if (mediaTypeFilter === 'document' && msgType !== 'document') return false;
+        if (mediaTypeFilter === 'sticker' && msgType !== 'sticker') return false;
+        if (mediaTypeFilter === 'location' && msgType !== 'location') return false;
+        if (mediaTypeFilter === 'contact' && !['contact', 'vcard', 'multi_vcard'].includes(msgType)) return false;
+      }
+
+      // 3. Message content filter
+      const contentFilter = (filters.content as Record<string, unknown>) || {};
+      if (contentFilter.enabled === true) {
+        const operator = (contentFilter.operator as string) || 'contains';
+        const value = (contentFilter.value as string) || '';
+        if (value) {
+          const lowerBody = body.toLowerCase();
+          const lowerValue = value.toLowerCase();
+          let matched = false;
+          switch (operator) {
+            case 'contains': matched = lowerBody.includes(lowerValue); break;
+            case 'equals': matched = lowerBody === lowerValue; break;
+            case 'startsWith': matched = lowerBody.startsWith(lowerValue); break;
+            case 'endsWith': matched = lowerBody.endsWith(lowerValue); break;
+            case 'regex': {
+              try { matched = new RegExp(value, 'i').test(body); } catch { matched = false; }
+              break;
+            }
+            case 'minLength': matched = body.length >= parseInt(value, 10); break;
+            case 'maxLength': matched = body.length <= parseInt(value, 10); break;
+          }
+          if (!matched) return false;
+        }
+      }
+
+      // 4. Sender filter
+      const senderFilter = (filters.sender as string) || '';
+      if (senderFilter) {
+        const expected = senderFilter.includes('@') ? senderFilter : `${senderFilter}@c.us`;
+        const senderPhone = sender.replace(/@.*$/, '');
+        const filterPhone = senderFilter.replace(/@.*$/, '');
+        if (sender !== expected && senderPhone !== filterPhone) return false;
+      }
+
+      // 5. Chat type filter
+      const chatTypeFilter = (filters.chatType as string) || 'all';
+      if (chatTypeFilter !== 'all') {
+        const isBroadcast = chatId.endsWith('@broadcast') || chatId === 'status@broadcast';
+        if (chatTypeFilter === 'private' && (isGroup || isBroadcast)) return false;
+        if (chatTypeFilter === 'group' && !isGroup) return false;
+        if (chatTypeFilter === 'broadcast' && !isBroadcast) return false;
+        if (chatTypeFilter === 'private_or_group' && isBroadcast) return false;
+      }
+
+      return true;
+    };
+
     switch (triggerType) {
       case 'message_received':
-        return true;
+        return applyCommonFilters();
 
       case 'keyword': {
+        if (!applyCommonFilters()) return false;
         const keywords = ((config?.keywords as string) || '').split(/[,\n]/).map((k) => k.trim().toLowerCase()).filter(Boolean);
         if (keywords.length === 0) return true;
-        const lowerBody = body.toLowerCase();
+        const matchLocation = (config?.matchLocation as string) || 'body';
+        const searchText =
+          matchLocation === 'caption' ? caption.toLowerCase() :
+          matchLocation === 'both' ? (body + ' ' + caption).toLowerCase() :
+          body.toLowerCase();
         const matchMode = (config?.matchMode as string) || 'contains';
-        if (matchMode === 'exact') {
-          return keywords.some((k) => lowerBody === k);
-        }
-        return keywords.some((k) => lowerBody.includes(k));
+        if (matchMode === 'exact') return keywords.some((k) => searchText === k);
+        return keywords.some((k) => searchText.includes(k));
       }
 
       case 'regex': {
+        if (!applyCommonFilters()) return false;
         const pattern = (config?.pattern as string) || '';
         if (!pattern) return false;
         try {
@@ -770,26 +1049,81 @@ class WppConnectManager {
         }
       }
 
-      case 'media_received': {
-        const allowedTypes = (config?.mediaTypes as string[]) || [];
-        if (allowedTypes.length === 0) return ['image', 'video', 'audio', 'document', 'sticker'].includes(msgType);
-        return allowedTypes.includes(msgType);
+      case 'direct_message':
+        return !isGroup && applyCommonFilters();
+
+      case 'group_message': {
+        if (!isGroup || !applyCommonFilters()) return false;
+        const filterGroupId = (config?.groupId as string) || '';
+        if (filterGroupId && chatId !== filterGroupId) return false;
+        return true;
       }
 
-      case 'group_message':
-        return isGroup;
-
       case 'contact_message': {
-        const contactId = (config?.contactId as string) || '';
-        if (!contactId) return !isGroup;
-        return !isGroup; // TODO: match specific contact
+        if (isGroup || !applyCommonFilters()) return false;
+        const phone = (config?.contactPhone as string) || (config?.contactId as string) || '';
+        if (!phone) return true;
+        const expectedWppId = phone.includes('@') ? phone : `${phone}@c.us`;
+        return chatId === expectedWppId;
       }
 
       case 'new_contact':
-        return false; // Handled separately
+        return false; // Handled by dedicated check in handleIncomingMessage
 
+      case 'media_received': {
+        if (!applyCommonFilters()) return false;
+        const allowedTypes = (config?.mediaTypes as string[]) || [];
+        const mediaTypes = ['image', 'video', 'audio', 'ptt', 'document'];
+        if (!mediaTypes.includes(msgType)) return false;
+        if (allowedTypes.length === 0 || allowedTypes.includes('any')) return true;
+        return allowedTypes.includes(msgType);
+      }
+
+      case 'sticker_received':
+        return msgType === 'sticker' && applyCommonFilters();
+
+      case 'location_received':
+        return msgType === 'location' && applyCommonFilters();
+
+      case 'contact_card_received':
+        return (msgType === 'vcard' || msgType === 'contact' || msgType === 'multi_vcard') && applyCommonFilters();
+
+      case 'link_received': {
+        if (!applyCommonFilters()) return false;
+        const urlRegex = /https?:\/\/[^\s]+|www\.[^\s]+/i;
+        return urlRegex.test(body);
+      }
+
+      case 'mention_received': {
+        if (!applyCommonFilters()) return false;
+        const mentionedIds = (message?.mentionedIds as string[]) || [];
+        if (mentionedIds.length === 0) return false;
+        const filterGroupId = (config?.groupId as string) || '';
+        if (filterGroupId && chatId !== filterGroupId) return false;
+        return true;
+      }
+
+      case 'reply_received': {
+        if (!applyCommonFilters()) return false;
+        const quoted = message?.quotedMsg || message?.quotedMsgId;
+        if (!quoted) return false;
+        const quotedData = quoted as Record<string, unknown>;
+        return !!(quotedData.fromMe);
+      }
+
+      // Events handled by dedicated event handlers, not onMessage
       case 'added_to_group':
-        return false; // Handled by onAddedToGroup event
+      case 'group_joined':
+      case 'group_left':
+      case 'reaction_received':
+      case 'message_edited':
+      case 'message_deleted':
+      case 'poll_response':
+      case 'message_read':
+      case 'incoming_call':
+      case 'presence_changed':
+      case 'label_updated':
+        return false;
 
       case 'webhook':
         return false; // Handled by webhook API route
@@ -944,7 +1278,10 @@ class WppConnectManager {
 
   getClient(sessionId: string): Whatsapp | null {
     const activeSession = this.sessions.get(sessionId);
-    if (!activeSession || activeSession.status !== 'connected') return null;
+    if (!activeSession) return null;
+    // Accept any status where the browser is alive (not failed/disconnected)
+    // The client might be 'connecting', 'qr_ready' or 'connected' - all are usable if in memory
+    if (activeSession.status === 'failed' || activeSession.status === 'disconnected') return null;
     return activeSession.client;
   }
 

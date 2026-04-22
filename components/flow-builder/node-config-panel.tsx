@@ -515,8 +515,64 @@ interface ConfigProps {
 
 // ---- Trigger Config ----
 
+// Trigger options grouped by category
+const triggerOptionsByCategory: Record<string, { value: string; label: string }[]> = {
+  message: [
+    { value: 'message_received', label: '💬 Any message' },
+    { value: 'direct_message', label: '👤 Direct (private) message' },
+    { value: 'group_message', label: '👥 Group message' },
+    { value: 'contact_message', label: '📞 Specific contact only' },
+    { value: 'new_contact', label: '🆕 New contact (first message)' },
+    { value: 'keyword', label: '🔑 Keyword match' },
+    { value: 'regex', label: '🧬 Regex pattern' },
+    { value: 'media_received', label: '📎 Media received (image/video/audio/doc)' },
+    { value: 'sticker_received', label: '😀 Sticker received' },
+    { value: 'location_received', label: '📍 Location received' },
+    { value: 'contact_card_received', label: '📇 Contact card received' },
+    { value: 'link_received', label: '🔗 Link/URL received' },
+    { value: 'mention_received', label: '@ Mention (@you)' },
+    { value: 'reply_received', label: '↩️ Reply to my message' },
+    { value: 'reaction_received', label: '❤️ Reaction received' },
+    { value: 'poll_response', label: '🗳️ Poll response' },
+    { value: 'message_edited', label: '✏️ Message edited' },
+    { value: 'message_deleted', label: '🗑️ Message deleted' },
+    { value: 'message_read', label: '👁️ My message read (blue ticks)' },
+  ],
+  presence: [
+    { value: 'presence_changed', label: '🟢 Any presence change' },
+  ],
+  group_event: [
+    { value: 'added_to_group', label: '➕ I was added to a group' },
+    { value: 'group_joined', label: '🎉 Someone joined a group' },
+    { value: 'group_left', label: '👋 Someone left a group' },
+    { value: 'label_updated', label: '🏷️ Label added/removed' },
+  ],
+  call: [
+    { value: 'incoming_call', label: '📞 Incoming call' },
+  ],
+  system: [
+    { value: 'webhook', label: '🪝 Webhook (external)' },
+  ],
+  schedule: [
+    { value: 'schedule', label: '⏰ Schedule (cron)' },
+  ],
+};
+
+const categoryLabels: Record<string, string> = {
+  message: '💬 Discussion',
+  presence: '🟢 Status',
+  group_event: '👥 Group Event',
+  call: '📞 Call',
+  system: '🪝 System',
+  schedule: '⏰ Schedule',
+};
+
 function TriggerConfig({ config, updateConfig }: ConfigProps) {
-  const triggerType = (config.triggerType as string) || 'message_received';
+  const triggerCategory = (config.triggerCategory as string) || 'message';
+  const availableOptions = triggerOptionsByCategory[triggerCategory] || triggerOptionsByCategory.message;
+  const defaultTriggerType = availableOptions[0]?.value || 'message_received';
+  const triggerType = (config.triggerType as string) || defaultTriggerType;
+
   const [copied, setCopied] = useState(false);
   const generatedWebhookPath = useState(
     () => `/webhook/${Math.random().toString(36).slice(2, 10)}`
@@ -532,24 +588,54 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
 
   return (
     <>
-      <Field label="Trigger Type">
+      {/* Category badge */}
+      <div className="flex items-center gap-2 p-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg">
+        <div className="text-sm font-semibold text-emerald-900">
+          {categoryLabels[triggerCategory] || '💬 Discussion'}
+        </div>
+        <div className="text-xs text-emerald-700">
+          {availableOptions.length} trigger{availableOptions.length > 1 ? 's' : ''}
+        </div>
+      </div>
+
+      <Field label="Trigger Type" hint="Choose the specific event inside this category">
         <SelectInput
-          value={triggerType}
+          value={availableOptions.some((o) => o.value === triggerType) ? triggerType : defaultTriggerType}
           onChange={(v) => updateConfig('triggerType', v)}
-          options={[
-            { value: 'message_received', label: 'Message Received' },
-            { value: 'keyword', label: 'Keyword Match' },
-            { value: 'regex', label: 'Regex Match' },
-            { value: 'media_received', label: 'Media Received' },
-            { value: 'new_contact', label: 'New Contact' },
-            { value: 'webhook', label: 'Webhook' },
-            { value: 'schedule', label: 'Schedule' },
-            { value: 'contact_message', label: 'Contact Message' },
-            { value: 'group_message', label: 'Group Message' },
-            { value: 'added_to_group', label: 'Added to Group' },
-          ]}
+          options={availableOptions}
         />
       </Field>
+
+      {/* Help text based on selected trigger */}
+      <div className="text-xs text-gray-500 bg-gray-50 rounded-md p-2.5 leading-relaxed">
+        {triggerType === 'message_received' && '💡 Will fire on EVERY message (text, media, etc). Use a filter below to narrow down.'}
+        {triggerType === 'keyword' && '💡 Fires when message contains your keywords. Case-insensitive. Great for FAQ bots.'}
+        {triggerType === 'regex' && '💡 Use regex for complex patterns: phone numbers, order IDs, dates...'}
+        {triggerType === 'direct_message' && '💡 Only private chats. Perfect for personal support or sales.'}
+        {triggerType === 'group_message' && '💡 Only group chats. Use with keyword for group-specific bots.'}
+        {triggerType === 'contact_message' && '💡 Fires only for ONE specific phone number. Ex: your VIP customer.'}
+        {triggerType === 'new_contact' && '💡 First-time message from an unknown contact. Great for welcome flows.'}
+        {triggerType === 'media_received' && '💡 Fires when media arrives. Filter specific types (image/video/doc) below.'}
+        {triggerType === 'sticker_received' && '💡 Fires when a sticker is received. Fun reply bots!'}
+        {triggerType === 'location_received' && '💡 Fires when a location pin is shared. Great for delivery/logistics.'}
+        {triggerType === 'contact_card_received' && '💡 Fires when someone shares a vCard contact.'}
+        {triggerType === 'link_received' && '💡 Detects any URL. Useful for link moderation or auto-preview.'}
+        {triggerType === 'mention_received' && '💡 Fires when someone tags @you in a group chat.'}
+        {triggerType === 'reply_received' && '💡 Fires when someone replies to YOUR message. Great for threaded conversations.'}
+        {triggerType === 'reaction_received' && '💡 Fires when ❤️ 👍 etc. is added. Use for engagement stats.'}
+        {triggerType === 'poll_response' && '💡 Fires when someone votes on a poll you sent.'}
+        {triggerType === 'message_edited' && '💡 Fires when a contact edits their message. Useful for compliance.'}
+        {triggerType === 'message_deleted' && '💡 Fires when a message is deleted for everyone.'}
+        {triggerType === 'message_read' && '💡 Fires when your sent message gets the blue ticks (read).'}
+        {triggerType === 'added_to_group' && '💡 Fires when you are added to a NEW group. Auto-greet members!'}
+        {triggerType === 'group_joined' && '💡 Fires when a new person joins a group you are in.'}
+        {triggerType === 'group_left' && '💡 Fires when someone leaves a group.'}
+        {triggerType === 'incoming_call' && '💡 Fires when someone calls you. You can auto-decline or send a message.'}
+        {triggerType === 'presence_changed' && '💡 Fires when a contact comes online, starts typing, etc.'}
+        {triggerType === 'label_updated' && '💡 Fires when a label is added/removed from a chat. React to CRM changes.'}
+        {triggerType === 'webhook' && '💡 Your external system can POST to the URL below to trigger this flow.'}
+        {triggerType === 'schedule' && '💡 Run flow at fixed times: daily reminders, weekly reports, etc.'}
+      </div>
 
       {triggerType === 'keyword' && (
         <>
@@ -653,19 +739,325 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
         </Field>
       )}
 
+      {triggerType === 'contact_message' && (
+        <Field label="Contact Phone Number" hint="International format, no + or spaces (ex: 22991234567)">
+          <TextInput
+            value={(config.contactPhone as string) || ''}
+            onChange={(v) => updateConfig('contactPhone', v)}
+            placeholder="22991234567"
+          />
+        </Field>
+      )}
+
+      {triggerType === 'keyword' && (
+        <Field label="Match location">
+          <SelectInput
+            value={(config.matchLocation as string) || 'body'}
+            onChange={(v) => updateConfig('matchLocation', v)}
+            options={[
+              { value: 'body', label: 'In message body' },
+              { value: 'caption', label: 'In media caption' },
+              { value: 'both', label: 'In body or caption' },
+            ]}
+          />
+        </Field>
+      )}
+
+      {triggerType === 'reaction_received' && (
+        <Field label="Specific Emoji (optional)" hint="Leave empty to match ANY reaction">
+          <TextInput
+            value={(config.emoji as string) || ''}
+            onChange={(v) => updateConfig('emoji', v)}
+            placeholder="❤️"
+          />
+        </Field>
+      )}
+
+      {triggerType === 'incoming_call' && (
+        <Field label="Call Type">
+          <SelectInput
+            value={(config.callType as string) || 'any'}
+            onChange={(v) => updateConfig('callType', v)}
+            options={[
+              { value: 'any', label: 'Any call (voice or video)' },
+              { value: 'voice', label: 'Voice only' },
+              { value: 'video', label: 'Video only' },
+            ]}
+          />
+        </Field>
+      )}
+
+      {triggerType === 'presence_changed' && (
+        <Field label="Presence State">
+          <SelectInput
+            value={(config.presenceState as string) || 'any'}
+            onChange={(v) => updateConfig('presenceState', v)}
+            options={[
+              { value: 'any', label: 'Any change' },
+              { value: 'available', label: 'Online' },
+              { value: 'unavailable', label: 'Offline' },
+              { value: 'composing', label: 'Typing' },
+              { value: 'recording', label: 'Recording audio' },
+            ]}
+          />
+        </Field>
+      )}
+
+      {triggerType === 'label_updated' && (
+        <Field label="Label Name (optional)" hint="Leave empty to match ANY label change">
+          <TextInput
+            value={(config.labelName as string) || ''}
+            onChange={(v) => updateConfig('labelName', v)}
+            placeholder="Important"
+          />
+        </Field>
+      )}
+
+      {(triggerType === 'group_message' ||
+        triggerType === 'group_joined' ||
+        triggerType === 'group_left' ||
+        triggerType === 'mention_received') && (
+        <Field label="Group ID (optional)" hint="Leave empty to match ALL groups. Format: 12345@g.us">
+          <TextInput
+            value={(config.groupId as string) || ''}
+            onChange={(v) => updateConfig('groupId', v)}
+            placeholder="120363xxx@g.us"
+          />
+        </Field>
+      )}
+
+      {/* Advanced filters selector — for all message-based triggers */}
+      {[
+        'message_received',
+        'keyword',
+        'regex',
+        'media_received',
+        'sticker_received',
+        'location_received',
+        'contact_card_received',
+        'link_received',
+        'direct_message',
+        'group_message',
+        'contact_message',
+        'new_contact',
+      ].includes(triggerType) && (
+        <TriggerFilters config={config} updateConfig={updateConfig} />
+      )}
+    </>
+  );
+}
+
+// ---- Filter Selector Component ----
+
+function TriggerFilters({ config, updateConfig }: ConfigProps) {
+  const filters = (config.filters as Record<string, unknown>) || {};
+
+  const updateFilter = (key: string, value: unknown) => {
+    updateConfig('filters', { ...filters, [key]: value });
+  };
+
+  const keywordFilter = (filters.keyword as Record<string, unknown>) || {};
+  const mediaFilter = (filters.mediaType as string) || 'none';
+  const contentFilter = (filters.content as Record<string, unknown>) || {};
+  const senderFilter = (filters.sender as string) || '';
+  const chatTypeFilter = (filters.chatType as string) || 'all';
+
+  const keywordEnabled = keywordFilter.enabled === true;
+  const mediaEnabled = mediaFilter !== 'none';
+  const contentEnabled = contentFilter.enabled === true;
+  const senderEnabled = senderFilter.length > 0;
+  const chatTypeEnabled = chatTypeFilter !== 'all';
+
+  const activeFiltersCount =
+    (keywordEnabled ? 1 : 0) +
+    (mediaEnabled ? 1 : 0) +
+    (contentEnabled ? 1 : 0) +
+    (senderEnabled ? 1 : 0) +
+    (chatTypeEnabled ? 1 : 0);
+
+  return (
+    <>
       <div className="w-full h-px bg-gray-100" />
 
-      <Field label="Filter: Group Only">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium text-gray-900">🎯 Filters</div>
+          <div className="text-xs text-gray-500 mt-0.5">Narrow down when this trigger fires</div>
+        </div>
+        {activeFiltersCount > 0 && (
+          <span className="px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 rounded-full">
+            {activeFiltersCount} active
+          </span>
+        )}
+      </div>
+
+      {/* 1. Keyword Filter */}
+      <div className="rounded-lg border border-gray-200 overflow-hidden">
+        <label className="flex items-center gap-2.5 p-3 cursor-pointer hover:bg-gray-50">
+          <input
+            type="checkbox"
+            checked={keywordEnabled}
+            onChange={(e) => updateFilter('keyword', { ...keywordFilter, enabled: e.target.checked })}
+            className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
+          />
+          <div className="flex-1">
+            <div className="text-sm font-medium text-gray-900">🔑 Keywords filter</div>
+            <div className="text-xs text-gray-500">Only fire when message contains specific words</div>
+          </div>
+        </label>
+        {keywordEnabled && (
+          <div className="p-3 border-t border-gray-200 bg-gray-50 space-y-2">
+            <textarea
+              value={(keywordFilter.words as string) || ''}
+              onChange={(e) => updateFilter('keyword', { ...keywordFilter, words: e.target.value })}
+              placeholder={"hello\norder\nhelp"}
+              rows={3}
+              className="w-full px-2.5 py-2 text-xs rounded-md border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 resize-none font-mono"
+            />
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-600">Mode:</span>
+              <SegmentedControl
+                value={(keywordFilter.mode as string) || 'contains'}
+                onChange={(v) => updateFilter('keyword', { ...keywordFilter, mode: v })}
+                options={[
+                  { value: 'contains', label: 'Contains' },
+                  { value: 'exact', label: 'Exact' },
+                  { value: 'startsWith', label: 'Starts with' },
+                ]}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 2. Media Type Filter */}
+      <div className="rounded-lg border border-gray-200 overflow-hidden">
+        <div className="p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <div className="text-sm font-medium text-gray-900">📎 Media type filter</div>
+              <div className="text-xs text-gray-500">Only fire for specific media types</div>
+            </div>
+          </div>
+          <SelectInput
+            value={mediaFilter}
+            onChange={(v) => updateFilter('mediaType', v)}
+            options={[
+              { value: 'none', label: 'No filter (any type)' },
+              { value: 'text_only', label: 'Text messages only' },
+              { value: 'any_media', label: 'Any media (image/video/audio/doc)' },
+              { value: 'image', label: '🖼️ Images only' },
+              { value: 'video', label: '🎬 Videos only' },
+              { value: 'audio', label: '🎵 Audio/voice only' },
+              { value: 'document', label: '📄 Documents only' },
+              { value: 'sticker', label: '😀 Stickers only' },
+              { value: 'location', label: '📍 Location only' },
+              { value: 'contact', label: '📇 Contact cards only' },
+            ]}
+          />
+        </div>
+      </div>
+
+      {/* 3. Message Content Filter */}
+      <div className="rounded-lg border border-gray-200 overflow-hidden">
+        <label className="flex items-center gap-2.5 p-3 cursor-pointer hover:bg-gray-50">
+          <input
+            type="checkbox"
+            checked={contentEnabled}
+            onChange={(e) => updateFilter('content', { ...contentFilter, enabled: e.target.checked })}
+            className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
+          />
+          <div className="flex-1">
+            <div className="text-sm font-medium text-gray-900">📝 Message content filter</div>
+            <div className="text-xs text-gray-500">Match exact content, length, or regex pattern</div>
+          </div>
+        </label>
+        {contentEnabled && (
+          <div className="p-3 border-t border-gray-200 bg-gray-50 space-y-2">
+            <SelectInput
+              value={(contentFilter.operator as string) || 'contains'}
+              onChange={(v) => updateFilter('content', { ...contentFilter, operator: v })}
+              options={[
+                { value: 'contains', label: 'Contains text' },
+                { value: 'equals', label: 'Equals exactly' },
+                { value: 'startsWith', label: 'Starts with' },
+                { value: 'endsWith', label: 'Ends with' },
+                { value: 'regex', label: 'Matches regex' },
+                { value: 'minLength', label: 'Minimum length' },
+                { value: 'maxLength', label: 'Maximum length' },
+              ]}
+            />
+            <TextInput
+              value={(contentFilter.value as string) || ''}
+              onChange={(v) => updateFilter('content', { ...contentFilter, value: v })}
+              placeholder={
+                ((contentFilter.operator as string) === 'minLength' || (contentFilter.operator as string) === 'maxLength')
+                  ? '100'
+                  : 'Value to match...'
+              }
+            />
+          </div>
+        )}
+      </div>
+
+      {/* 4. Sender Filter */}
+      <div className="rounded-lg border border-gray-200 overflow-hidden">
+        <div className="p-3">
+          <div className="mb-2">
+            <div className="text-sm font-medium text-gray-900">👤 Sender filter</div>
+            <div className="text-xs text-gray-500">Only fire for a specific phone number (empty = all senders)</div>
+          </div>
+          <TextInput
+            value={senderFilter}
+            onChange={(v) => updateFilter('sender', v)}
+            placeholder="22991234567 (no + or spaces)"
+          />
+        </div>
+      </div>
+
+      {/* 5. Chat Type Filter */}
+      <div className="rounded-lg border border-gray-200 overflow-hidden">
+        <div className="p-3">
+          <div className="mb-2">
+            <div className="text-sm font-medium text-gray-900">💬 Chat type filter</div>
+            <div className="text-xs text-gray-500">Where this trigger should listen</div>
+          </div>
+          <SelectInput
+            value={chatTypeFilter}
+            onChange={(v) => updateFilter('chatType', v)}
+            options={[
+              { value: 'all', label: 'All chats (no filter)' },
+              { value: 'private', label: '👤 Private messages only' },
+              { value: 'group', label: '👥 Group chats only' },
+              { value: 'broadcast', label: '📢 Broadcast lists only' },
+              { value: 'private_or_group', label: 'Private + Groups (exclude broadcasts)' },
+            ]}
+          />
+        </div>
+      </div>
+
+      {/* Advanced toggles (existing) */}
+      <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+        <div className="text-sm font-medium text-gray-900">⚙️ Advanced options</div>
         <label className="flex items-center gap-2.5 text-xs text-gray-700 cursor-pointer">
           <input
             type="checkbox"
-            checked={(config.groupOnly as boolean) || false}
-            onChange={(e) => updateConfig('groupOnly', e.target.checked)}
+            checked={(config.ignoreOwnMessages as boolean) !== false}
+            onChange={(e) => updateConfig('ignoreOwnMessages', e.target.checked)}
             className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
           />
-          Only trigger for group messages
+          Ignore messages I send myself
         </label>
-      </Field>
+        <label className="flex items-center gap-2.5 text-xs text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={(config.ignoreForwarded as boolean) || false}
+            onChange={(e) => updateConfig('ignoreForwarded', e.target.checked)}
+            className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
+          />
+          Ignore forwarded messages
+        </label>
+      </div>
     </>
   );
 }

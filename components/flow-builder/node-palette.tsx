@@ -40,6 +40,17 @@ import {
   CircleStop,
   Search,
   X,
+  PhoneIncoming,
+  Heart,
+  Edit,
+  Trash2,
+  Vote,
+  Eye,
+  Link,
+  Hash,
+  FileX,
+  AtSign,
+  Wifi,
 } from 'lucide-react';
 import type { FlowNodeType } from '@/lib/types';
 
@@ -50,20 +61,17 @@ interface PaletteItem {
   icon: React.ElementType;
   category: 'Triggers' | 'Messages' | 'Actions' | 'Logic';
   nodeCategory: string;
+  triggerCategory?: string; // message | presence | group_event | call | system | schedule
 }
 
 const paletteItems: PaletteItem[] = [
-  // Triggers
-  { type: 'trigger', label: 'Message Received', description: 'Triggers when any message arrives', icon: MessageSquare, category: 'Triggers', nodeCategory: 'trigger' },
-  { type: 'trigger', label: 'Keyword Match', description: 'Triggers on specific keywords', icon: Key, category: 'Triggers', nodeCategory: 'trigger' },
-  { type: 'trigger', label: 'Regex Match', description: 'Triggers on pattern match', icon: Regex, category: 'Triggers', nodeCategory: 'trigger' },
-  { type: 'trigger', label: 'Media Received', description: 'Triggers on image, video, or audio', icon: Image, category: 'Triggers', nodeCategory: 'trigger' },
-  { type: 'trigger', label: 'New Contact', description: 'Triggers when a new contact messages', icon: UserPlus, category: 'Triggers', nodeCategory: 'trigger' },
-  { type: 'trigger', label: 'Contact Message', description: 'Triggers for a specific contact', icon: UserCheck, category: 'Triggers', nodeCategory: 'trigger' },
-  { type: 'trigger', label: 'Group Message', description: 'Triggers on group chat messages', icon: Users, category: 'Triggers', nodeCategory: 'trigger' },
-  { type: 'trigger', label: 'Added to Group', description: 'Triggers when added to a group', icon: UserPlus, category: 'Triggers', nodeCategory: 'trigger' },
-  { type: 'trigger', label: 'Webhook', description: 'Triggers from an external webhook', icon: Webhook, category: 'Triggers', nodeCategory: 'trigger' },
-  { type: 'trigger', label: 'Schedule', description: 'Triggers on a time schedule', icon: Clock, category: 'Triggers', nodeCategory: 'trigger' },
+  // 🧩 Grouped Triggers (one node per category)
+  { type: 'trigger', label: '💬 Discussion', description: 'Any message: private, group, broadcast, media, keyword, regex…', icon: MessageSquare, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'message' },
+  { type: 'trigger', label: '🟢 Status', description: 'Contact presence: online, offline, typing, recording…', icon: Wifi, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'presence' },
+  { type: 'trigger', label: '👥 Group Event', description: 'Added to group, participant joined/left, label updated…', icon: Users, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'group_event' },
+  { type: 'trigger', label: '📞 Call', description: 'Incoming, outgoing, or missed call (voice/video)', icon: PhoneIncoming, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'call' },
+  { type: 'trigger', label: '🪝 Webhook', description: 'Triggered by an external system calling your webhook URL', icon: Webhook, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'system' },
+  { type: 'trigger', label: '⏰ Schedule', description: 'Runs at specific times (cron: daily, weekly, hourly…)', icon: Clock, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'schedule' },
   // Messages
   { type: 'send-message', label: 'Send Text', description: 'Send a text message', icon: Type, category: 'Messages', nodeCategory: 'message' },
   { type: 'send-image', label: 'Send Image', description: 'Send an image with caption', icon: Image, category: 'Messages', nodeCategory: 'message' },
@@ -98,17 +106,50 @@ const paletteItems: PaletteItem[] = [
   { type: 'end', label: 'End', description: 'End the flow execution', icon: CircleStop, category: 'Logic', nodeCategory: 'logic' },
 ];
 
+// Maps node palette labels to default trigger types for each category
 const triggerTypeMap: Record<string, string> = {
-  'Message Received': 'message_received',
-  'Keyword Match': 'keyword',
-  'Regex Match': 'regex',
-  'Media Received': 'media_received',
-  'New Contact': 'new_contact',
-  'Contact Message': 'contact_message',
-  'Group Message': 'group_message',
-  'Added to Group': 'added_to_group',
-  'Webhook': 'webhook',
-  'Schedule': 'schedule',
+  '💬 Discussion': 'message_received',
+  '🟢 Status': 'presence_changed',
+  '👥 Group Event': 'added_to_group',
+  '📞 Call': 'incoming_call',
+  '🪝 Webhook': 'webhook',
+  '⏰ Schedule': 'schedule',
+};
+
+// Maps each trigger type to its category (used to know which dropdown to show)
+export const triggerCategoryMap: Record<string, string> = {
+  // Discussion
+  message_received: 'message',
+  keyword: 'message',
+  regex: 'message',
+  direct_message: 'message',
+  group_message: 'message',
+  contact_message: 'message',
+  new_contact: 'message',
+  media_received: 'message',
+  sticker_received: 'message',
+  location_received: 'message',
+  contact_card_received: 'message',
+  link_received: 'message',
+  mention_received: 'message',
+  reply_received: 'message',
+  reaction_received: 'message',
+  poll_response: 'message',
+  message_edited: 'message',
+  message_deleted: 'message',
+  message_read: 'message',
+  // Presence
+  presence_changed: 'presence',
+  // Group events
+  added_to_group: 'group_event',
+  group_joined: 'group_event',
+  group_left: 'group_event',
+  label_updated: 'group_event',
+  // Call
+  incoming_call: 'call',
+  // System
+  webhook: 'system',
+  schedule: 'schedule',
 };
 
 type TabCategory = 'All' | 'Triggers' | 'Messages' | 'Actions' | 'Logic';
@@ -158,6 +199,7 @@ export default function NodePalette({ mode = 'sidebar', onClose, onItemSelect }:
       nodeCategory: item.nodeCategory,
       label: item.label,
       triggerType: triggerTypeMap[item.label] || undefined,
+      triggerCategory: item.triggerCategory || undefined,
     };
     e.dataTransfer.setData('application/reactflow', JSON.stringify(nodeData));
     e.dataTransfer.effectAllowed = 'move';
