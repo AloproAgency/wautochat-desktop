@@ -823,18 +823,96 @@ function SendMediaConfig({ config, updateConfig, nodeType }: ConfigProps & { nod
     'send-file': 'pdf',
     'send-sticker': 'webp',
   };
+  const acceptMap: Record<string, string> = {
+    'send-image': 'image/*',
+    'send-video': 'video/*',
+    'send-audio': 'audio/*',
+    'send-sticker': 'image/webp,image/png',
+    'send-file': '*/*',
+  };
   const ext = fileExts[nodeType] || 'file';
   const url = (config.url as string) || '';
+  const sourceMode = (config.sourceMode as string) || 'url';
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function handleFileUpload(file: File) {
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/uploads', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setUploadError(data.error || 'Upload failed');
+        return;
+      }
+      // Build absolute URL for wppconnect (needs http(s)://...)
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      updateConfig('url', `${origin}${data.data.url}`);
+      updateConfig('uploadedFileName', data.data.filename);
+      if (nodeType === 'send-file' && !config.fileName) {
+        updateConfig('fileName', data.data.filename);
+      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <>
-      <Field label={`${mediaLabel} URL`}>
-        <TextInput
-          value={url}
-          onChange={(v) => updateConfig('url', v)}
-          placeholder={`https://example.com/file.${ext}`}
+      <Field label={`${mediaLabel} Source`}>
+        <SegmentedControl
+          value={sourceMode}
+          onChange={(v) => updateConfig('sourceMode', v)}
+          options={[
+            { value: 'url', label: 'URL' },
+            { value: 'upload', label: 'Upload' },
+          ]}
         />
       </Field>
+
+      {sourceMode === 'url' ? (
+        <Field label={`${mediaLabel} URL`}>
+          <TextInput
+            value={url}
+            onChange={(v) => updateConfig('url', v)}
+            placeholder={`https://example.com/file.${ext}`}
+          />
+        </Field>
+      ) : (
+        <Field label={`Upload ${mediaLabel}`} hint="Max 50 MB">
+          <div className="space-y-2">
+            <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-emerald-400 cursor-pointer transition-colors">
+              <input
+                type="file"
+                accept={acceptMap[nodeType] || '*/*'}
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileUpload(file);
+                }}
+                disabled={uploading}
+              />
+              <span className="text-xs font-medium text-gray-600">
+                {uploading ? 'Uploading...' : url ? 'Replace file' : 'Choose a file'}
+              </span>
+            </label>
+            {url && (
+              <p className="text-xs text-gray-500 truncate" title={url}>
+                {(config.uploadedFileName as string) || url.split('/').pop()}
+              </p>
+            )}
+            {uploadError && (
+              <p className="text-xs text-red-500">{uploadError}</p>
+            )}
+          </div>
+        </Field>
+      )}
 
       {url && (nodeType === 'send-image' || nodeType === 'send-sticker') && (
         <div className="rounded-lg border border-gray-200 overflow-hidden bg-gray-50">

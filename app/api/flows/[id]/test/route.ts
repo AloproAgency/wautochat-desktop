@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/db';
 import flowExecutionBus from '@/lib/flow-execution-bus';
+import { humanizeError } from '@/lib/flow-engine';
 import type {
   Flow,
   FlowNodeSerialized,
@@ -119,13 +120,23 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Test responses can be plain strings or structured media
+export type TestResponse =
+  | string
+  | {
+      type: 'image' | 'video' | 'audio' | 'file' | 'sticker';
+      url: string;
+      caption?: string;
+      fileName?: string;
+    };
+
 // Walk the flow graph collecting responses (no real client needed)
 async function walkFlow(
   nodeId: string,
   nodes: FlowNodeSerialized[],
   edges: FlowEdgeSerialized[],
   ctx: TestContext,
-  responses: string[],
+  responses: TestResponse[],
   visited: Set<string>,
   flowId: string,
   executionId: string
@@ -165,26 +176,44 @@ async function walkFlow(
 
       case 'send-image': {
         const caption = interpolateTestVariables((config.caption as string) || '', ctx);
-        const url = (config.url as string) || (config.imageUrl as string) || 'image';
-        responses.push(caption ? `[Image: ${caption}]` : `[Image: ${url}]`);
+        const url = (config.url as string) || (config.imageUrl as string) || '';
+        if (url) {
+          responses.push({ type: 'image', url, caption: caption || undefined });
+        } else {
+          responses.push(caption ? `[Image: ${caption}]` : '[Image: no url]');
+        }
         break;
       }
 
       case 'send-video': {
         const caption = interpolateTestVariables((config.caption as string) || '', ctx);
-        const url = (config.url as string) || (config.videoUrl as string) || 'video';
-        responses.push(caption ? `[Video: ${caption}]` : `[Video: ${url}]`);
+        const url = (config.url as string) || (config.videoUrl as string) || '';
+        if (url) {
+          responses.push({ type: 'video', url, caption: caption || undefined });
+        } else {
+          responses.push(caption ? `[Video: ${caption}]` : '[Video: no url]');
+        }
         break;
       }
 
       case 'send-audio': {
-        responses.push('[Audio message]');
+        const url = (config.url as string) || '';
+        if (url) {
+          responses.push({ type: 'audio', url });
+        } else {
+          responses.push('[Audio message]');
+        }
         break;
       }
 
       case 'send-file': {
         const fileName = (config.fileName as string) || (config.name as string) || 'file';
-        responses.push(`[File: ${fileName}]`);
+        const url = (config.url as string) || '';
+        if (url) {
+          responses.push({ type: 'file', url, fileName });
+        } else {
+          responses.push(`[File: ${fileName}]`);
+        }
         break;
       }
 
@@ -201,7 +230,12 @@ async function walkFlow(
       }
 
       case 'send-sticker': {
-        responses.push('[Sticker]');
+        const url = (config.url as string) || '';
+        if (url) {
+          responses.push({ type: 'sticker', url });
+        } else {
+          responses.push('[Sticker]');
+        }
         break;
       }
 
@@ -429,7 +463,14 @@ async function walkFlow(
       nodeType: node.data.type,
       nodeLabel: node.data.label,
       timestamp: new Date().toISOString(),
-      data: { status: 'error', error: error instanceof Error ? error.message : String(error), durationMs: Date.now() - startTime },
+      data: {
+        status: 'error',
+        error: humanizeError(
+          error instanceof Error ? error.message : String(error),
+          node.data.type
+        ),
+        durationMs: Date.now() - startTime,
+      },
     });
 
     // Continue to next nodes even on error
@@ -549,7 +590,7 @@ export async function POST(
 
     const flow = parseFlowRow(row);
     const executionId = randomUUID();
-    const responses: string[] = [];
+    const responses: TestResponse[] = [];
 
     // Check if there's a paused conversation waiting for a reply
     const pausedState = pausedStates.get(id);

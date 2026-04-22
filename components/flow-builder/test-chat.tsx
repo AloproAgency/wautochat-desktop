@@ -19,12 +19,20 @@ interface TestChatProps {
   sessionId: string;
 }
 
+type MediaKind = 'image' | 'video' | 'audio' | 'file' | 'sticker';
+
 interface ChatMessage {
   id: string;
   text: string;
   fromMe: boolean;
   timestamp: Date;
   status: 'sent' | 'delivered' | 'read';
+  media?: {
+    type: MediaKind;
+    url: string;
+    caption?: string;
+    fileName?: string;
+  };
 }
 
 function formatTime(date: Date): string {
@@ -145,16 +153,41 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
       setIsTyping(false);
 
       if (json.success) {
-        // Add bot text responses
+        // Add bot text responses (strings) and structured media (objects)
         if (json.data?.responses?.length > 0) {
+          type ApiResponse = string | {
+            type: MediaKind;
+            url: string;
+            caption?: string;
+            fileName?: string;
+          };
           const botMessages: ChatMessage[] = json.data.responses.map(
-            (r: string, i: number) => ({
-              id: `bot_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`,
-              text: r,
-              fromMe: false,
-              timestamp: new Date(Date.now() + i * 100),
-              status: 'read' as const,
-            })
+            (r: ApiResponse, i: number) => {
+              const baseId = `bot_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`;
+              const timestamp = new Date(Date.now() + i * 100);
+              if (typeof r === 'string') {
+                return {
+                  id: baseId,
+                  text: r,
+                  fromMe: false,
+                  timestamp,
+                  status: 'read' as const,
+                };
+              }
+              return {
+                id: baseId,
+                text: r.caption || r.fileName || '',
+                fromMe: false,
+                timestamp,
+                status: 'read' as const,
+                media: {
+                  type: r.type,
+                  url: r.url,
+                  caption: r.caption,
+                  fileName: r.fileName,
+                },
+              };
+            }
           );
 
           for (let i = 0; i < botMessages.length; i++) {
@@ -424,8 +457,67 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
                       }}
                     />
 
+                    {/* Media preview */}
+                    {msg.media && (
+                      <div className="mb-1 -mx-1">
+                        {(msg.media.type === 'image' || msg.media.type === 'sticker') && (
+                          <img
+                            src={msg.media.url}
+                            alt={msg.media.caption || 'Image'}
+                            style={{
+                              maxWidth: 260,
+                              maxHeight: 300,
+                              borderRadius: 6,
+                              display: 'block',
+                            }}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        )}
+                        {msg.media.type === 'video' && (
+                          <video
+                            src={msg.media.url}
+                            controls
+                            style={{
+                              maxWidth: 260,
+                              maxHeight: 300,
+                              borderRadius: 6,
+                              display: 'block',
+                            }}
+                          />
+                        )}
+                        {msg.media.type === 'audio' && (
+                          <audio src={msg.media.url} controls style={{ maxWidth: 260 }} />
+                        )}
+                        {msg.media.type === 'file' && (
+                          <a
+                            href={msg.media.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              padding: '8px 12px',
+                              borderRadius: 6,
+                              backgroundColor: 'rgba(0,0,0,0.04)',
+                              color: '#075E54',
+                              textDecoration: 'none',
+                              fontSize: 13,
+                            }}
+                          >
+                            <Paperclip className="w-4 h-4" />
+                            <span style={{ wordBreak: 'break-all' }}>
+                              {msg.media.fileName || 'Download file'}
+                            </span>
+                          </a>
+                        )}
+                      </div>
+                    )}
+
                     {/* Text + timestamp inline */}
-                    <span style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</span>
+                    {msg.text && <span style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</span>}
 
                     {/* Timestamp + checkmarks */}
                     <span

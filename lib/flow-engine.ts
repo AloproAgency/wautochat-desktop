@@ -28,6 +28,83 @@ interface ExecutionLogEntry {
   timestamp: string;
 }
 
+/**
+ * Translates technical wppconnect / puppeteer / network errors into
+ * user-friendly messages. Falls back to a generic message with the raw
+ * technical detail appended for debugging.
+ */
+export function humanizeError(rawError: string, nodeType: FlowNodeType): string {
+  const err = rawError || '';
+  const lower = err.toLowerCase();
+
+  // Buttons / lists — WhatsApp-specific restrictions (most common pain point)
+  if (nodeType === 'send-buttons') {
+    if (lower.includes('is not a function') || lower.includes('sendbuttons')) {
+      return "Les boutons interactifs ne sont pas supportés sur ce compte WhatsApp. Ils nécessitent un compte WhatsApp Business. Le flow a été automatiquement converti en message texte numéroté.";
+    }
+    if (lower.includes('blocked') || lower.includes('forbidden') || lower.includes('restricted')) {
+      return "WhatsApp a bloqué l'envoi des boutons interactifs. Cette fonctionnalité est réservée aux comptes WhatsApp Business. Essayez un message texte classique.";
+    }
+    // Generic send-buttons fallback
+    return `Impossible d'envoyer les boutons interactifs. WhatsApp restreint cette fonctionnalité aux comptes Business. Détail : ${err}`;
+  }
+  if (nodeType === 'send-list' && (lower.includes('is not a function') || lower.includes('not supported'))) {
+    return "Les listes interactives ne sont pas supportées sur ce compte WhatsApp. Elles nécessitent un compte WhatsApp Business.";
+  }
+
+  // Puppeteer / wppconnect connection hiccups
+  if (err.includes('Execution context was destroyed')) {
+    return "WhatsApp Web s'est rafraîchi pendant l'envoi. Merci de réessayer dans quelques secondes.";
+  }
+  if (err.includes('Target closed') || err.includes('Session closed')) {
+    return 'La connexion WhatsApp a été interrompue. Vérifiez que votre téléphone est connecté à Internet.';
+  }
+  if (err.includes('Protocol error')) {
+    return 'Erreur de communication avec WhatsApp. Réessayez dans un instant.';
+  }
+  if (err.includes('Navigation timeout') || err.includes('waiting for selector')) {
+    return "WhatsApp Web n'a pas répondu à temps. Vérifiez que la session est bien connectée.";
+  }
+
+  // Network
+  if (lower.includes('enotfound') || lower.includes('econnrefused') || lower.includes('econnreset')) {
+    return 'Impossible de joindre le serveur. Vérifiez votre connexion Internet.';
+  }
+  if (lower.includes('timeout') || lower.includes('timed out')) {
+    return "L'opération a pris trop de temps. Réessayez.";
+  }
+
+  // Media / URL
+  if (lower.includes('invalid url') || lower.includes('err_invalid_url')) {
+    return "L'URL du fichier est invalide.";
+  }
+  if (lower.includes('failed to fetch') || lower.includes('fetch failed')) {
+    return 'Impossible de télécharger le fichier. Vérifiez que le lien est accessible.';
+  }
+  if (lower.includes('unsupported media') || lower.includes('unsupported format')) {
+    return 'Format de fichier non supporté par WhatsApp.';
+  }
+
+  // Recipient / chat
+  if (lower.includes('not found') && nodeType.startsWith('send-')) {
+    return "Destinataire introuvable. Vérifiez le numéro ou l'ID du chat.";
+  }
+  if (lower.includes('not a contact') || lower.includes('wid error')) {
+    return "Ce numéro n'est pas un contact WhatsApp valide.";
+  }
+
+  // Flow configuration
+  if (lower.includes('unknown node type')) {
+    return `Type de nœud inconnu. Ce nœud n'est pas reconnu par le moteur d'exécution.`;
+  }
+  if (lower.includes('missing') && lower.includes('config')) {
+    return "Configuration du nœud incomplète. Vérifiez les paramètres.";
+  }
+
+  // Fallback: keep the raw message but prefix for clarity
+  return `Erreur lors de l'exécution : ${err}`;
+}
+
 function interpolateVariables(
   text: string,
   ctx: FlowContext
@@ -412,14 +489,30 @@ async function executeNode(
           id: (b.id as string) || '',
           text: (b.text as string) || (b.label as string) || '',
         }));
-        const result = await (client as unknown as Record<string, Function>).sendButtons(
-          ctx.chatId,
-          btnTitle,
-          buttons,
-          btnText,
-          btnFooter
-        );
-        entry.result = { messageId: (result as unknown as Record<string, unknown>).id };
+
+        // WhatsApp restricts interactive buttons to WhatsApp Business API accounts.
+        // On personal accounts, the wppconnect call returns successfully but WA Web
+        // silently drops the message (nothing arrives). To guarantee delivery, we
+        // always send a numbered text message that works on every account type.
+        const lines: string[] = [];
+        if (btnTitle) lines.push(`*${btnTitle}*`);
+        if (btnText) lines.push(btnText);
+        if (buttons.length > 0) {
+          if (lines.length > 0) lines.push('');
+          buttons.forEach((b, idx) => {
+            lines.push(`${idx + 1}. ${b.text}`);
+          });
+          lines.push('');
+          lines.push('_Répondez avec le numéro de votre choix._');
+        }
+        if (btnFooter) lines.push(`_${btnFooter}_`);
+
+        const result = await client.sendText(ctx.chatId, lines.join('\n'));
+        entry.result = {
+          messageId: (result as unknown as Record<string, unknown>)?.id,
+          renderedAs: 'numbered-text',
+          note: 'Interactive buttons require a WhatsApp Business account; sent as numbered text for compatibility.',
+        };
         break;
       }
 
@@ -804,7 +897,8 @@ async function executeNode(
     }
   } catch (error) {
     entry.status = 'error';
-    entry.error = error instanceof Error ? error.message : String(error);
+    const rawMsg = error instanceof Error ? error.message : String(error);
+    entry.error = humanizeError(rawMsg, node.data.type);
   }
 
   log.push(entry);
