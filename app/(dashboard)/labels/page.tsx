@@ -11,6 +11,7 @@ import {
   X,
   MessageSquare,
   User,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -158,6 +159,7 @@ export default function LabelsPage() {
   const activeSessionId = useActiveSession();
   const { labels, setLabels } = useLabelStore();
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingLabel, setEditingLabel] = useState<Label | null>(null);
@@ -191,9 +193,42 @@ export default function LabelsPage() {
     }
   }, [activeSessionId, setLabels]);
 
+  const handleSyncLabels = useCallback(async () => {
+    if (!activeSessionId || syncing) return;
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/labels/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchLabels();
+      } else {
+        alert(data.error || 'Failed to sync labels. Make sure your WhatsApp session is connected.');
+      }
+    } catch (err) {
+      alert('Error syncing labels: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      setSyncing(false);
+    }
+  }, [activeSessionId, syncing, fetchLabels]);
+
   useEffect(() => {
-    fetchLabels();
-  }, [fetchLabels]);
+    // Sync labels from WhatsApp first, then fetch from DB
+    if (activeSessionId) {
+      fetch('/api/labels/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionId }),
+      })
+        .catch(() => {})
+        .finally(() => fetchLabels());
+    } else {
+      fetchLabels();
+    }
+  }, [activeSessionId, fetchLabels]);
 
   const filteredLabels = labels.filter((l) =>
     l.name.toLowerCase().includes(search.toLowerCase())
@@ -311,16 +346,26 @@ export default function LabelsPage() {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-wa-text">Labels</h1>
           <p className="mt-1 text-sm text-wa-text-secondary">
             Organize your contacts and chats with labels
           </p>
         </div>
-        <Button icon={<Plus className="h-4 w-4" />} onClick={openCreateModal}>
-          Create Label
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            icon={<RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />}
+            onClick={handleSyncLabels}
+            disabled={syncing}
+          >
+            {syncing ? 'Syncing...' : 'Sync Labels'}
+          </Button>
+          <Button icon={<Plus className="h-4 w-4" />} onClick={openCreateModal}>
+            Create Label
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
@@ -351,32 +396,30 @@ export default function LabelsPage() {
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredLabels.map((label) => (
             <Card
               key={label.id}
-              className="cursor-pointer transition-shadow hover:shadow-md"
+              className="cursor-pointer transition-shadow hover:shadow-md overflow-hidden"
               onClick={() => openLabelDetail(label)}
             >
               <CardBody>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="h-10 w-10 shrink-0 rounded-full"
-                      style={{ backgroundColor: label.color }}
-                    />
-                    <div className="min-w-0">
-                      <h3 className="truncate font-semibold text-wa-text">
-                        {label.name}
-                      </h3>
-                      <p className="mt-0.5 text-sm text-wa-text-secondary">
-                        {label.count} {label.count === 1 ? 'item' : 'items'}
-                      </p>
-                    </div>
+                <div className="flex items-center gap-3">
+                  <div
+                    className="h-10 w-10 shrink-0 rounded-full"
+                    style={{ backgroundColor: label.color }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate font-semibold text-wa-text text-sm">
+                      {label.name}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-wa-text-secondary">
+                      {label.count} {label.count === 1 ? 'item' : 'items'}
+                    </p>
                   </div>
                   <DropdownMenu
                     trigger={
-                      <button className="rounded-lg p-1.5 hover:bg-wa-hover">
+                      <button className="rounded-lg p-1.5 hover:bg-wa-hover shrink-0" onClick={(e) => e.stopPropagation()}>
                         <MoreVertical className="h-4 w-4 text-wa-text-muted" />
                       </button>
                     }
@@ -474,7 +517,7 @@ export default function LabelsPage() {
         </div>
       </Modal>
 
-      {/* Label Detail Modal */}
+      {/* Label Detail Modal - WhatsApp style discussions list */}
       <Modal
         open={showLabelDetail}
         onClose={() => {
@@ -490,92 +533,88 @@ export default function LabelsPage() {
             <Spinner />
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Label Info */}
+          <div>
+            {/* Label header */}
             {selectedLabel && (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 mb-4 pb-4 border-b border-wa-border">
                 <div
-                  className="h-8 w-8 rounded-full"
-                  style={{ backgroundColor: selectedLabel.color }}
-                />
+                  className="h-10 w-10 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: selectedLabel.color + '30' }}
+                >
+                  <Tag className="h-5 w-5" style={{ color: selectedLabel.color }} />
+                </div>
                 <div>
                   <h3 className="font-semibold text-wa-text">{selectedLabel.name}</h3>
                   <p className="text-sm text-wa-text-secondary">
-                    {selectedLabel.count} associated items
+                    {labelContacts.length + labelChats.length} discussion{labelContacts.length + labelChats.length !== 1 ? 's' : ''}
                   </p>
                 </div>
               </div>
             )}
 
-            {/* Contacts */}
+            {/* Discussions list - contacts + chats combined */}
             <div>
-              <h4 className="mb-2 flex items-center gap-2 text-sm font-medium text-wa-text">
-                <User className="h-4 w-4" />
-                Contacts ({labelContacts.length})
-              </h4>
-              {labelContacts.length === 0 ? (
-                <p className="rounded-lg bg-wa-bg px-4 py-3 text-center text-sm text-wa-text-muted">
-                  No contacts with this label
+              <h4 className="mb-3 text-sm font-semibold text-wa-text">Discussions</h4>
+
+              {labelContacts.length === 0 && labelChats.length === 0 ? (
+                <p className="rounded-lg bg-wa-bg px-4 py-8 text-center text-sm text-wa-text-muted">
+                  No discussions with this label
                 </p>
               ) : (
-                <div className="max-h-48 overflow-y-auto rounded-lg border border-wa-border">
+                <div className="max-h-[400px] overflow-y-auto rounded-lg border border-wa-border divide-y divide-wa-border">
+                  {/* Contacts as discussions */}
                   {labelContacts.map((contact) => (
-                    <div
+                    <button
                       key={contact.id}
-                      className="flex items-center gap-3 border-b border-wa-border px-4 py-2 last:border-0"
+                      onClick={() => {
+                        setShowLabelDetail(false);
+                        window.location.href = `/conversations?chat=${contact.wppId}`;
+                      }}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-wa-hover transition-colors"
                     >
                       <Avatar
                         src={contact.profilePicUrl}
                         name={contact.name}
-                        size="sm"
+                        size="md"
                       />
-                      <div>
-                        <span className="text-sm font-medium text-wa-text">
-                          {contact.name}
-                        </span>
-                        <span className="ml-2 text-xs text-wa-text-muted">
-                          {contact.phone}
-                        </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-wa-text truncate">{contact.name}</p>
+                        <p className="text-xs text-wa-text-muted truncate">{contact.phone}</p>
                       </div>
-                    </div>
+                      <MessageSquare className="h-4 w-4 text-wa-text-muted shrink-0" />
+                    </button>
                   ))}
-                </div>
-              )}
-            </div>
 
-            {/* Chats */}
-            <div>
-              <h4 className="mb-2 flex items-center gap-2 text-sm font-medium text-wa-text">
-                <MessageSquare className="h-4 w-4" />
-                Chats ({labelChats.length})
-              </h4>
-              {labelChats.length === 0 ? (
-                <p className="rounded-lg bg-wa-bg px-4 py-3 text-center text-sm text-wa-text-muted">
-                  No chats with this label
-                </p>
-              ) : (
-                <div className="max-h-48 overflow-y-auto rounded-lg border border-wa-border">
+                  {/* Chats as discussions */}
                   {labelChats.map((chat) => (
-                    <div
+                    <button
                       key={chat.id}
-                      className="flex items-center gap-3 border-b border-wa-border px-4 py-2 last:border-0"
+                      onClick={() => {
+                        setShowLabelDetail(false);
+                        window.location.href = `/conversations?chat=${chat.wppId}`;
+                      }}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-wa-hover transition-colors"
                     >
                       <Avatar
                         src={chat.profilePicUrl}
                         name={chat.name}
-                        size="sm"
+                        size="md"
                       />
-                      <div>
-                        <span className="text-sm font-medium text-wa-text">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-wa-text truncate">
                           {chat.name}
-                        </span>
-                        {chat.isGroup && (
-                          <span className="ml-2 rounded bg-wa-bg px-1.5 py-0.5 text-xs text-wa-text-muted">
-                            Group
-                          </span>
+                          {chat.isGroup && (
+                            <span className="ml-2 rounded bg-wa-bg px-1.5 py-0.5 text-xs text-wa-text-muted">
+                              Group
+                            </span>
+                          )}
+                        </p>
+                        {chat.unreadCount > 0 && (
+                          <p className="text-xs text-wa-green font-medium">{chat.unreadCount} unread</p>
                         )}
                       </div>
-                    </div>
+                      <MessageSquare className="h-4 w-4 text-wa-text-muted shrink-0" />
+                    </button>
                   ))}
                 </div>
               )}

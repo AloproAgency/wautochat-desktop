@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import Image from 'next/image';
 import {
   Smartphone,
   Plus,
@@ -97,6 +98,21 @@ export default function SessionsPage() {
               if (data.data.qrCode) {
                 setQrImage(data.data.qrCode);
                 setQrStatus('Scan the QR code with WhatsApp');
+                updateSession(showQrModal, { status: 'qr_ready' });
+                return;
+              }
+              if (data.data.status === 'failed') {
+                if (qrIntervalRef.current) clearInterval(qrIntervalRef.current);
+                setQrImage(null);
+                setQrStatus(data.data.message || 'Unable to start this WhatsApp session.');
+                updateSession(showQrModal, { status: data.data.status as Session['status'] });
+                toast({ title: data.data.message || 'Session connection failed', variant: 'error' });
+                return;
+              }
+              if (data.data.status === 'disconnected') {
+                setQrImage(null);
+                setQrStatus(data.data.message || 'Waiting for WhatsApp to prepare a new QR code...');
+                updateSession(showQrModal, { status: 'disconnected' });
               } else {
                 // No QR yet — update status based on poll count
                 if (qrPollCountRef.current < 5) {
@@ -392,9 +408,12 @@ export default function SessionsPage() {
         <div className="flex flex-col items-center py-4">
           {qrImage ? (
             <div className="rounded-xl border border-wa-border bg-white p-4">
-              <img
+              <Image
                 src={qrImage.startsWith('data:') ? qrImage : `data:image/png;base64,${qrImage}`}
                 alt="WhatsApp QR Code"
+                width={256}
+                height={256}
+                unoptimized
                 className="h-64 w-64"
               />
             </div>

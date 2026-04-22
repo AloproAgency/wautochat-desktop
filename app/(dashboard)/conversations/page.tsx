@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   MessageSquare,
   Search,
@@ -32,6 +33,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { useActiveSession } from '@/hooks/use-active-session';
+import { useSessionStore } from '@/lib/store';
 import { formatTimestamp, truncate } from '@/lib/utils';
 import type { Chat, Message, ApiResponse } from '@/lib/types';
 
@@ -676,7 +678,11 @@ function ChatListItem({
 
 export default function ConversationsPage() {
   const activeSessionId = useActiveSession();
+  const { sessions, setActiveSession } = useSessionStore();
   const { toast } = useToast();
+  const searchParams = useSearchParams();
+  const chatParam = searchParams.get('chat');
+  const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false);
 
   // Responsive
   const [isMobile, setIsMobile] = useState(false);
@@ -696,20 +702,26 @@ export default function ConversationsPage() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [showChatMenu, setShowChatMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [messageText, setMessageText] = useState('');
-  const [chatFilter, setChatFilter] = useState<'all' | 'unread' | 'groups'>('all');
-  const [leftTab, setLeftTab] = useState<'chat' | 'call' | 'contact'>('chat');
-  const [contactFilter, setContactFilter] = useState<'direct' | 'group'>('direct');
+  const [chatFilter] = useState<'all' | 'unread' | 'groups'>('all');
+  const [contactFilter, setContactFilter] = useState<'all' | 'direct' | 'group'>('all');
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileShowMessages, setMobileShowMessages] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showAllRecent, setShowAllRecent] = useState(false);
+  const [chatPresence, setChatPresence] = useState<{ isOnline: boolean; lastSeen: string | null }>({ isOnline: false, lastSeen: null });
+  const [statusContacts, setStatusContacts] = useState<{ id: string; name: string; profilePicUrl: string; totalCount: number }[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -747,11 +759,37 @@ export default function ConversationsPage() {
     }
   }, [activeSessionId, toast]);
 
+  // Sync chats from WhatsApp then fetch from DB
+  const syncAndFetchChats = useCallback(async () => {
+    if (!activeSessionId) return;
+    try {
+      // Sync chats from WhatsApp first
+      await fetch('/api/chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionId }),
+      });
+    } catch {
+      // Sync failed (session not connected), still show DB chats
+    }
+    await fetchChats();
+  }, [activeSessionId, fetchChats]);
+
   useEffect(() => {
     if (!activeSessionId) return;
     setLoading(true);
-    fetchChats().finally(() => setLoading(false));
-  }, [activeSessionId, fetchChats]);
+    syncAndFetchChats().finally(() => setLoading(false));
+
+    // Fetch WhatsApp statuses
+    fetch(`/api/whatsapp-status?sessionId=${activeSessionId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.success && data.data) {
+          setStatusContacts(data.data);
+        }
+      })
+      .catch(() => {});
+  }, [activeSessionId, syncAndFetchChats]);
 
   // ---------------------------------------------------------------------------
   // Fetch messages for selected chat
@@ -802,6 +840,37 @@ export default function ConversationsPage() {
       }
     };
   }, [selectedChat, fetchMessages]);
+
+  // Check online presence for selected chat
+  useEffect(() => {
+    if (!selectedChat || !activeSessionId || selectedChat.isGroup) {
+      setChatPresence({ isOnline: false, lastSeen: null });
+      return;
+    }
+
+    let cancelled = false;
+    const checkPresence = async () => {
+      try {
+        const res = await fetch(`/api/presence?sessionId=${activeSessionId}&chatId=${selectedChat.wppId}`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          if (data.success && data.data) {
+            setChatPresence(data.data);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    checkPresence();
+    const interval = setInterval(checkPresence, 15000); // Check every 15s
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [selectedChat, activeSessionId]);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -894,6 +963,99 @@ export default function ConversationsPage() {
     }
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // Send file (image, video, document)
+  // ---------------------------------------------------------------------------
+  const handleFileSelected = useCallback(async (e: React.ChangeEvent<HTMLInputElement>, mode: 'image' | 'file') => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedChat || !activeSessionId) return;
+
+    // Convert file to base64
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+
+      // Determine type
+      let type: string = 'document';
+      if (file.type.startsWith('image/')) type = 'image';
+      else if (file.type.startsWith('video/')) type = 'video';
+      else if (file.type.startsWith('audio/')) type = 'audio';
+
+      // Add temp message
+      const tempId = `temp-${Date.now()}`;
+      const tempMsg: Message = {
+        id: tempId,
+        sessionId: activeSessionId,
+        chatId: selectedChat.id,
+        wppId: '',
+        type: type as Message['type'],
+        body: file.name,
+        sender: 'me',
+        senderName: 'You',
+        fromMe: true,
+        timestamp: new Date().toISOString(),
+        status: 'pending',
+        isForwarded: false,
+        labels: [],
+        mediaUrl: type === 'image' ? base64 : undefined,
+      };
+      setMessages((prev) => [...prev, tempMsg]);
+
+      try {
+        setSending(true);
+        const content = type === 'image'
+          ? { url: base64, caption: '' }
+          : type === 'document'
+          ? { url: base64, fileName: file.name }
+          : { url: base64 };
+
+        const res = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: activeSessionId,
+            chatId: selectedChat.wppId,
+            type,
+            content,
+          }),
+        });
+
+        if (res.ok) {
+          const data: ApiResponse<{ id: string; status: string }> = await res.json();
+          if (data.success && data.data) {
+            setMessages((prev) =>
+              prev.map((m) => m.id === tempId ? { ...m, id: data.data!.id, status: 'sent' as const } : m)
+            );
+          }
+        } else {
+          setMessages((prev) =>
+            prev.map((m) => m.id === tempId ? { ...m, status: 'failed' as const } : m)
+          );
+          toast({ title: 'Failed to send file', variant: 'error' });
+        }
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) => m.id === tempId ? { ...m, status: 'failed' as const } : m)
+        );
+        toast({ title: 'Failed to send file', variant: 'error' });
+      } finally {
+        setSending(false);
+      }
+    };
+    reader.readAsDataURL(file);
+
+    // Reset input
+    e.target.value = '';
+  }, [selectedChat, activeSessionId, toast]);
+
+  // Emoji list
+  const EMOJI_LIST = [
+    '😀', '😂', '🥰', '😍', '😘', '😊', '🤗', '🤔', '😎', '🥳',
+    '😭', '😤', '😱', '🤯', '😴', '🤮', '👍', '👎', '👏', '🙏',
+    '❤️', '🔥', '💯', '✅', '⭐', '🎉', '💪', '👀', '🤝', '💔',
+    '😈', '👻', '💀', '🤡', '🙈', '🙉', '🙊', '🐶', '🦁', '🌹',
+  ];
+
   const handleSelectChat = useCallback(
     (chat: Chat) => {
       setSelectedChat(chat);
@@ -908,6 +1070,42 @@ export default function ConversationsPage() {
     setMobileShowMessages(false);
   }, []);
 
+  // Auto-select chat from URL param ?chat=wppId
+  useEffect(() => {
+    if (!chatParam || chats.length === 0 || selectedChat || !activeSessionId) return;
+
+    // Try exact match first
+    let match = chats.find((c) => c.wppId === chatParam);
+
+    // Try matching by phone number (strip @c.us, @lid, etc.)
+    if (!match) {
+      const phone = chatParam.replace(/@.*$/, '');
+      match = chats.find((c) => c.wppId.replace(/@.*$/, '') === phone);
+    }
+
+    if (match) {
+      handleSelectChat(match);
+    } else {
+      // No chat exists yet — create a temporary one so user can start messaging
+      const phone = chatParam.replace(/@.*$/, '');
+      const wppId = chatParam.includes('@') ? chatParam : `${chatParam}@c.us`;
+      const tempChat: Chat = {
+        id: `new-${phone}`,
+        sessionId: activeSessionId,
+        wppId,
+        name: phone,
+        isGroup: false,
+        unreadCount: 0,
+        isArchived: false,
+        isPinned: false,
+        isMuted: false,
+        updatedAt: new Date().toISOString(),
+      };
+      setChats((prev) => [tempChat, ...prev]);
+      handleSelectChat(tempChat);
+    }
+  }, [chatParam, chats, selectedChat, activeSessionId, handleSelectChat]);
+
   // ---------------------------------------------------------------------------
   // Filtering
   // ---------------------------------------------------------------------------
@@ -919,12 +1117,9 @@ export default function ConversationsPage() {
         chat.name.toLowerCase().includes(q) ||
         (chat.lastMessage as { body?: string } | undefined)?.body?.toLowerCase().includes(q);
 
-      // Apply contact filter (Direct / Group)
-      if (contactFilter === 'group') {
-        if (!chat.isGroup) return false;
-      } else {
-        if (chat.isGroup) return false;
-      }
+      // Apply contact filter (Direct = all non-group, Group = groups only)
+      if (contactFilter === 'group' && !chat.isGroup) return false;
+      if (contactFilter === 'direct' && chat.isGroup) return false;
 
       if (chatFilter === 'unread') return matchesSearch && chat.unreadCount > 0;
       if (chatFilter === 'groups') return matchesSearch && chat.isGroup;
@@ -975,62 +1170,258 @@ export default function ConversationsPage() {
         height: '100%',
       }}
     >
-      {/* Profile header */}
+      {/* Session selector header */}
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '16px 16px 12px 16px',
+          position: 'relative',
+          padding: '12px 16px',
           borderBottom: `1px solid ${THEME.border}`,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <InlineAvatar name="User" size={40} />
-          <div>
-            <p style={{ fontSize: 15, fontWeight: 700, color: THEME.textPrimary, margin: 0 }}>WAutoChat</p>
-            <p style={{ fontSize: 12, color: THEME.primary, margin: 0 }}>Connected</p>
+        <button
+          onClick={() => setSessionDropdownOpen(!sessionDropdownOpen)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            width: '100%',
+            padding: '8px 12px',
+            borderRadius: 10,
+            border: `1px solid ${THEME.border}`,
+            backgroundColor: '#ffffff',
+            cursor: 'pointer',
+            transition: 'border-color 0.15s',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = THEME.primary; }}
+          onMouseLeave={(e) => { if (!sessionDropdownOpen) e.currentTarget.style.borderColor = THEME.border; }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                backgroundColor: THEME.primary,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#ffffff',
+                fontWeight: 700,
+                fontSize: 14,
+              }}
+            >
+              {(() => {
+                const activeSession = sessions.find((s) => s.id === activeSessionId);
+                return activeSession ? activeSession.name.charAt(0).toUpperCase() : 'W';
+              })()}
+            </div>
+            <div style={{ textAlign: 'left' }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: THEME.textPrimary, margin: 0 }}>
+                {sessions.find((s) => s.id === activeSessionId)?.name || 'WAutoChat'}
+              </p>
+              <p style={{
+                fontSize: 11,
+                margin: 0,
+                color: sessions.find((s) => s.id === activeSessionId)?.status === 'connected' ? '#25D366' : THEME.textMuted,
+              }}>
+                {sessions.find((s) => s.id === activeSessionId)?.status === 'connected' ? 'Connected' : 'Disconnected'}
+              </p>
+            </div>
           </div>
-        </div>
-        <IconBtn>
-          <Info style={{ width: 20, height: 20 }} />
-        </IconBtn>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, transform: sessionDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+            <path d="M4 6L8 10L12 6" stroke={THEME.textSecondary} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+
+        {/* Dropdown */}
+        {sessionDropdownOpen && (
+          <>
+            {/* Overlay to close dropdown */}
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 10 }}
+              onClick={() => setSessionDropdownOpen(false)}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 16,
+                right: 16,
+                zIndex: 20,
+                backgroundColor: '#ffffff',
+                borderRadius: 10,
+                border: `1px solid ${THEME.border}`,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                maxHeight: 240,
+                overflowY: 'auto',
+              }}
+            >
+              {sessions.length === 0 ? (
+                <p style={{ padding: 16, fontSize: 13, color: THEME.textMuted, margin: 0, textAlign: 'center' }}>
+                  No sessions available
+                </p>
+              ) : (
+                sessions.map((session) => {
+                  const isActive = session.id === activeSessionId;
+                  const isConnected = session.status === 'connected';
+                  return (
+                    <button
+                      key={session.id}
+                      onClick={() => {
+                        setActiveSession(session.id);
+                        setSessionDropdownOpen(false);
+                        setSelectedChat(null);
+                        setMessages([]);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        width: '100%',
+                        padding: '10px 14px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        backgroundColor: isActive ? THEME.selectedBg : 'transparent',
+                        borderBottom: `1px solid ${THEME.border}`,
+                        textAlign: 'left',
+                        transition: 'background-color 0.15s',
+                      }}
+                      onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = THEME.hoverBg; }}
+                      onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'; }}
+                    >
+                      <div
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: '50%',
+                          backgroundColor: isConnected ? THEME.primary : THEME.textMuted,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#ffffff',
+                          fontWeight: 700,
+                          fontSize: 13,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {session.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: THEME.textPrimary, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {session.name}
+                        </p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1 }}>
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: '50%',
+                              backgroundColor: isConnected ? '#25D366' : '#ef4444',
+                            }}
+                          />
+                          <span style={{ fontSize: 11, color: isConnected ? '#25D366' : THEME.textMuted }}>
+                            {session.status === 'connected' ? 'Connected' : session.status === 'connecting' ? 'Connecting...' : 'Disconnected'}
+                          </span>
+                        </div>
+                      </div>
+                      {isActive && (
+                        <Check style={{ width: 16, height: 16, color: THEME.primary, flexShrink: 0 }} />
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Status section */}
-      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${THEME.border}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: THEME.textPrimary, margin: 0 }}>Status</p>
-          <span style={{ fontSize: 12, color: THEME.primary, cursor: 'pointer', fontWeight: 500 }}>View All</span>
+      {/* WhatsApp Status - only contacts who posted a status */}
+      {statusContacts.length > 0 && (
+        <div style={{ padding: '12px 16px', borderBottom: `1px solid ${THEME.border}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: THEME.textPrimary, margin: 0 }}>Status</p>
+            <button
+              onClick={() => setShowAllRecent(!showAllRecent)}
+              style={{ fontSize: 12, color: THEME.primary, cursor: 'pointer', fontWeight: 500, border: 'none', backgroundColor: 'transparent', padding: 0 }}
+            >
+              {showAllRecent ? 'Show Less' : 'View All'}
+            </button>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              overflowX: showAllRecent ? 'visible' : 'auto',
+              flexWrap: showAllRecent ? 'wrap' : 'nowrap',
+              paddingBottom: 4,
+            }}
+          >
+            {(showAllRecent ? statusContacts : statusContacts.slice(0, 8)).map((sc) => {
+              // Find matching chat to open conversation
+              const matchingChat = chats.find((c) => c.wppId === sc.id);
+              return (
+                <button
+                  key={sc.id}
+                  onClick={() => {
+                    if (matchingChat) handleSelectChat(matchingChat);
+                  }}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 4,
+                    minWidth: 52,
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    cursor: matchingChat ? 'pointer' : 'default',
+                    padding: 2,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '50%',
+                      padding: 2,
+                      background: `conic-gradient(#25D366 0deg, #25D366 360deg)`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <div style={{ width: 42, height: 42, borderRadius: '50%', overflow: 'hidden', backgroundColor: '#ffffff', padding: 1 }}>
+                      <InlineAvatar name={sc.name || sc.id} src={sc.profilePicUrl || undefined} size={40} />
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: THEME.textSecondary,
+                      maxWidth: 52,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      textAlign: 'center',
+                      display: 'block',
+                      width: '100%',
+                    }}
+                  >
+                    {(sc.name || sc.id).split(' ')[0]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
-          {chats.slice(0, 6).map((chat) => (
-            <div key={chat.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 50 }}>
-              <div
-                style={{
-                  width: 46,
-                  height: 46,
-                  borderRadius: '50%',
-                  padding: 2,
-                  border: `2px solid ${THEME.primary}`,
-                }}
-              >
-                <InlineAvatar name={chat.name} src={chat.profilePicUrl} size={38} />
-              </div>
-              <span style={{ fontSize: 10, color: THEME.textSecondary, maxWidth: 50, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                {chat.name.split(' ')[0]}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* Message count + search */}
       <div style={{ padding: '12px 16px 0 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <p style={{ fontSize: 16, fontWeight: 700, color: THEME.textPrimary, margin: 0 }}>
-              Message ({chats.length})
+              Chat ({chats.length})
             </p>
           </div>
           <IconBtn
@@ -1083,46 +1474,11 @@ export default function ConversationsPage() {
           </div>
         )}
 
-        {/* Tabs: Chat / Call / Contact */}
+        {/* Filters: All / Direct / Group */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          {(['chat', 'call', 'contact'] as const).map((tab) => {
-            const isActive = leftTab === tab;
-            const icons = { chat: MessageSquare, call: Phone, contact: UserCircle };
-            const Icon = icons[tab];
-            const label = tab.charAt(0).toUpperCase() + tab.slice(1);
-            return (
-              <button
-                key={tab}
-                onClick={() => setLeftTab(tab)}
-                style={{
-                  flex: 1,
-                  height: 32,
-                  borderRadius: 16,
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  fontSize: 13,
-                  fontWeight: 500,
-                  transition: 'all 0.15s ease',
-                  backgroundColor: isActive ? THEME.primary : THEME.inputBg,
-                  color: isActive ? '#ffffff' : THEME.textSecondary,
-                }}
-              >
-                <Icon style={{ width: 14, height: 14 }} />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Filters: Direct / Group */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          {(['direct', 'group'] as const).map((filter) => {
+          {(['all', 'direct', 'group'] as const).map((filter) => {
             const isActive = contactFilter === filter;
-            const label = filter.charAt(0).toUpperCase() + filter.slice(1);
+            const label = filter === 'all' ? 'All' : filter === 'direct' ? 'Direct' : 'Group';
             return (
               <button
                 key={filter}
@@ -1242,7 +1598,7 @@ export default function ConversationsPage() {
                 name={selectedChat.name}
                 src={selectedChat.profilePicUrl}
                 size={42}
-                online={!selectedChat.isGroup}
+                online={!selectedChat.isGroup && chatPresence.isOnline}
               />
               <div style={{ minWidth: 0 }}>
                 <p
@@ -1258,8 +1614,14 @@ export default function ConversationsPage() {
                 >
                   {selectedChat.name}
                 </p>
-                <p style={{ fontSize: 12, color: THEME.primary, margin: 0 }}>
-                  {selectedChat.isGroup ? 'Group' : 'Online'}
+                <p style={{ fontSize: 12, color: chatPresence.isOnline ? '#25D366' : THEME.textMuted, margin: 0 }}>
+                  {selectedChat.isGroup
+                    ? 'Group'
+                    : chatPresence.isOnline
+                    ? 'Online'
+                    : chatPresence.lastSeen
+                    ? `Last seen ${new Date(chatPresence.lastSeen).toLocaleString()}`
+                    : `${messages.length} messages`}
                 </p>
               </div>
             </div>
@@ -1267,18 +1629,127 @@ export default function ConversationsPage() {
               <IconBtn onClick={() => fetchMessages(selectedChat)}>
                 <RefreshCw style={{ width: 18, height: 18 }} />
               </IconBtn>
-              <IconBtn>
+              <IconBtn onClick={() => {
+                setSearchOpen(!searchOpen);
+                if (!searchOpen) setTimeout(() => searchInputRef.current?.focus(), 100);
+              }}>
                 <Search style={{ width: 18, height: 18 }} />
               </IconBtn>
-              <IconBtn>
+              <IconBtn onClick={() => {
+                if (selectedChat) {
+                  window.open(`https://web.whatsapp.com/send?phone=${selectedChat.wppId.replace('@c.us', '').replace('@g.us', '')}`, '_blank');
+                }
+              }}>
                 <Video style={{ width: 18, height: 18 }} />
               </IconBtn>
-              <IconBtn>
+              <IconBtn onClick={() => {
+                if (selectedChat) {
+                  const phone = selectedChat.wppId.replace('@c.us', '').replace('@g.us', '');
+                  window.open(`tel:${phone}`);
+                }
+              }}>
                 <Phone style={{ width: 18, height: 18 }} />
               </IconBtn>
-              <IconBtn>
-                <MoreVertical style={{ width: 18, height: 18 }} />
-              </IconBtn>
+              {/* Menu dropdown */}
+              <div style={{ position: 'relative' }}>
+                <IconBtn onClick={() => setShowChatMenu(!showChatMenu)}>
+                  <MoreVertical style={{ width: 18, height: 18 }} />
+                </IconBtn>
+                {showChatMenu && (
+                  <>
+                    <div
+                      style={{ position: 'fixed', inset: 0, zIndex: 10 }}
+                      onClick={() => setShowChatMenu(false)}
+                    />
+                    <div
+                      style={{
+                        position: 'absolute',
+                        right: 0,
+                        top: '100%',
+                        marginTop: 4,
+                        zIndex: 20,
+                        minWidth: 220,
+                        backgroundColor: '#ffffff',
+                        borderRadius: 10,
+                        border: `1px solid ${THEME.border}`,
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {[
+                        {
+                          label: 'Contact info',
+                          icon: UserCircle,
+                          action: () => {
+                            if (selectedChat) window.location.href = `/contacts`;
+                          },
+                        },
+                        {
+                          label: 'Search messages',
+                          icon: Search,
+                          action: () => {
+                            setSearchOpen(!searchOpen);
+                            if (!searchOpen) setTimeout(() => searchInputRef.current?.focus(), 100);
+                          },
+                        },
+                        {
+                          label: 'Refresh messages',
+                          icon: RefreshCw,
+                          action: () => { if (selectedChat) fetchMessages(selectedChat); },
+                        },
+                        {
+                          label: 'Copy chat ID',
+                          icon: Copy,
+                          action: () => {
+                            if (selectedChat) {
+                              navigator.clipboard.writeText(selectedChat.wppId);
+                              toast({ title: 'Chat ID copied', variant: 'success' });
+                            }
+                          },
+                        },
+                        {
+                          label: 'Send file',
+                          icon: Paperclip,
+                          action: () => fileInputRef.current?.click(),
+                        },
+                        {
+                          label: 'Close chat',
+                          icon: ArrowLeft,
+                          action: () => { setSelectedChat(null); setMessages([]); },
+                          danger: true,
+                        },
+                      ].map((item, i) => (
+                        <button
+                          key={i}
+                          onClick={() => {
+                            item.action();
+                            setShowChatMenu(false);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 12,
+                            width: '100%',
+                            padding: '10px 16px',
+                            border: 'none',
+                            backgroundColor: 'transparent',
+                            cursor: 'pointer',
+                            fontSize: 14,
+                            color: item.danger ? '#ef4444' : THEME.textPrimary,
+                            textAlign: 'left',
+                            transition: 'background-color 0.1s',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = THEME.hoverBg; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                        >
+                          <item.icon style={{ width: 16, height: 16, color: item.danger ? '#ef4444' : THEME.textMuted }} />
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1351,6 +1822,7 @@ export default function ConversationsPage() {
           {/* Input Area */}
           <div
             style={{
+              position: 'relative',
               display: 'flex',
               alignItems: 'flex-end',
               gap: 6,
@@ -1361,19 +1833,96 @@ export default function ConversationsPage() {
               flexShrink: 0,
             }}
           >
+            {/* Hidden file inputs */}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*,video/*"
+              capture="environment"
+              style={{ display: 'none' }}
+              onChange={(e) => handleFileSelected(e, 'image')}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
+              style={{ display: 'none' }}
+              onChange={(e) => handleFileSelected(e, 'file')}
+            />
+
+            {/* Camera button - opens camera/image capture */}
             {!isMobile && (
               <>
-                <IconBtn size={38}>
+                <IconBtn size={38} onClick={() => imageInputRef.current?.click()}>
                   <Camera style={{ width: 20, height: 20 }} />
                 </IconBtn>
-                <IconBtn size={38}>
+                {/* Gallery button - opens file picker */}
+                <IconBtn size={38} onClick={() => fileInputRef.current?.click()}>
                   <Images style={{ width: 20, height: 20 }} />
                 </IconBtn>
               </>
             )}
-            <IconBtn size={38}>
-              <Smile style={{ width: 20, height: 20 }} />
-            </IconBtn>
+
+            {/* Emoji button */}
+            <div style={{ position: 'relative' }}>
+              <IconBtn size={38} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+                <Smile style={{ width: 20, height: 20 }} />
+              </IconBtn>
+
+              {/* Emoji picker */}
+              {showEmojiPicker && (
+                <>
+                  <div
+                    style={{ position: 'fixed', inset: 0, zIndex: 10 }}
+                    onClick={() => setShowEmojiPicker(false)}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 46,
+                      left: 0,
+                      zIndex: 20,
+                      width: 280,
+                      backgroundColor: '#ffffff',
+                      borderRadius: 12,
+                      border: `1px solid ${THEME.border}`,
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                      padding: 10,
+                    }}
+                  >
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 2 }}>
+                      {EMOJI_LIST.map((emoji) => (
+                        <button
+                          key={emoji}
+                          onClick={() => {
+                            setMessageText((prev) => prev + emoji);
+                            setShowEmojiPicker(false);
+                            textareaRef.current?.focus();
+                          }}
+                          style={{
+                            width: 32,
+                            height: 32,
+                            border: 'none',
+                            backgroundColor: 'transparent',
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            fontSize: 18,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'background-color 0.1s',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = THEME.inputBg; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Text area */}
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -1404,7 +1953,7 @@ export default function ConversationsPage() {
               />
             </div>
 
-            {/* Send or Mic */}
+            {/* Send or Mic (attach on mobile) */}
             {messageText.trim() ? (
               <button
                 onClick={handleSendMessage}
@@ -1428,8 +1977,8 @@ export default function ConversationsPage() {
                 <Send style={{ width: 18, height: 18 }} />
               </button>
             ) : (
-              <IconBtn size={40}>
-                <Mic style={{ width: 20, height: 20 }} />
+              <IconBtn size={40} onClick={() => fileInputRef.current?.click()}>
+                <Paperclip style={{ width: 20, height: 20 }} />
               </IconBtn>
             )}
           </div>
@@ -1439,7 +1988,7 @@ export default function ConversationsPage() {
   );
 
   // ---------------------------------------------------------------------------
-  // RIGHT SIDEBAR (Action buttons)
+  // RIGHT SIDEBAR
   // ---------------------------------------------------------------------------
   const rightSidebar = (
     <div
@@ -1456,52 +2005,14 @@ export default function ConversationsPage() {
         height: '100%',
       }}
     >
-      {/* Top: user avatar with online indicator */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-        <InlineAvatar name="User" size={38} online />
+      {/* Profile avatar */}
+      <InlineAvatar name="User" size={38} online />
 
-        {/* Action buttons */}
-        {[
-          { icon: RefreshCw, color: THEME.primary, bg: '#e8faf4', tooltip: 'Refresh' },
-          { icon: Share2Icon, color: THEME.primary, bg: '#e8faf4', tooltip: 'Share' },
-          { icon: Copy, color: THEME.primary, bg: '#e8faf4', tooltip: 'Copy' },
-          { icon: Paperclip, color: THEME.primary, bg: '#e8faf4', tooltip: 'Attach' },
-        ].map((item, i) => (
-          <button
-            key={i}
-            title={item.tooltip}
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: '50%',
-              border: 'none',
-              backgroundColor: item.bg,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: item.color,
-              transition: 'transform 0.15s, box-shadow 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.1)';
-              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = 'none';
-            }}
-          >
-            <item.icon style={{ width: 18, height: 18 }} />
-          </button>
-        ))}
-      </div>
-
-      {/* Bottom: colored action buttons */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-        {/* RTL button */}
+        {/* Scroll to bottom */}
         <button
-          title="RTL"
+          title="Scroll to bottom"
+          onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })}
           style={{
             width: 38,
             height: 38,
@@ -1513,47 +2024,7 @@ export default function ConversationsPage() {
             alignItems: 'center',
             justifyContent: 'center',
             color: '#ffffff',
-            fontSize: 11,
-            fontWeight: 700,
             boxShadow: '0 2px 6px rgba(59,130,246,0.4)',
-          }}
-        >
-          RTL
-        </button>
-        {/* Green circle */}
-        <button
-          title="New chat"
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: '50%',
-            border: 'none',
-            backgroundColor: THEME.primary,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            boxShadow: `0 2px 6px rgba(44,222,168,0.4)`,
-          }}
-        >
-          <MessageSquare style={{ width: 18, height: 18 }} />
-        </button>
-        {/* Red circle */}
-        <button
-          title="Close"
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: '50%',
-            border: 'none',
-            backgroundColor: '#ef4444',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#ffffff',
-            boxShadow: '0 2px 6px rgba(239,68,68,0.4)',
           }}
         >
           <ArrowLeft style={{ width: 18, height: 18, transform: 'rotate(-90deg)' }} />

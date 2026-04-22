@@ -22,11 +22,11 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       rows = db.prepare(
-        `SELECT * FROM contacts WHERE session_id = ? AND (name LIKE ? OR push_name LIKE ? OR phone LIKE ?) ORDER BY name ASC`
+        `SELECT * FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@lid' AND (name LIKE ? OR push_name LIKE ? OR phone LIKE ?) ORDER BY created_at DESC`
       ).all(sessionId, `%${search}%`, `%${search}%`, `%${search}%`) as Record<string, unknown>[];
     } else {
       rows = db.prepare(
-        `SELECT * FROM contacts WHERE session_id = ? ORDER BY name ASC`
+        `SELECT * FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@lid' ORDER BY created_at DESC`
       ).all(sessionId) as Record<string, unknown>[];
     }
 
@@ -67,16 +67,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const client = manager.getClient(sessionId);
+    // Try to get client, and auto-reconnect if needed
+    let client = manager.getClient(sessionId);
+    if (!client) {
+      // Attempt reconnect before giving up
+      try {
+        await manager.reconnectSession(sessionId);
+        client = manager.getClient(sessionId);
+      } catch {
+        // ignore reconnect failure
+      }
+    }
     if (!client) {
       return Response.json(
-        { success: false, error: 'Session is not connected' },
+        { success: false, error: 'Session is not connected. Please reconnect from the Sessions page.' },
         { status: 400 }
       );
     }
 
     const wppContacts = await client.getAllContacts();
     const db = getDb();
+
+    // Clean up duplicate entries (e.g. @lid variants) before syncing
+    db.prepare(`DELETE FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@c.us'`).run(sessionId);
 
     let synced = 0;
     const insertStmt = db.prepare(
@@ -90,6 +103,8 @@ export async function POST(request: NextRequest) {
         const wppId = (c.id as Record<string, unknown>)?._serialized as string || (c.id as string) || '';
 
         if (!wppId || wppId === 'status@broadcast') continue;
+        // Skip non-contact IDs (group chats, LID duplicates) to avoid duplicates
+        if (!wppId.endsWith('@c.us')) continue;
 
         const existingRow = db.prepare(
           `SELECT id, labels FROM contacts WHERE session_id = ? AND wpp_id = ?`
@@ -97,9 +112,9 @@ export async function POST(request: NextRequest) {
 
         const contactId = existingRow?.id || uuidv4();
         const existingLabels = existingRow?.labels || '[]';
-        const phone = (wppId.replace('@c.us', '').replace('@g.us', '')) || '';
-        const name = (c.name as string) || (c.pushname as string) || (c.shortName as string) || phone;
+        const phone = wppId.replace('@c.us', '') || '';
         const pushName = (c.pushname as string) || '';
+        const name = (c.name as string) || pushName || (c.shortName as string) || (phone ? `+${phone}` : wppId);
         const profilePicUrl = (c.profilePicThumbObj as Record<string, unknown>)?.eurl as string || '';
         const isMyContact = !!(c.isMyContact);
         const isWAContact = !!(c.isWAContact ?? true);
@@ -124,9 +139,47 @@ export async function POST(request: NextRequest) {
 
     transaction();
 
+    // Fetch profile pictures in background by batches of 10
+    const contactRows = db.prepare(
+      `SELECT id, wpp_id FROM contacts WHERE session_id = ? AND (profile_pic_url IS NULL OR profile_pic_url = '') AND wpp_id LIKE '%@c.us'`
+    ).all(sessionId) as { id: string; wpp_id: string }[];
+
+    if (contactRows.length > 0 && client) {
+      const capturedClient = client;
+      const capturedDb = db;
+      (async () => {
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < contactRows.length; i += BATCH_SIZE) {
+          const batch = contactRows.slice(i, i + BATCH_SIZE);
+          await Promise.allSettled(
+            batch.map(async (row) => {
+              try {
+                const pic = await capturedClient.getProfilePicFromServer(row.wpp_id);
+                const picAny = pic as unknown;
+                let picUrl = '';
+                if (typeof picAny === 'string' && picAny.startsWith('http')) picUrl = picAny;
+                else if (picAny && typeof picAny === 'object') {
+                  const picObj = picAny as Record<string, unknown>;
+                  picUrl = (picObj.eurl as string) || (picObj.imgFull as string) || '';
+                }
+                if (picUrl) {
+                  capturedDb.prepare(`UPDATE contacts SET profile_pic_url = ? WHERE id = ?`).run(picUrl, row.id);
+                  // Also update the chat if exists
+                  capturedDb.prepare(`UPDATE chats SET profile_pic_url = ? WHERE session_id = ? AND wpp_id = ? AND (profile_pic_url IS NULL OR profile_pic_url = '')`).run(picUrl, sessionId, row.wpp_id);
+                }
+              } catch {
+                // Contact may not have a profile pic or privacy setting blocks it
+              }
+            })
+          );
+        }
+        console.log(`[contacts-sync] Profile pic fetch completed for ${contactRows.length} contacts`);
+      })();
+    }
+
     return Response.json({
       success: true,
-      data: { synced, message: `${synced} contacts synced` },
+      data: { synced, message: `${synced} contacts synced. Profile pictures loading in background...` },
     });
   } catch (error) {
     return Response.json(

@@ -28,6 +28,21 @@ interface ExecutionLogEntry {
   timestamp: string;
 }
 
+type ButtonPayload = {
+  id: string;
+  text: string;
+};
+
+type ButtonClient = {
+  sendButtons: (
+    chatId: string,
+    title: string,
+    buttons: ButtonPayload[],
+    text: string,
+    footer: string
+  ) => Promise<unknown>;
+};
+
 function interpolateVariables(
   text: string,
   ctx: FlowContext
@@ -408,11 +423,11 @@ async function executeNode(
         const btnTitle = interpolateVariables((config.title as string) || '', ctx);
         const btnText = interpolateVariables((config.text as string) || (config.message as string) || '', ctx);
         const btnFooter = interpolateVariables((config.footer as string) || '', ctx);
-        const buttons = ((config.buttons as Array<Record<string, unknown>>) || []).map((b) => ({
+        const buttons: ButtonPayload[] = ((config.buttons as Array<Record<string, unknown>>) || []).map((b) => ({
           id: (b.id as string) || '',
           text: (b.text as string) || (b.label as string) || '',
         }));
-        const result = await (client as unknown as Record<string, Function>).sendButtons(
+        const result = await (client as unknown as ButtonClient).sendButtons(
           ctx.chatId,
           btnTitle,
           buttons,

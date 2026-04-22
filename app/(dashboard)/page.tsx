@@ -23,12 +23,14 @@ import { Toggle } from '@/components/ui/toggle';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { useDashboardStore } from '@/lib/store';
+import { useActiveSession } from '@/hooks/use-active-session';
 import { formatTimestamp, truncate } from '@/lib/utils';
 import type { DashboardStats, Message, Flow, ApiResponse } from '@/lib/types';
 import Link from 'next/link';
 
 export default function DashboardPage() {
   const { stats, setStats } = useDashboardStore();
+  const activeSessionId = useActiveSession();
   const [recentMessages, setRecentMessages] = useState<Message[]>([]);
   const [activeFlows, setActiveFlows] = useState<Flow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -263,10 +265,21 @@ export default function DashboardPage() {
               variant="secondary"
               icon={<RefreshCw className="h-4 w-4" />}
               onClick={async () => {
+                if (!activeSessionId) {
+                  toast({ title: 'Select a session first', variant: 'error' });
+                  return;
+                }
                 try {
-                  const res = await fetch('/api/contacts', { method: 'POST' });
+                  const res = await fetch('/api/contacts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: activeSessionId }),
+                  });
                   if (res.ok) {
                     toast({ title: 'Contacts sync started', variant: 'success' });
+                  } else {
+                    const data = await res.json().catch(() => null);
+                    toast({ title: data?.error || 'Failed to sync contacts', variant: 'error' });
                   }
                 } catch {
                   toast({ title: 'Failed to sync contacts', variant: 'error' });
