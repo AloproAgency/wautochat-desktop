@@ -260,30 +260,39 @@ function evaluateCondition(
   const lowerActual = actual.toLowerCase();
   const lowerValue = value.toLowerCase();
 
-  switch (operator) {
+  // Normalize operator name to support both snake_case and camelCase variants
+  const op = operator.toLowerCase().replace(/_/g, '');
+
+  switch (op) {
     case 'contains':
-      return lowerActual.includes(lowerValue);
+      return lowerValue.length > 0 && lowerActual.includes(lowerValue);
+    case 'notcontains':
+      return !(lowerValue.length > 0 && lowerActual.includes(lowerValue));
     case 'equals':
       return lowerActual === lowerValue;
-    case 'startsWith':
-      return lowerActual.startsWith(lowerValue);
-    case 'endsWith':
-      return lowerActual.endsWith(lowerValue);
-    case 'regex': {
+    case 'notequals':
+      return lowerActual !== lowerValue;
+    case 'startswith':
+      return lowerValue.length > 0 && lowerActual.startsWith(lowerValue);
+    case 'endswith':
+      return lowerValue.length > 0 && lowerActual.endsWith(lowerValue);
+    case 'regex':
+    case 'matches': {
       try {
-        const regex = new RegExp(value, 'i');
-        return regex.test(actual);
+        return value.length > 0 && new RegExp(value, 'i').test(actual);
       } catch {
         return false;
       }
     }
     case 'exists':
       return actual.length > 0;
-    case 'notExists':
+    case 'notexists':
       return actual.length === 0;
-    case 'greaterThan':
+    case 'isempty':
+      return actual.trim().length === 0;
+    case 'greaterthan':
       return parseFloat(actual) > parseFloat(value);
-    case 'lessThan':
+    case 'lessthan':
       return parseFloat(actual) < parseFloat(value);
     default:
       return false;
@@ -695,7 +704,12 @@ async function executeNode(
       }
 
       case 'wait-for-reply': {
-        entry.result = { waiting: true };
+        const timeoutSeconds = Number((config.timeout as number) || 0);
+        const timeoutMessage = interpolateVariables(
+          (config.timeoutMessage as string) || '',
+          ctx
+        );
+        entry.result = { waiting: true, timeoutSeconds };
         log.push(entry);
         flowExecutionBus.emit({
           type: 'node:completed',
@@ -707,7 +721,7 @@ async function executeNode(
           timestamp: new Date().toISOString(),
           data: { status: 'success', result: entry.result, durationMs: Date.now() - startTime },
         });
-        // Pause the conversation: tell the manager to wait for next message
+
         manager.pauseConversation(
           ctx.session.id,
           ctx.chatId,
@@ -715,28 +729,74 @@ async function executeNode(
           node.id,
           { ...ctx.variables }
         );
-        // Stop execution here - will resume on next message
+
+        // If a timeout is configured, schedule a wake-up that sends the
+        // timeout message and clears the pause so the conversation isn't stuck.
+        if (timeoutSeconds > 0) {
+          const capturedSessionId = ctx.session.id;
+          const capturedChatId = ctx.chatId;
+          const capturedFlowId = flowId;
+          const capturedNodeId = node.id;
+          const capturedClient = manager.getClient(capturedSessionId);
+          setTimeout(async () => {
+            // Only fire if the conversation is still paused at this same node
+            const stillPaused = manager.isPausedAt(
+              capturedSessionId,
+              capturedChatId,
+              capturedFlowId,
+              capturedNodeId
+            );
+            if (!stillPaused) return;
+            try {
+              if (timeoutMessage && capturedClient) {
+                await capturedClient.sendText(capturedChatId, timeoutMessage);
+              }
+            } catch {
+              // ignore send failure
+            }
+            manager.clearPausedConversation(
+              capturedSessionId,
+              capturedChatId,
+              capturedFlowId
+            );
+          }, timeoutSeconds * 1000);
+        }
+
         return;
       }
 
       case 'condition': {
-        const field = (config.field as string) || 'messageBody';
-        const operator = (config.operator as string) || 'contains';
-        const condValue = interpolateVariables((config.value as string) || '', ctx);
+        // Support both new (leftOperand/rightOperand) and legacy (field/value) config shapes.
+        const leftRaw =
+          (config.leftOperand as string) ||
+          (config.field as string) ||
+          '{{message}}';
+        const rightRaw =
+          (config.rightOperand as string) ||
+          (config.value as string) ||
+          '';
+        const operator = (config.operator as string) || 'equals';
 
+        // Interpolate both operands so {{message}}, {{sender}}, etc. are resolved.
+        // If the left operand is a single variable name like "messageBody" or "sender"
+        // (legacy "field" style), still resolve it to the context value.
         let actual = '';
-        if (field === 'messageBody') {
-          actual = (ctx.message.body as string) || '';
-        } else if (field === 'sender') {
-          actual = ctx.sender;
-        } else if (field === 'chatId') {
-          actual = ctx.chatId;
+        const legacyFields = ['messageBody', 'sender', 'chatId'];
+        if (legacyFields.includes(leftRaw)) {
+          if (leftRaw === 'messageBody') actual = (ctx.message.body as string) || '';
+          else if (leftRaw === 'sender') actual = ctx.sender;
+          else if (leftRaw === 'chatId') actual = ctx.chatId;
+        } else if (!leftRaw.includes('{{') && ctx.variables[leftRaw] !== undefined) {
+          // Bare variable name reference
+          actual = ctx.variables[leftRaw];
         } else {
-          actual = ctx.variables[field] || '';
+          actual = interpolateVariables(leftRaw, ctx);
         }
 
+        const condValue = interpolateVariables(rightRaw, ctx);
         const matched = evaluateCondition(operator, condValue, actual);
 
+        entry.result = { matched, actual, expected: condValue, operator, branch: matched ? 'yes' : 'no' };
         log.push(entry);
         flowExecutionBus.emit({
           type: 'node:completed',
@@ -746,75 +806,100 @@ async function executeNode(
           nodeType: node.data.type,
           nodeLabel: node.data.label,
           timestamp: new Date().toISOString(),
-          data: { status: 'success', result: { matched }, durationMs: Date.now() - startTime },
+          data: { status: 'success', result: entry.result, durationMs: Date.now() - startTime },
         });
 
-        // Follow "true" or "false" handle edges
-        const trueTargets = getNextNodes(node.id, edges, matched ? 'true' : 'yes');
-        const falseTargets = getNextNodes(node.id, edges, matched ? 'false' : 'no');
+        // Route only to the branch that matches the condition result.
+        // UI generates edges with sourceHandle "yes"/"no"; we also accept "true"/"false" as aliases.
+        const yesTargets = [
+          ...getNextNodes(node.id, edges, 'yes'),
+          ...getNextNodes(node.id, edges, 'true'),
+        ];
+        const noTargets = [
+          ...getNextNodes(node.id, edges, 'no'),
+          ...getNextNodes(node.id, edges, 'false'),
+        ];
+        const chosen = matched ? yesTargets : noTargets;
+        const uniqueTargets = [...new Set(chosen)];
 
-        // Also check generic true/false handles
-        const matchTargets = matched
-          ? [...trueTargets, ...getNextNodes(node.id, edges, 'true')]
-          : [...falseTargets, ...getNextNodes(node.id, edges, 'false')];
-
-        // Deduplicate
-        const uniqueTargets = [...new Set(matchTargets)];
-
-        // If no handle-specific edges found, try default edges
-        if (uniqueTargets.length === 0) {
-          const defaultTargets = getNextNodes(node.id, edges);
-          if (matched && defaultTargets.length > 0) {
-            for (const t of defaultTargets) {
-              await executeNode(t, nodes, edges, ctx, log, visited, flowId, executionId);
-            }
-          }
-        } else {
-          for (const t of uniqueTargets) {
-            await executeNode(t, nodes, edges, ctx, log, visited, flowId, executionId);
-          }
+        for (const t of uniqueTargets) {
+          await executeNode(t, nodes, edges, ctx, log, visited, flowId, executionId);
         }
         return;
       }
 
       case 'delay': {
-        const delaySeconds = (config.seconds as number) || (config.delay as number) || 1;
-        await delay(delaySeconds * 1000);
-        entry.result = { delayedMs: delaySeconds * 1000 };
+        // UI panel writes `duration` + `unit` ('seconds'|'minutes'|'hours').
+        // Legacy configs used `seconds` or `delay` directly as seconds.
+        const duration = Number(
+          (config.duration as number) ??
+          (config.seconds as number) ??
+          (config.delay as number) ??
+          1
+        );
+        const unit = (config.unit as string) || 'seconds';
+        let ms = duration * 1000;
+        if (unit === 'minutes') ms = duration * 60_000;
+        else if (unit === 'hours') ms = duration * 3_600_000;
+        // Safety: cap to 24h to avoid runaway waits that would hold the flow forever
+        ms = Math.max(0, Math.min(ms, 86_400_000));
+        await delay(ms);
+        entry.result = { duration, unit, delayedMs: ms };
         break;
       }
 
       case 'set-variable': {
-        const varName = (config.variableName as string) || (config.name as string) || (config.variable as string) || '';
-        let varValue = interpolateVariables((config.value as string) || '', ctx);
+        const varName = (
+          (config.variableName as string) ||
+          (config.name as string) ||
+          (config.variable as string) ||
+          ''
+        ).trim();
+        if (!varName) {
+          throw new Error('Variable name is required');
+        }
 
-        // Support extracting from message
+        let varValue = interpolateVariables((config.value as string) || '', ctx);
+        // Legacy support: "source" field to pull a built-in value instead of an expression
         if (config.source === 'messageBody') {
           varValue = (ctx.message.body as string) || '';
         } else if (config.source === 'sender') {
           varValue = ctx.sender;
         }
 
-        if (varName) {
-          ctx.variables[varName] = varValue;
-        }
+        ctx.variables[varName] = varValue;
         entry.result = { variable: varName, value: varValue };
         break;
       }
 
       case 'http-request': {
         const url = interpolateVariables((config.url as string) || '', ctx);
-        const method = ((config.method as string) || 'GET').toUpperCase();
-        const headersConfig = (config.headers as Record<string, string>) || {};
-        const bodyConfig = config.body ? interpolateVariables(
-          typeof config.body === 'string' ? config.body : JSON.stringify(config.body),
-          ctx
-        ) : undefined;
+        if (!url) throw new Error('HTTP request URL is required');
 
+        const method = ((config.method as string) || 'GET').toUpperCase();
+
+        // UI panel stores headers as an array [{ key, value }]. Legacy format was a flat object.
+        const rawHeaders = config.headers;
         const interpolatedHeaders: Record<string, string> = {};
-        for (const [k, v] of Object.entries(headersConfig)) {
-          interpolatedHeaders[k] = interpolateVariables(v, ctx);
+        if (Array.isArray(rawHeaders)) {
+          for (const h of rawHeaders as Array<{ key?: string; value?: string }>) {
+            if (h && h.key) {
+              interpolatedHeaders[interpolateVariables(h.key, ctx)] =
+                interpolateVariables(h.value || '', ctx);
+            }
+          }
+        } else if (rawHeaders && typeof rawHeaders === 'object') {
+          for (const [k, v] of Object.entries(rawHeaders as Record<string, string>)) {
+            interpolatedHeaders[interpolateVariables(k, ctx)] = interpolateVariables(v, ctx);
+          }
         }
+
+        const bodyConfig = config.body
+          ? interpolateVariables(
+              typeof config.body === 'string' ? config.body : JSON.stringify(config.body),
+              ctx
+            )
+          : undefined;
 
         const fetchOptions: RequestInit = {
           method,
@@ -827,7 +912,18 @@ async function executeNode(
           }
         }
 
-        const response = await fetch(url, fetchOptions);
+        // 30s timeout so a hanging API doesn't freeze the flow forever
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30_000);
+        fetchOptions.signal = controller.signal;
+
+        let response: Response;
+        try {
+          response = await fetch(url, fetchOptions);
+        } finally {
+          clearTimeout(timeout);
+        }
+
         const responseText = await response.text();
         let responseData: unknown;
         try {
@@ -848,7 +944,13 @@ async function executeNode(
           ? responseData
           : JSON.stringify(responseData);
 
-        entry.result = { status: response.status, data: responseData };
+        entry.result = {
+          method,
+          url,
+          status: response.status,
+          ok: response.ok,
+          data: responseData,
+        };
         break;
       }
 
@@ -1186,44 +1288,51 @@ async function executeNode(
       }
 
       case 'go-to-flow': {
-        const targetFlowId = (config.flowId as string) || '';
-        if (targetFlowId) {
-          const db = getDb();
-          const flowRow = db.prepare(`SELECT * FROM flows WHERE id = ?`).get(targetFlowId) as Record<string, unknown> | undefined;
-
-          if (flowRow) {
-            const targetFlow: Flow = {
-              id: flowRow.id as string,
-              sessionId: flowRow.session_id as string,
-              name: flowRow.name as string,
-              description: (flowRow.description as string) || undefined,
-              isActive: !!(flowRow.is_active),
-              trigger: JSON.parse((flowRow.trigger_config as string) || '{}'),
-              nodes: JSON.parse((flowRow.nodes as string) || '[]'),
-              edges: JSON.parse((flowRow.edges as string) || '[]'),
-              variables: JSON.parse((flowRow.variables as string) || '{}'),
-              createdAt: flowRow.created_at as string,
-              updatedAt: flowRow.updated_at as string,
-            };
-            const subLog = await executeFlow(targetFlow, ctx.message, ctx.session);
-            entry.result = { flowId: targetFlowId, subLog };
-            log.push(entry);
-            flowExecutionBus.emit({
-              type: 'node:completed',
-              flowId,
-              executionId,
-              nodeId: node.id,
-              nodeType: node.data.type,
-              nodeLabel: node.data.label,
-              timestamp: new Date().toISOString(),
-              data: { status: 'success', result: entry.result, durationMs: Date.now() - startTime },
-            });
-            return;
-          } else {
-            throw new Error(`Target flow ${targetFlowId} not found`);
-          }
+        const targetFlowId = ((config.flowId as string) || '').trim();
+        if (!targetFlowId) {
+          throw new Error('No target flow selected');
         }
-        break;
+        if (targetFlowId === flowId) {
+          throw new Error('Cannot jump to the same flow (infinite loop)');
+        }
+
+        const db = getDb();
+        const flowRow = db.prepare(`SELECT * FROM flows WHERE id = ?`).get(targetFlowId) as Record<string, unknown> | undefined;
+        if (!flowRow) {
+          throw new Error(`Target flow "${targetFlowId}" not found`);
+        }
+
+        const targetFlow: Flow = {
+          id: flowRow.id as string,
+          sessionId: flowRow.session_id as string,
+          name: flowRow.name as string,
+          description: (flowRow.description as string) || undefined,
+          isActive: !!(flowRow.is_active),
+          trigger: JSON.parse((flowRow.trigger_config as string) || '{}'),
+          nodes: JSON.parse((flowRow.nodes as string) || '[]'),
+          edges: JSON.parse((flowRow.edges as string) || '[]'),
+          variables: JSON.parse((flowRow.variables as string) || '{}'),
+          createdAt: flowRow.created_at as string,
+          updatedAt: flowRow.updated_at as string,
+        };
+        const subLog = await executeFlow(targetFlow, ctx.message, ctx.session);
+        entry.result = {
+          flowId: targetFlowId,
+          flowName: targetFlow.name,
+          subSteps: subLog.length,
+        };
+        log.push(entry);
+        flowExecutionBus.emit({
+          type: 'node:completed',
+          flowId,
+          executionId,
+          nodeId: node.id,
+          nodeType: node.data.type,
+          nodeLabel: node.data.label,
+          timestamp: new Date().toISOString(),
+          data: { status: 'success', result: entry.result, durationMs: Date.now() - startTime },
+        });
+        return;
       }
 
       case 'end': {

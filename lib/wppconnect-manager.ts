@@ -912,6 +912,26 @@ class WppConnectManager {
     console.log(`[${sessionId}] Flow "${flowId}" paused at wait-for-reply for chat ${chatId}`);
   }
 
+  /**
+   * Check whether a conversation is currently paused at a specific wait-for-reply node.
+   * Used by the flow-engine timeout scheduler to avoid sending the timeout message
+   * if the user already replied and the flow resumed.
+   */
+  isPausedAt(sessionId: string, chatId: string, flowId: string, waitNodeId: string): boolean {
+    const key = `${sessionId}:${chatId}:${flowId}`;
+    const paused = this.pausedConversations.get(key);
+    return !!paused && paused.resumeAfterNodeId === waitNodeId;
+  }
+
+  /**
+   * Clear a paused conversation entry. Called when the wait-for-reply timeout fires
+   * so the chat isn't stuck waiting forever.
+   */
+  clearPausedConversation(sessionId: string, chatId: string, flowId: string): void {
+    const key = `${sessionId}:${chatId}:${flowId}`;
+    this.pausedConversations.delete(key);
+  }
+
   private async triggerFlows(
     sessionId: string,
     message: Record<string, unknown>,
