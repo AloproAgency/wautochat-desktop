@@ -127,7 +127,7 @@ class WppConnectManager {
 
     const db = getDb();
     const rows = db.prepare(
-      `SELECT id FROM sessions WHERE status IN ('connected', 'connecting', 'qr_ready') ORDER BY updated_at DESC`
+      `SELECT id FROM sessions WHERE status = 'connected' ORDER BY updated_at DESC`
     ).all() as { id: string }[];
 
     // Clean up orphaned browsers from previous dev server runs
@@ -193,7 +193,7 @@ class WppConnectManager {
             session: sessionId,
             headless: true,
             useChrome: false,
-            autoClose: 0,
+            autoClose: 120000,
             deviceName: deviceName || 'WAutoChat',
             logQR: false,
             disableWelcome: true,
@@ -537,21 +537,190 @@ class WppConnectManager {
       }
     } catch { /* event not available */ }
 
-    // Label Updated trigger
+    // Label events — onUpdateLabel fires for assign/unassign.
+    // For created/updated/deleted we poll getAllLabels() and diff.
     try {
-      const clientAny = client as unknown as { onUpdateLabel?: (cb: (l: unknown) => void) => void };
+      const clientAny = client as unknown as {
+        onUpdateLabel?: (cb: (l: unknown) => void) => void;
+      };
       if (typeof clientAny.onUpdateLabel === 'function') {
         clientAny.onUpdateLabel((labelUpdate: unknown) => {
           const lData = labelUpdate as Record<string, unknown>;
-          const labelName = (lData.name as string) || '';
-          this.triggerFlowsByEvent(sessionId, 'label_updated', lData, (config) => {
-            const filterLabel = (config.labelName as string) || '';
-            if (!filterLabel) return true;
-            return filterLabel === labelName;
-          }).catch(() => {});
+          const changeType = (lData.type as string) || 'add';
+          const labels = (lData.labels as Array<Record<string, unknown>>) || [];
+          const chat = (lData.chat as Record<string, unknown>) || {};
+          const chatWppId = (chat.id as Record<string, unknown>)?._serialized as string
+            || (chat.id as string) || '';
+          const isGroupTarget = !!chat.isGroup || chatWppId.endsWith('@g.us');
+
+          const triggerType = changeType === 'remove' ? 'label_unassigned' : 'label_assigned';
+
+          for (const label of labels) {
+            const eventData: Record<string, unknown> = {
+              ...lData,
+              label,
+              labelName: label.name,
+              labelId: label.id,
+              labelColor: label.hexColor || label.color,
+              chatId: chatWppId,
+              targetType: isGroupTarget ? 'group' : 'chat',
+            };
+            this.triggerFlowsByEvent(sessionId, triggerType, eventData, (config) =>
+              this.matchLabelFilters(config, eventData)
+            ).catch(() => {});
+          }
         });
       }
     } catch { /* event not available */ }
+
+    // Polling for created / updated / deleted labels
+    this.startLabelPolling(sessionId, client);
+  }
+
+  // Per-session label snapshot used to diff against getAllLabels() poll
+  private labelSnapshots: Map<string, Map<string, { name: string; color: string }>> = new Map();
+  private labelPollTimers: Map<string, NodeJS.Timeout> = new Map();
+
+  private startLabelPolling(sessionId: string, client: Whatsapp): void {
+    // Clear any previous timer for this session
+    const prev = this.labelPollTimers.get(sessionId);
+    if (prev) clearInterval(prev);
+
+    const clientAny = client as unknown as { getAllLabels?: () => Promise<Array<Record<string, unknown>>> };
+    if (typeof clientAny.getAllLabels !== 'function') return;
+
+    const poll = async () => {
+      try {
+        if (!this.sessions.has(sessionId)) return;
+        const labels = await clientAny.getAllLabels!();
+        const current = new Map<string, { name: string; color: string }>();
+        for (const l of labels || []) {
+          const id = String(l.id || '');
+          if (!id) continue;
+          current.set(id, {
+            name: (l.name as string) || '',
+            color: ((l.hexColor as string) || (l.color as string) || '').toString(),
+          });
+        }
+
+        const previous = this.labelSnapshots.get(sessionId);
+        if (previous) {
+          // Detect created
+          for (const [id, cur] of current) {
+            if (!previous.has(id)) {
+              const eventData: Record<string, unknown> = { labelId: id, labelName: cur.name, labelColor: cur.color };
+              this.triggerFlowsByEvent(sessionId, 'label_created', eventData, (config) =>
+                this.matchLabelFilters(config, eventData)
+              ).catch(() => {});
+            }
+          }
+          // Detect updated (name or color change)
+          for (const [id, cur] of current) {
+            const prevLabel = previous.get(id);
+            if (prevLabel && (prevLabel.name !== cur.name || prevLabel.color !== cur.color)) {
+              const eventData: Record<string, unknown> = {
+                labelId: id,
+                labelName: cur.name,
+                labelColor: cur.color,
+                previousName: prevLabel.name,
+                previousColor: prevLabel.color,
+              };
+              this.triggerFlowsByEvent(sessionId, 'label_updated', eventData, (config) =>
+                this.matchLabelFilters(config, eventData)
+              ).catch(() => {});
+            }
+          }
+          // Detect deleted
+          for (const [id, prevLabel] of previous) {
+            if (!current.has(id)) {
+              const eventData: Record<string, unknown> = { labelId: id, labelName: prevLabel.name, labelColor: prevLabel.color };
+              this.triggerFlowsByEvent(sessionId, 'label_deleted', eventData, (config) =>
+                this.matchLabelFilters(config, eventData)
+              ).catch(() => {});
+            }
+          }
+        }
+        this.labelSnapshots.set(sessionId, current);
+      } catch { /* WhatsApp may not be ready yet */ }
+    };
+
+    // Warm up the snapshot immediately, then poll every 30s
+    void poll();
+    const timer = setInterval(poll, 30000);
+    this.labelPollTimers.set(sessionId, timer);
+  }
+
+  private stopLabelPolling(sessionId: string): void {
+    const timer = this.labelPollTimers.get(sessionId);
+    if (timer) {
+      clearInterval(timer);
+      this.labelPollTimers.delete(sessionId);
+    }
+    this.labelSnapshots.delete(sessionId);
+  }
+
+  // Applies all label filter options from the node config
+  private matchLabelFilters(
+    config: Record<string, unknown>,
+    event: Record<string, unknown>
+  ): boolean {
+    const labelName = (event.labelName as string) || '';
+    const labelColor = ((event.labelColor as string) || '').toLowerCase();
+    const targetType = (event.targetType as string) || '';
+    const targetId = (event.chatId as string) || '';
+
+    // Name filter with match mode
+    const filterRaw = ((config.labelName as string) || '').trim();
+    if (filterRaw) {
+      const mode = (config.labelMatchMode as string) || 'exact';
+      const names = filterRaw.split(',').map((s) => s.trim()).filter(Boolean);
+      const lowerLabel = labelName.toLowerCase();
+      const matched = names.some((n) => {
+        const lowerN = n.toLowerCase();
+        if (mode === 'contains') return lowerLabel.includes(lowerN);
+        if (mode === 'startsWith') return lowerLabel.startsWith(lowerN);
+        if (mode === 'regex') {
+          try { return new RegExp(n, 'i').test(labelName); } catch { return false; }
+        }
+        return lowerLabel === lowerN;
+      });
+      if (!matched) return false;
+    }
+
+    // Color filter
+    const colorFilter = ((config.labelColor as string) || '').trim().toLowerCase();
+    if (colorFilter && labelColor && labelColor !== colorFilter) return false;
+
+    // Target type filter (only meaningful for assigned/unassigned)
+    const targetFilter = (config.labelTargetType as string) || 'any';
+    if (targetFilter !== 'any' && targetType) {
+      if (targetFilter === 'contact' && targetType !== 'chat') return false;
+      if (targetFilter === 'chat' && targetType === 'group') return false;
+      if (targetFilter === 'group' && targetType !== 'group') return false;
+    }
+
+    // Specific target ID
+    const targetIdFilter = ((config.labelTargetId as string) || '').trim();
+    if (targetIdFilter && targetId && targetIdFilter !== targetId) return false;
+
+    // Label count comparison (e.g. ">2", "<=5", "=1")
+    const countFilter = ((config.labelCountFilter as string) || '').trim();
+    if (countFilter) {
+      const labelsArr = (event.labels as unknown[]) || [];
+      const count = Array.isArray(labelsArr) ? labelsArr.length : 0;
+      const m = countFilter.match(/^(>=|<=|>|<|=)?\s*(\d+)$/);
+      if (m) {
+        const op = m[1] || '=';
+        const threshold = parseInt(m[2], 10);
+        if (op === '>' && !(count > threshold)) return false;
+        if (op === '<' && !(count < threshold)) return false;
+        if (op === '>=' && !(count >= threshold)) return false;
+        if (op === '<=' && !(count <= threshold)) return false;
+        if (op === '=' && count !== threshold) return false;
+      }
+    }
+
+    return true;
   }
 
   private async handleIncomingMessage(
@@ -957,6 +1126,23 @@ class WppConnectManager {
         }
       }
 
+      // 1b. Message Type filter (event kind)
+      const messageTypeFilter = (filters.messageType as string) || 'any';
+      if (messageTypeFilter !== 'any') {
+        const hasReaction = !!message.reactionText;
+        const hasQuoted = !!(message.quotedMsg || message.quotedMsgId);
+        const quotedFromMe = hasQuoted && !!((message.quotedMsg as Record<string, unknown>)?.fromMe);
+        const mentionedMe = Array.isArray(message.mentionedIds) && (message.mentionedIds as unknown[]).length > 0;
+
+        if (messageTypeFilter === 'reply' && !quotedFromMe) return false;
+        if (messageTypeFilter === 'mention' && !mentionedMe) return false;
+        if (messageTypeFilter === 'reaction' && !hasReaction) return false;
+        if (messageTypeFilter === 'forwarded' && !message.isForwarded) return false;
+        if (messageTypeFilter === 'quoted' && !hasQuoted) return false;
+        // 'edited', 'deleted', 'read' are triggered by dedicated events, not here
+        // 'new' is any fresh incoming message - always true
+      }
+
       // 2. Media type filter
       const mediaTypeFilter = (filters.mediaType as string) || 'none';
       if (mediaTypeFilter !== 'none') {
@@ -971,6 +1157,11 @@ class WppConnectManager {
         if (mediaTypeFilter === 'sticker' && msgType !== 'sticker') return false;
         if (mediaTypeFilter === 'location' && msgType !== 'location') return false;
         if (mediaTypeFilter === 'contact' && !['contact', 'vcard', 'multi_vcard'].includes(msgType)) return false;
+        if (mediaTypeFilter === 'link') {
+          const urlRegex = /https?:\/\/[^\s]+|www\.[^\s]+/i;
+          if (!urlRegex.test(body)) return false;
+        }
+        if (mediaTypeFilter === 'poll' && msgType !== 'poll' && msgType !== 'poll_creation') return false;
       }
 
       // 3. Message content filter
@@ -998,16 +1189,23 @@ class WppConnectManager {
         }
       }
 
-      // 4. Sender filter
+      // 4. Sender filter (supports comma-separated list)
       const senderFilter = (filters.sender as string) || '';
-      if (senderFilter) {
-        const expected = senderFilter.includes('@') ? senderFilter : `${senderFilter}@c.us`;
+      if (senderFilter.trim()) {
+        const allowedSenders = senderFilter
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((s) => (s.includes('@') ? s : `${s}@c.us`));
         const senderPhone = sender.replace(/@.*$/, '');
-        const filterPhone = senderFilter.replace(/@.*$/, '');
-        if (sender !== expected && senderPhone !== filterPhone) return false;
+        const matched = allowedSenders.some((allowed) => {
+          const allowedPhone = allowed.replace(/@.*$/, '');
+          return sender === allowed || senderPhone === allowedPhone;
+        });
+        if (!matched) return false;
       }
 
-      // 5. Chat type filter
+      // 5. Chat type filter (+ optional specific group ID)
       const chatTypeFilter = (filters.chatType as string) || 'all';
       if (chatTypeFilter !== 'all') {
         const isBroadcast = chatId.endsWith('@broadcast') || chatId === 'status@broadcast';
@@ -1016,6 +1214,9 @@ class WppConnectManager {
         if (chatTypeFilter === 'broadcast' && !isBroadcast) return false;
         if (chatTypeFilter === 'private_or_group' && isBroadcast) return false;
       }
+      // Specific group ID filter (only relevant if in group)
+      const filterGroupId = (filters.groupId as string) || '';
+      if (filterGroupId && isGroup && chatId !== filterGroupId) return false;
 
       return true;
     };
@@ -1226,19 +1427,25 @@ class WppConnectManager {
   }
 
   async disconnectSession(sessionId: string): Promise<void> {
+    this.stopLabelPolling(sessionId);
     const activeSession = this.sessions.get(sessionId);
     if (activeSession) {
-      try {
-        await activeSession.client.logout();
-      } catch {
-        // May already be disconnected
-      }
-      try {
-        await activeSession.client.close();
-      } catch {
-        // Ignore close errors
-      }
+      const client = activeSession.client;
       this.sessions.delete(sessionId);
+
+      const safeCall = async (fn: () => Promise<unknown>) => {
+        try {
+          await fn();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!/Connection closed|Target closed|Session closed/i.test(msg)) {
+            console.warn(`[${sessionId}] disconnect cleanup:`, msg);
+          }
+        }
+      };
+
+      await safeCall(() => client.logout());
+      await safeCall(() => client.close());
       clearLock(sessionId);
     }
     this.qrCodes.delete(sessionId);

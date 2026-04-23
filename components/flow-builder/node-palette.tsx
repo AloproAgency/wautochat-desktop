@@ -65,13 +65,14 @@ interface PaletteItem {
 }
 
 const paletteItems: PaletteItem[] = [
-  // 🧩 Grouped Triggers (one node per category)
-  { type: 'trigger', label: '💬 Discussion', description: 'Any message: private, group, broadcast, media, keyword, regex…', icon: MessageSquare, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'message' },
-  { type: 'trigger', label: '🟢 Status', description: 'Contact presence: online, offline, typing, recording…', icon: Wifi, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'presence' },
-  { type: 'trigger', label: '👥 Group Event', description: 'Added to group, participant joined/left, label updated…', icon: Users, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'group_event' },
-  { type: 'trigger', label: '📞 Call', description: 'Incoming, outgoing, or missed call (voice/video)', icon: PhoneIncoming, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'call' },
-  { type: 'trigger', label: '🪝 Webhook', description: 'Triggered by an external system calling your webhook URL', icon: Webhook, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'system' },
-  { type: 'trigger', label: '⏰ Schedule', description: 'Runs at specific times (cron: daily, weekly, hourly…)', icon: Clock, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'schedule' },
+  // Grouped Triggers (one node per category)
+  { type: 'trigger', label: 'Discussion', description: 'Any message: private, group, broadcast, media, keyword, regex…', icon: MessageSquare, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'message' },
+  { type: 'trigger', label: 'Status', description: 'Contact presence: online, offline, typing, recording…', icon: Wifi, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'presence' },
+  { type: 'trigger', label: 'Group Event', description: 'Added to group, participant joined/left…', icon: Users, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'group_event' },
+  { type: 'trigger', label: 'Labels', description: 'Label created, updated, removed, assigned or unassigned', icon: Tag, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'label' },
+  { type: 'trigger', label: 'Call', description: 'Incoming, outgoing, or missed call (voice/video)', icon: PhoneIncoming, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'call' },
+  { type: 'trigger', label: 'Webhook', description: 'Triggered by an external system calling your webhook URL', icon: Webhook, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'system' },
+  { type: 'trigger', label: 'Schedule', description: 'Runs at specific times (cron: daily, weekly, hourly…)', icon: Clock, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'schedule' },
   // Messages
   { type: 'send-message', label: 'Send Text', description: 'Send a text message', icon: Type, category: 'Messages', nodeCategory: 'message' },
   { type: 'send-image', label: 'Send Image', description: 'Send an image with caption', icon: Image, category: 'Messages', nodeCategory: 'message' },
@@ -108,12 +109,13 @@ const paletteItems: PaletteItem[] = [
 
 // Maps node palette labels to default trigger types for each category
 const triggerTypeMap: Record<string, string> = {
-  '💬 Discussion': 'message_received',
-  '🟢 Status': 'presence_changed',
-  '👥 Group Event': 'added_to_group',
-  '📞 Call': 'incoming_call',
-  '🪝 Webhook': 'webhook',
-  '⏰ Schedule': 'schedule',
+  'Discussion': 'message_received',
+  'Status': 'presence_changed',
+  'Group Event': 'added_to_group',
+  'Labels': 'label_assigned',
+  'Call': 'incoming_call',
+  'Webhook': 'webhook',
+  'Schedule': 'schedule',
 };
 
 // Maps each trigger type to its category (used to know which dropdown to show)
@@ -144,7 +146,12 @@ export const triggerCategoryMap: Record<string, string> = {
   added_to_group: 'group_event',
   group_joined: 'group_event',
   group_left: 'group_event',
-  label_updated: 'group_event',
+  // Labels
+  label_created: 'label',
+  label_updated: 'label',
+  label_deleted: 'label',
+  label_assigned: 'label',
+  label_unassigned: 'label',
   // Call
   incoming_call: 'call',
   // System
