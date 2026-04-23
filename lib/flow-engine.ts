@@ -29,6 +29,68 @@ interface ExecutionLogEntry {
 }
 
 /**
+ * Normalize a WhatsApp contact ID to the @c.us format expected by most
+ * wppconnect methods (blockContact, unblockContact, sendText, etc.).
+ * Handles @lid, @s.whatsapp.net, raw phone numbers, and already-formatted IDs.
+ * Returns empty string if the input is unusable.
+ */
+function normalizeContactId(raw: string): string {
+  if (!raw) return '';
+  // Groups stay in @g.us
+  if (raw.endsWith('@g.us')) return raw;
+  // Extract just the digits
+  const phone = raw.replace(/@c\.us|@g\.us|@lid|@s\.whatsapp\.net/g, '').replace(/\D/g, '');
+  if (!phone) return '';
+  return `${phone}@c.us`;
+}
+
+/**
+ * Resolve a contact row for label operations. Handles the @lid ↔ @c.us
+ * mismatch: WhatsApp sometimes sends messages with sender in @lid format,
+ * while the synced contacts table stores the same person as @c.us.
+ * Strategy: try wpp_id match, then phone match, then create a visible
+ * contact entry so the label is never lost.
+ */
+function resolveContactForLabel(
+  db: ReturnType<typeof getDb>,
+  sessionId: string,
+  senderId: string
+): { id: string; labels: string } {
+  // 1. Exact wpp_id match
+  let contact = db
+    .prepare(`SELECT id, labels FROM contacts WHERE session_id = ? AND wpp_id = ?`)
+    .get(sessionId, senderId) as { id: string; labels: string } | undefined;
+  if (contact) return contact;
+
+  // 2. Extract numeric phone from ID and match on phone column
+  const phone = senderId.replace(/@c\.us|@g\.us|@lid|@s\.whatsapp\.net/g, '').replace(/\D/g, '');
+  if (phone) {
+    contact = db
+      .prepare(`SELECT id, labels FROM contacts WHERE session_id = ? AND phone = ?`)
+      .get(sessionId, phone) as { id: string; labels: string } | undefined;
+    if (contact) return contact;
+  }
+
+  // 3. Try "@c.us" variant if no suffix in sender
+  if (!senderId.includes('@')) {
+    contact = db
+      .prepare(`SELECT id, labels FROM contacts WHERE session_id = ? AND wpp_id = ?`)
+      .get(sessionId, `${senderId}@c.us`) as { id: string; labels: string } | undefined;
+    if (contact) return contact;
+  }
+
+  // 4. Create a new visible contact as last resort
+  const newContactId = crypto.randomUUID();
+  const wppId = senderId.includes('@') ? senderId : `${senderId}@c.us`;
+  const displayPhone = phone || wppId;
+  db.prepare(
+    `INSERT INTO contacts (id, session_id, wpp_id, name, phone, is_my_contact, is_wa_contact, labels)
+     VALUES (?, ?, ?, ?, ?, 1, 1, '[]')`
+  ).run(newContactId, sessionId, wppId, displayPhone, displayPhone);
+  return { id: newContactId, labels: '[]' };
+}
+
+/**
  * Translates technical wppconnect / puppeteer / network errors into
  * user-friendly messages. Falls back to a generic message with the raw
  * technical detail appended for debugging.
@@ -50,6 +112,60 @@ export function humanizeError(rawError: string, nodeType: FlowNodeType): string 
   }
   if (nodeType === 'send-list' && (lower.includes('is not a function') || lower.includes('not supported'))) {
     return "Les listes interactives ne sont pas supportées sur ce compte WhatsApp. Elles nécessitent un compte WhatsApp Business.";
+  }
+
+  // Action-specific errors
+  if (nodeType === 'forward-message') {
+    if (lower.includes('no recipients selected')) {
+      return "Aucun destinataire sélectionné. Ouvrez la configuration du nœud et ajoutez au moins un contact vers qui transférer.";
+    }
+    if (lower.includes('target chat id is required')) {
+      return "Le destinataire est requis pour transférer un message.";
+    }
+    if (lower.includes('no message to forward')) {
+      return "Aucun message à transférer. Ce nœud ne peut s'exécuter que dans un flow déclenché par un message entrant.";
+    }
+    if (lower.includes('forwarding failed for all recipients')) {
+      return `Échec du transfert vers tous les destinataires. ${err}`;
+    }
+  }
+  if (nodeType === 'add-to-group' || nodeType === 'remove-from-group') {
+    if (lower.includes('not a group') || lower.includes('invalid group')) {
+      return "L'ID du groupe est invalide. Utilisez le format '123456@g.us'.";
+    }
+    if (lower.includes('not admin') || lower.includes('forbidden')) {
+      return "Vous devez être administrateur du groupe pour effectuer cette action.";
+    }
+    if (lower.includes('privacy') || lower.includes('not allowed')) {
+      return "Impossible d'ajouter ce contact : ses réglages de confidentialité WhatsApp l'empêchent d'être ajouté à un groupe.";
+    }
+  }
+  if (nodeType === 'block-contact' || nodeType === 'unblock-contact') {
+    if (lower.includes('without a chat') || lower.includes('block_list')) {
+      return "Impossible de bloquer ce contact : aucune conversation WhatsApp n'existe avec lui. Envoyez-lui au moins un message d'abord, ou utilisez ce nœud dans un flow déclenché par un message reçu de ce contact.";
+    }
+    if (lower.includes('not a contact') || lower.includes('invalid wid')) {
+      return "Contact invalide. Vérifiez que le numéro est au format '1234567890@c.us'.";
+    }
+    if (lower.includes('invalid contact id')) {
+      return "ID de contact invalide. Le flow n'a pas pu identifier le destinataire à bloquer.";
+    }
+  }
+  if (nodeType === 'send-reaction') {
+    if (lower.includes('invalid emoji') || lower.includes('reaction')) {
+      return "L'emoji de réaction est invalide. Utilisez un emoji Unicode comme 👍 ou ❤️.";
+    }
+    if (lower.includes('message') && lower.includes('not found')) {
+      return "Message introuvable. Impossible d'ajouter une réaction à un message qui n'existe plus.";
+    }
+  }
+  if (nodeType === 'typing-indicator' || nodeType === 'mark-as-read') {
+    if (lower.includes('chat') && lower.includes('not found')) {
+      return "Conversation introuvable. Le destinataire n'existe pas ou la session n'est pas active.";
+    }
+  }
+  if ((nodeType === 'assign-label' || nodeType === 'remove-label') && lower.includes('contact')) {
+    return "Contact introuvable dans la base. Synchronisez d'abord vos contacts depuis la page Contacts.";
   }
 
   // Puppeteer / wppconnect connection hiccups
@@ -518,13 +634,49 @@ async function executeNode(
 
       case 'send-reaction': {
         if (!client) throw new Error('Client not connected');
-        const reactionMsgId = interpolateVariables(
-          (config.messageId as string) || (ctx.message.id as Record<string, unknown>)?._serialized as string || '',
-          ctx
-        );
-        const emoji = (config.emoji as string) || (config.reaction as string) || '';
+
+        // Extract message ID from multiple possible locations
+        const msgIdObj = ctx.message.id as unknown;
+        let reactionMsgId = '';
+        if (config.messageId) {
+          reactionMsgId = interpolateVariables(config.messageId as string, ctx);
+        } else if (typeof msgIdObj === 'string') {
+          reactionMsgId = msgIdObj;
+        } else if (msgIdObj && typeof msgIdObj === 'object') {
+          const idRecord = msgIdObj as Record<string, unknown>;
+          reactionMsgId =
+            (idRecord._serialized as string) ||
+            (idRecord.id as string) ||
+            '';
+        }
+
+        if (!reactionMsgId || typeof reactionMsgId !== 'string') {
+          throw new Error('No message to react to in this context');
+        }
+
+        // Emoji: accept either a direct unicode emoji or a common name
+        const rawEmoji = ((config.emoji as string) || (config.reaction as string) || '').trim();
+        const emojiMap: Record<string, string> = {
+          thumbs_up: '👍', thumbsup: '👍', 'thumbs-up': '👍', like: '👍',
+          heart: '❤️', love: '❤️',
+          laugh: '😂', joy: '😂', haha: '😂',
+          wow: '😮', surprised: '😮',
+          sad: '😢', cry: '😢',
+          pray: '🙏', thanks: '🙏',
+          fire: '🔥',
+          clap: '👏',
+          party: '🎉',
+          star: '⭐',
+          check: '✅', ok: '✅',
+          cross: '❌', no: '❌',
+        };
+        const emoji = emojiMap[rawEmoji.toLowerCase()] || rawEmoji;
+        if (!emoji) {
+          throw new Error('Reaction emoji is required');
+        }
+
         await client.sendReactionToMessage(reactionMsgId, emoji);
-        entry.result = { reaction: emoji };
+        entry.result = { reaction: emoji, messageId: reactionMsgId };
         break;
       }
 
@@ -697,68 +849,83 @@ async function executeNode(
       }
 
       case 'assign-label': {
-        const labelName = interpolateVariables((config.label as string) || (config.name as string) || '', ctx);
-        if (labelName && client) {
-          const db = getDb();
-          // Find or create label
-          let label = db.prepare(
-            `SELECT id FROM labels WHERE session_id = ? AND name = ?`
-          ).get(ctx.session.id, labelName) as { id: string } | undefined;
-
-          if (!label) {
-            const labelId = crypto.randomUUID();
-            db.prepare(
-              `INSERT INTO labels (id, session_id, name, color, count) VALUES (?, ?, ?, '#25D366', 0)`
-            ).run(labelId, ctx.session.id, labelName);
-            label = { id: labelId };
-          }
-
-          // Update contact labels
-          const contact = db.prepare(
-            `SELECT id, labels FROM contacts WHERE session_id = ? AND wpp_id = ?`
-          ).get(ctx.session.id, ctx.sender) as { id: string; labels: string } | undefined;
-
-          if (contact) {
-            const labels: string[] = JSON.parse(contact.labels || '[]');
-            if (!labels.includes(labelName)) {
-              labels.push(labelName);
-              db.prepare(`UPDATE contacts SET labels = ? WHERE id = ?`).run(
-                JSON.stringify(labels),
-                contact.id
-              );
-              db.prepare(`UPDATE labels SET count = count + 1 WHERE id = ?`).run(label.id);
-            }
-          }
+        const labelName = interpolateVariables(
+          (config.labelName as string) ||
+            (config.label as string) ||
+            (config.name as string) ||
+            '',
+          ctx
+        );
+        if (!labelName.trim()) {
+          throw new Error('Label name is required');
         }
-        entry.result = { label: labelName };
+
+        const db = getDb();
+
+        // Find or create label
+        let label = db.prepare(
+          `SELECT id FROM labels WHERE session_id = ? AND name = ?`
+        ).get(ctx.session.id, labelName) as { id: string } | undefined;
+
+        if (!label) {
+          const labelId = crypto.randomUUID();
+          db.prepare(
+            `INSERT INTO labels (id, session_id, name, color, count) VALUES (?, ?, ?, '#25D366', 0)`
+          ).run(labelId, ctx.session.id, labelName);
+          label = { id: labelId };
+        }
+
+        // Resolve the contact, trying multiple strategies to handle @lid vs @c.us
+        const contact = resolveContactForLabel(db, ctx.session.id, ctx.sender);
+
+        const labels: string[] = JSON.parse(contact.labels || '[]');
+        let added = false;
+        if (!labels.includes(labelName)) {
+          labels.push(labelName);
+          db.prepare(`UPDATE contacts SET labels = ? WHERE id = ?`).run(
+            JSON.stringify(labels),
+            contact.id
+          );
+          db.prepare(`UPDATE labels SET count = count + 1 WHERE id = ?`).run(label.id);
+          added = true;
+        }
+
+        entry.result = { label: labelName, contactId: contact.id, added };
         break;
       }
 
       case 'remove-label': {
-        const rmLabelName = interpolateVariables((config.label as string) || (config.name as string) || '', ctx);
-        if (rmLabelName) {
-          const db = getDb();
-          const contact = db.prepare(
-            `SELECT id, labels FROM contacts WHERE session_id = ? AND wpp_id = ?`
-          ).get(ctx.session.id, ctx.sender) as { id: string; labels: string } | undefined;
-
-          if (contact) {
-            const labels: string[] = JSON.parse(contact.labels || '[]');
-            const idx = labels.indexOf(rmLabelName);
-            if (idx !== -1) {
-              labels.splice(idx, 1);
-              db.prepare(`UPDATE contacts SET labels = ? WHERE id = ?`).run(
-                JSON.stringify(labels),
-                contact.id
-              );
-              db.prepare(`UPDATE labels SET count = MAX(count - 1, 0) WHERE session_id = ? AND name = ?`).run(
-                ctx.session.id,
-                rmLabelName
-              );
-            }
-          }
+        const rmLabelName = interpolateVariables(
+          (config.labelName as string) ||
+            (config.label as string) ||
+            (config.name as string) ||
+            '',
+          ctx
+        );
+        if (!rmLabelName.trim()) {
+          throw new Error('Label name is required');
         }
-        entry.result = { label: rmLabelName };
+
+        const db = getDb();
+        const contact = resolveContactForLabel(db, ctx.session.id, ctx.sender);
+
+        const labels: string[] = JSON.parse(contact.labels || '[]');
+        const idx = labels.indexOf(rmLabelName);
+        let removed = false;
+        if (idx !== -1) {
+          labels.splice(idx, 1);
+          db.prepare(`UPDATE contacts SET labels = ? WHERE id = ?`).run(
+            JSON.stringify(labels),
+            contact.id
+          );
+          db.prepare(`UPDATE labels SET count = MAX(count - 1, 0) WHERE session_id = ? AND name = ?`).run(
+            ctx.session.id,
+            rmLabelName
+          );
+          removed = true;
+        }
+
+        entry.result = { label: rmLabelName, contactId: contact.id, removed };
         break;
       }
 
@@ -782,31 +949,208 @@ async function executeNode(
 
       case 'block-contact': {
         if (!client) throw new Error('Client not connected');
-        const blockId = interpolateVariables((config.contactId as string) || ctx.sender, ctx);
-        await client.blockContact(blockId);
-        entry.result = { blocked: blockId };
+
+        // Build the list of candidate IDs to try, in priority order.
+        // chatId is best — it guarantees the chat exists in WA's store (required for block).
+        // Fall back to the normalized sender, then the raw sender, then config.contactId.
+        const rawConfigId = interpolateVariables((config.contactId as string) || '', ctx);
+        const candidates = Array.from(
+          new Set(
+            [
+              // Only use chatId if it's a 1-to-1 conversation (not a group)
+              ctx.chatId && !ctx.chatId.endsWith('@g.us') ? ctx.chatId : '',
+              normalizeContactId(ctx.sender),
+              ctx.sender,
+              rawConfigId,
+              normalizeContactId(rawConfigId),
+            ].filter((c) => c && c.length > 3)
+          )
+        );
+
+        if (candidates.length === 0) {
+          throw new Error('Invalid contact ID — cannot block');
+        }
+
+        let blockedId = '';
+        let lastError: Error | null = null;
+        for (const candidate of candidates) {
+          try {
+            await client.blockContact(candidate);
+            blockedId = candidate;
+            break;
+          } catch (err) {
+            lastError = err instanceof Error ? err : new Error(String(err));
+          }
+        }
+
+        if (!blockedId) {
+          throw lastError || new Error('Failed to block contact');
+        }
+
+        // Reflect in local DB so the Contacts page shows the Blocked badge
+        const db = getDb();
+        const phone = blockedId.replace(/@c\.us|@g\.us|@lid/g, '').replace(/\D/g, '');
+        db.prepare(
+          `UPDATE contacts SET is_blocked = 1 WHERE session_id = ? AND (wpp_id = ? OR phone = ?)`
+        ).run(ctx.session.id, blockedId, phone);
+
+        entry.result = { blocked: blockedId, triedCandidates: candidates };
         break;
       }
 
       case 'unblock-contact': {
         if (!client) throw new Error('Client not connected');
-        const unblockId = interpolateVariables((config.contactId as string) || ctx.sender, ctx);
-        await client.unblockContact(unblockId);
-        entry.result = { unblocked: unblockId };
+
+        const rawConfigId = interpolateVariables((config.contactId as string) || '', ctx);
+        const candidates = Array.from(
+          new Set(
+            [
+              ctx.chatId && !ctx.chatId.endsWith('@g.us') ? ctx.chatId : '',
+              normalizeContactId(ctx.sender),
+              ctx.sender,
+              rawConfigId,
+              normalizeContactId(rawConfigId),
+            ].filter((c) => c && c.length > 3)
+          )
+        );
+
+        if (candidates.length === 0) {
+          throw new Error('Invalid contact ID — cannot unblock');
+        }
+
+        let unblockedId = '';
+        let lastError: Error | null = null;
+        for (const candidate of candidates) {
+          try {
+            await client.unblockContact(candidate);
+            unblockedId = candidate;
+            break;
+          } catch (err) {
+            lastError = err instanceof Error ? err : new Error(String(err));
+          }
+        }
+
+        if (!unblockedId) {
+          throw lastError || new Error('Failed to unblock contact');
+        }
+
+        const db = getDb();
+        const phone = unblockedId.replace(/@c\.us|@g\.us|@lid/g, '').replace(/\D/g, '');
+        db.prepare(
+          `UPDATE contacts SET is_blocked = 0 WHERE session_id = ? AND (wpp_id = ? OR phone = ?)`
+        ).run(ctx.session.id, unblockedId, phone);
+
+        entry.result = { unblocked: unblockedId, triedCandidates: candidates };
         break;
       }
 
       case 'forward-message': {
         if (!client) throw new Error('Client not connected');
-        const forwardTo = interpolateVariables((config.to as string) || (config.chatId as string) || '', ctx);
+
+        // Collect all targets: new multi-target "targets" array + legacy single fields
+        const targetsArr = (config.targets as string[]) || [];
+        const legacySingle =
+          (config.to as string) ||
+          (config.chatId as string) ||
+          (config.targetChat as string) ||
+          '';
+        const allTargets = Array.from(
+          new Set(
+            [
+              ...targetsArr.map((t) => interpolateVariables(t, ctx)),
+              legacySingle ? interpolateVariables(legacySingle, ctx) : '',
+            ].filter((t) => t && t.trim().length > 0)
+          )
+        );
+
+        if (allTargets.length === 0) {
+          throw new Error('No recipients selected for forwarding');
+        }
+
         const fwdMsgId =
           (ctx.message.id as Record<string, unknown>)?._serialized as string ||
           (ctx.message.id as string) ||
           '';
-        if (fwdMsgId && forwardTo) {
-          await client.forwardMessage(forwardTo, fwdMsgId, false);
+
+        // Extract message content to re-send (more reliable than the forward API,
+        // which fails when WA's internal chat cache lookup returns undefined).
+        const msgBody = (ctx.message.body as string) || '';
+        const msgType = (ctx.message.type as string) || 'chat';
+        const msgCaption = (ctx.message.caption as string) || '';
+        const msgMediaUrl =
+          (ctx.message.deprecatedMms3Url as string) ||
+          (ctx.message.mediaUrl as string) ||
+          '';
+        const senderName =
+          (ctx.message.notifyName as string) ||
+          (ctx.message.pushname as string) ||
+          ctx.sender.replace('@c.us', '');
+
+        if (!msgBody && !msgMediaUrl && !msgCaption) {
+          throw new Error('No message content to forward in this context');
         }
-        entry.result = { forwardedTo: forwardTo };
+
+        const clientAny = client as unknown as Record<string, Function>;
+        const useV2 = typeof clientAny.forwardMessagesV2 === 'function';
+
+        const forwarded: string[] = [];
+        const failed: Array<{ target: string; error: string }> = [];
+
+        for (const target of allTargets) {
+          try {
+            // Try the native forward API first (preserves "forwarded" badge)
+            let forwardWorked = false;
+            if (fwdMsgId) {
+              try {
+                if (useV2) {
+                  await clientAny.forwardMessagesV2(target, fwdMsgId);
+                } else {
+                  await clientAny.forwardMessage(target, fwdMsgId);
+                }
+                forwardWorked = true;
+              } catch {
+                // Fall through to manual re-send
+                forwardWorked = false;
+              }
+            }
+
+            // Fallback: re-send the content manually
+            if (!forwardWorked) {
+              const prefix = `*Transféré de ${senderName} :*\n\n`;
+              if (msgType === 'chat' || msgType === 'text') {
+                await client.sendText(target, prefix + msgBody);
+              } else if (msgMediaUrl && (msgType === 'image' || msgType === 'video' || msgType === 'document' || msgType === 'audio')) {
+                // Send media with caption that includes the forwarded-from header
+                const captionToUse = msgCaption
+                  ? `${prefix}${msgCaption}`
+                  : prefix.trim();
+                await client.sendFile(target, msgMediaUrl, {
+                  caption: captionToUse,
+                } as unknown as Record<string, unknown>);
+              } else {
+                // Last resort: just send as text
+                await client.sendText(target, prefix + (msgBody || msgCaption || '[Media transféré]'));
+              }
+            }
+
+            forwarded.push(target);
+          } catch (err) {
+            failed.push({
+              target,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+
+        if (forwarded.length === 0 && failed.length > 0) {
+          throw new Error(`Forwarding failed for all recipients: ${failed[0].error}`);
+        }
+
+        entry.result = {
+          forwardedTo: forwarded,
+          failedCount: failed.length,
+          ...(failed.length > 0 ? { failures: failed } : {}),
+        };
         break;
       }
 

@@ -47,6 +47,7 @@ const nodeIconConfig: Record<string, { icon: React.ElementType; bg: string }> = 
 
 interface NodeConfigPanelProps {
   node: Node<FlowNodeData> | null;
+  sessionId?: string;
   onClose: () => void;
   onUpdate: (nodeId: string, data: FlowNodeData) => void;
   onDelete: (nodeId: string) => void;
@@ -54,6 +55,7 @@ interface NodeConfigPanelProps {
 
 export default function NodeConfigPanel({
   node,
+  sessionId,
   onClose,
   onUpdate,
   onDelete,
@@ -147,7 +149,7 @@ export default function NodeConfigPanel({
         <div className="w-full h-px bg-gray-100" />
 
         {/* Type-specific config */}
-        {renderConfigForm(nodeType, config, updateConfig)}
+        {renderConfigForm(nodeType, config, updateConfig, sessionId)}
       </div>
 
       {/* Footer */}
@@ -204,7 +206,8 @@ export default function NodeConfigPanel({
 function renderConfigForm(
   nodeType: FlowNodeType,
   config: Record<string, unknown>,
-  updateConfig: (key: string, value: unknown) => void
+  updateConfig: (key: string, value: unknown) => void,
+  sessionId?: string
 ) {
   switch (nodeType) {
     case 'trigger':
@@ -242,13 +245,13 @@ function renderConfigForm(
       return <LabelConfig config={config} updateConfig={updateConfig} />;
     case 'add-to-group':
     case 'remove-from-group':
-      return <GroupConfig config={config} updateConfig={updateConfig} />;
+      return <GroupConfig config={config} updateConfig={updateConfig} sessionId={sessionId} nodeType={nodeType} />;
     case 'go-to-flow':
       return <GoToFlowConfig config={config} updateConfig={updateConfig} />;
     case 'send-reaction':
       return <ReactionConfig config={config} updateConfig={updateConfig} />;
     case 'forward-message':
-      return <ForwardConfig config={config} updateConfig={updateConfig} />;
+      return <ForwardConfig config={config} updateConfig={updateConfig} sessionId={sessionId} />;
     case 'mark-as-read':
       return <InfoText text="This node marks the incoming message as read. No configuration needed." />;
     case 'typing-indicator':
@@ -1649,23 +1652,211 @@ function LabelConfig({ config, updateConfig }: ConfigProps) {
 
 // ---- Group Config ----
 
-function GroupConfig({ config, updateConfig }: ConfigProps) {
+interface GroupRow {
+  id: string;
+  wppId: string;
+  name: string;
+  participantCount: number;
+  profilePicUrl?: string;
+  isAdmin: boolean;
+}
+
+function GroupConfig({
+  config,
+  updateConfig,
+  sessionId,
+  nodeType,
+}: ConfigProps & { sessionId?: string; nodeType: string }) {
+  const [groups, setGroups] = useState<GroupRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [showPicker, setShowPicker] = useState(false);
+
+  const selectedGroupId = (config.groupId as string) || '';
+  const selectedGroup = groups.find((g) => g.wppId === selectedGroupId);
+  const selectedGroupName = (config.groupName as string) || selectedGroup?.name || '';
+
+  useEffect(() => {
+    if (!sessionId) return;
+    setLoading(true);
+    fetch(`/api/groups?sessionId=${sessionId}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && Array.isArray(json.data)) {
+          setGroups(json.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [sessionId]);
+
+  // For add-to-group, the user typically needs to be admin to add participants.
+  // For remove-from-group, same requirement.
+  const actionableGroups = groups.filter((g) => (nodeType === 'add-to-group' ? g.isAdmin : g.isAdmin));
+
+  const filteredGroups = actionableGroups.filter((g) => {
+    const q = search.toLowerCase();
+    return !q || g.name.toLowerCase().includes(q);
+  });
+
+  function selectGroup(g: GroupRow) {
+    updateConfig('groupId', g.wppId);
+    updateConfig('groupName', g.name);
+    setShowPicker(false);
+    setSearch('');
+  }
+
+  function clearGroup() {
+    updateConfig('groupId', '');
+    updateConfig('groupName', '');
+  }
+
+  const actionLabel = nodeType === 'add-to-group' ? 'Add contact to' : 'Remove contact from';
+
   return (
     <>
-      <Field label="Group Name">
-        <TextInput
-          value={(config.groupName as string) || ''}
-          onChange={(v) => updateConfig('groupName', v)}
-          placeholder="Support Group"
-        />
+      <Field
+        label={`${actionLabel} group`}
+        hint="Only groups where you are an administrator can be used here"
+      >
+        {/* Selected group card */}
+        {selectedGroupId ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <div className="flex items-center gap-3">
+              {selectedGroup?.profilePicUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={selectedGroup.profilePicUrl}
+                  alt=""
+                  className="w-10 h-10 rounded-full object-cover shrink-0"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-emerald-200 flex items-center justify-center text-sm font-semibold text-emerald-700 shrink-0">
+                  {(selectedGroupName || '?').charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">
+                  {selectedGroupName || 'Unnamed group'}
+                </p>
+                <p className="text-xs text-gray-500 truncate">
+                  {selectedGroup
+                    ? `${selectedGroup.participantCount} members · ${selectedGroupId}`
+                    : selectedGroupId}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={clearGroup}
+                className="text-gray-400 hover:text-red-500 transition-colors"
+                title="Remove"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPicker(true)}
+              className="mt-2 text-xs text-emerald-700 font-medium hover:underline"
+            >
+              Change group
+            </button>
+          </div>
+        ) : !showPicker ? (
+          <button
+            type="button"
+            onClick={() => setShowPicker(true)}
+            className="w-full px-3 py-3 text-sm rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-emerald-400 text-gray-600 transition-colors flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Choose a group
+          </button>
+        ) : null}
+
+        {/* Picker */}
+        {showPicker && (
+          <div className="mt-2 rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search groups..."
+                autoFocus
+                className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPicker(false);
+                  setSearch('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-56 overflow-y-auto">
+              {!sessionId ? (
+                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                  No session linked to this flow.
+                </p>
+              ) : loading ? (
+                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                  Loading groups...
+                </p>
+              ) : actionableGroups.length === 0 ? (
+                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                  No groups where you are administrator. Sync groups from the Groups page.
+                </p>
+              ) : filteredGroups.length === 0 ? (
+                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                  No groups match your search.
+                </p>
+              ) : (
+                filteredGroups.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => selectGroup(g)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 text-left transition-colors"
+                  >
+                    {g.profilePicUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={g.profilePicUrl}
+                        alt=""
+                        className="w-8 h-8 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-sm font-semibold text-emerald-700 shrink-0">
+                        {g.name.charAt(0).toUpperCase() || '?'}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {g.name || 'Unnamed group'}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {g.participantCount} members
+                      </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </Field>
-      <Field label="Group ID">
-        <TextInput
-          value={(config.groupId as string) || ''}
-          onChange={(v) => updateConfig('groupId', v)}
-          placeholder="123456789@g.us"
-        />
-      </Field>
+
+      <HintBox
+        text={
+          nodeType === 'add-to-group'
+            ? "The contact who triggered this flow will be added to the selected group. You must be an administrator of that group."
+            : "The contact who triggered this flow will be removed from the selected group. You must be an administrator of that group."
+        }
+      />
     </>
   );
 }
@@ -1695,30 +1886,302 @@ function GoToFlowConfig({ config, updateConfig }: ConfigProps) {
 
 // ---- Reaction Config ----
 
+const REACTION_EMOJIS: Array<{ emoji: string; label: string }> = [
+  { emoji: '👍', label: 'Like' },
+  { emoji: '❤️', label: 'Love' },
+  { emoji: '😂', label: 'Laugh' },
+  { emoji: '😮', label: 'Wow' },
+  { emoji: '😢', label: 'Sad' },
+  { emoji: '🙏', label: 'Pray' },
+  { emoji: '🔥', label: 'Fire' },
+  { emoji: '👏', label: 'Clap' },
+  { emoji: '🎉', label: 'Party' },
+  { emoji: '⭐', label: 'Star' },
+  { emoji: '✅', label: 'OK' },
+  { emoji: '❌', label: 'No' },
+  { emoji: '💯', label: '100' },
+  { emoji: '🤔', label: 'Think' },
+  { emoji: '😍', label: 'Heart eyes' },
+  { emoji: '🥳', label: 'Celebrate' },
+];
+
 function ReactionConfig({ config, updateConfig }: ConfigProps) {
+  const selectedEmoji = (config.emoji as string) || '';
+  const [customEmoji, setCustomEmoji] = useState('');
+
+  const isCustom = selectedEmoji && !REACTION_EMOJIS.some((e) => e.emoji === selectedEmoji);
+
   return (
-    <Field label="Reaction Emoji">
-      <TextInput
-        value={(config.emoji as string) || ''}
-        onChange={(v) => updateConfig('emoji', v)}
-        placeholder="e.g. thumbs up, heart"
-        large
-      />
-    </Field>
+    <>
+      <Field label="Choose a Reaction" hint="Pick an emoji below or enter a custom one">
+        <div className="grid grid-cols-6 gap-2">
+          {REACTION_EMOJIS.map(({ emoji, label }) => {
+            const isSelected = selectedEmoji === emoji;
+            return (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => {
+                  updateConfig('emoji', emoji);
+                  setCustomEmoji('');
+                }}
+                title={label}
+                className={`aspect-square flex items-center justify-center rounded-xl text-2xl transition-all ${
+                  isSelected
+                    ? 'ring-2 ring-emerald-500 bg-emerald-50 scale-110 shadow-md'
+                    : 'bg-gray-50 hover:bg-gray-100 hover:scale-105 border border-gray-200'
+                }`}
+              >
+                {emoji}
+              </button>
+            );
+          })}
+        </div>
+      </Field>
+
+      <div className="w-full h-px bg-gray-100" />
+
+      <Field label="Or enter a custom emoji">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={isCustom ? selectedEmoji : customEmoji}
+            onChange={(e) => {
+              const v = e.target.value;
+              setCustomEmoji(v);
+              if (v.trim()) updateConfig('emoji', v.trim());
+            }}
+            placeholder="🚀"
+            maxLength={4}
+            style={{ fontSize: 24, textAlign: 'center', padding: '8px 12px', width: 80 }}
+            className="rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 transition-all"
+          />
+          {selectedEmoji && (
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span>Selected:</span>
+              <span className="text-xl">{selectedEmoji}</span>
+            </div>
+          )}
+        </div>
+      </Field>
+
+      {/* Preview card */}
+      {selectedEmoji && (
+        <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-50 to-blue-50 border border-emerald-200">
+          <p className="text-xs text-gray-500 mb-2">Preview</p>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 px-3 py-2 bg-white rounded-lg text-sm text-gray-700 shadow-sm">
+              Their message
+            </div>
+            <div className="text-3xl animate-bounce">{selectedEmoji}</div>
+          </div>
+        </div>
+      )}
+
+      <HintBox text="The reaction will be applied to the message that triggered this flow." />
+    </>
   );
 }
 
 // ---- Forward Config ----
 
-function ForwardConfig({ config, updateConfig }: ConfigProps) {
+interface ForwardContact {
+  id: string;
+  wppId: string;
+  name: string;
+  phone: string;
+  profilePicUrl?: string;
+}
+
+function ForwardConfig({
+  config,
+  updateConfig,
+  sessionId,
+}: ConfigProps & { sessionId?: string }) {
+  const [contacts, setContacts] = useState<ForwardContact[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [showPicker, setShowPicker] = useState(false);
+
+  // Stored as array of wpp_ids for multi-target forwarding.
+  // Also accepts legacy single string values from config.targetChat / config.to
+  const rawTargets = (config.targets as string[]) || [];
+  const legacySingle = (config.targetChat as string) || (config.to as string) || '';
+  const targets: string[] =
+    rawTargets.length > 0
+      ? rawTargets
+      : legacySingle
+        ? [legacySingle]
+        : [];
+
+  useEffect(() => {
+    if (!sessionId) return;
+    setLoading(true);
+    fetch(`/api/contacts?sessionId=${sessionId}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && Array.isArray(json.data)) {
+          setContacts(json.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [sessionId]);
+
+  const selectedContacts = targets.map((wppId) => {
+    const c = contacts.find((ct) => ct.wppId === wppId);
+    return { wppId, contact: c };
+  });
+
+  const filteredContacts = contacts.filter((c) => {
+    if (targets.includes(c.wppId)) return false;
+    const q = search.toLowerCase();
+    return !q || c.name.toLowerCase().includes(q) || c.phone.includes(search);
+  });
+
+  function addTarget(wppId: string) {
+    const next = [...targets, wppId];
+    updateConfig('targets', next);
+    // Clean up legacy fields to avoid confusion
+    updateConfig('targetChat', undefined);
+    updateConfig('to', undefined);
+    setSearch('');
+  }
+
+  function removeTarget(wppId: string) {
+    const next = targets.filter((t) => t !== wppId);
+    updateConfig('targets', next);
+  }
+
   return (
-    <Field label="Target Chat ID">
-      <TextInput
-        value={(config.targetChat as string) || ''}
-        onChange={(v) => updateConfig('targetChat', v)}
-        placeholder="123456789@c.us"
-      />
-    </Field>
+    <>
+      <Field
+        label="Forward to"
+        hint={
+          targets.length === 0
+            ? 'Select one or more contacts to forward the triggering message to'
+            : `${targets.length} recipient${targets.length > 1 ? 's' : ''} selected`
+        }
+      >
+        {/* Selected contacts chips */}
+        {selectedContacts.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {selectedContacts.map(({ wppId, contact }) => (
+              <span
+                key={wppId}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-xs text-emerald-700"
+              >
+                {contact?.profilePicUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={contact.profilePicUrl}
+                    alt=""
+                    className="w-4 h-4 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="w-4 h-4 rounded-full bg-emerald-200 flex items-center justify-center text-[9px] font-semibold">
+                    {(contact?.name || wppId).charAt(0).toUpperCase()}
+                  </span>
+                )}
+                <span className="font-medium">
+                  {contact?.name || wppId.replace('@c.us', '')}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeTarget(wppId)}
+                  className="text-emerald-500 hover:text-red-500 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Trigger to open picker */}
+        {!showPicker ? (
+          <button
+            type="button"
+            onClick={() => setShowPicker(true)}
+            className="w-full px-3 py-2.5 text-sm rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-emerald-400 text-gray-600 transition-colors flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add recipient
+          </button>
+        ) : (
+          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search contacts..."
+                autoFocus
+                className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPicker(false);
+                  setSearch('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-56 overflow-y-auto">
+              {!sessionId ? (
+                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                  No session linked to this flow.
+                </p>
+              ) : loading ? (
+                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                  Loading contacts...
+                </p>
+              ) : filteredContacts.length === 0 ? (
+                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                  {search ? 'No contacts match your search.' : 'No more contacts available. Sync contacts from the Contacts page.'}
+                </p>
+              ) : (
+                filteredContacts.slice(0, 50).map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => addTarget(c.wppId)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 text-left transition-colors"
+                  >
+                    {c.profilePicUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={c.profilePicUrl}
+                        alt=""
+                        className="w-7 h-7 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-xs font-semibold text-emerald-700 shrink-0">
+                        {c.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {c.name || c.phone}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {c.phone}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </Field>
+
+      <HintBox text="The message that triggers this flow will be forwarded to every selected contact." />
+    </>
   );
 }
 

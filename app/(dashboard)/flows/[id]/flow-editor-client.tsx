@@ -203,6 +203,7 @@ export default function FlowEditorClient({ flow }: FlowEditorClientProps) {
       <div className="flex-1 overflow-hidden">
         <FlowCanvas
           flowId={flow.id}
+          sessionId={flow.sessionId}
           initialNodes={flow.nodes}
           initialEdges={flow.edges}
           onSaveTimestamp={handleSaveTimestamp}

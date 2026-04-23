@@ -135,6 +135,7 @@ function getNodeCategory(flowNodeType: string): string {
 // ---- Props ----
 interface FlowCanvasProps {
   flowId: string;
+  sessionId: string;
   initialNodes: FlowNodeSerialized[];
   initialEdges: FlowEdgeSerialized[];
   onSaveTimestamp?: (ts: Date) => void;
@@ -143,6 +144,7 @@ interface FlowCanvasProps {
 // ---- Inner canvas component (must be inside ReactFlowProvider) ----
 function FlowCanvasInner({
   flowId,
+  sessionId,
   initialNodes,
   initialEdges,
   onSaveTimestamp,
@@ -822,6 +824,7 @@ function FlowCanvasInner({
           <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
             <NodeConfigPanel
               node={selectedNode}
+              sessionId={sessionId}
               onClose={() => {
                 setSelectedNode(null);
                 setShowMobileConfig(false);
@@ -845,6 +848,7 @@ function FlowCanvasInner({
       {!isMobile && selectedNode && (
         <NodeConfigPanel
           node={selectedNode}
+          sessionId={sessionId}
           onClose={() => setSelectedNode(null)}
           onUpdate={onUpdateNode}
           onDelete={onDeleteNode}
