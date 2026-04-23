@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
+import manager from '@/lib/wppconnect-manager';
 import type { Label } from '@/lib/types';
 
 export async function GET(request: NextRequest) {

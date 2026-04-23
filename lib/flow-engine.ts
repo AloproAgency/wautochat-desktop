@@ -28,6 +28,21 @@ interface ExecutionLogEntry {
   timestamp: string;
 }
 
+type ButtonPayload = {
+  id: string;
+  text: string;
+};
+
+type ButtonClient = {
+  sendButtons: (
+    chatId: string,
+    title: string,
+    buttons: ButtonPayload[],
+    text: string,
+    footer: string
+  ) => Promise<unknown>;
+};
+
 /**
  * Normalize a WhatsApp contact ID to the @c.us format expected by most
  * wppconnect methods (blockContact, unblockContact, sendText, etc.).
@@ -601,11 +616,10 @@ async function executeNode(
         const btnTitle = interpolateVariables((config.title as string) || '', ctx);
         const btnText = interpolateVariables((config.text as string) || (config.message as string) || '', ctx);
         const btnFooter = interpolateVariables((config.footer as string) || '', ctx);
-        const buttons = ((config.buttons as Array<Record<string, unknown>>) || []).map((b) => ({
+        const buttons: ButtonPayload[] = ((config.buttons as Array<Record<string, unknown>>) || []).map((b) => ({
           id: (b.id as string) || '',
           text: (b.text as string) || (b.label as string) || '',
         }));
-
         // WhatsApp restricts interactive buttons to WhatsApp Business API accounts.
         // On personal accounts, the wppconnect call returns successfully but WA Web
         // silently drops the message (nothing arrives). To guarantee delivery, we

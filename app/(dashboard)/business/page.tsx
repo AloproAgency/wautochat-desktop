@@ -181,11 +181,17 @@ function DropdownMenu({
 }
 
 const CURRENCIES = [
+  { value: 'XOF', label: 'FCFA (XOF)' },
+  { value: 'XAF', label: 'FCFA (XAF)' },
   { value: 'USD', label: 'USD ($)' },
-  { value: 'EUR', label: 'EUR' },
-  { value: 'GBP', label: 'GBP' },
+  { value: 'EUR', label: 'EUR (€)' },
+  { value: 'GBP', label: 'GBP (£)' },
+  { value: 'GNF', label: 'GNF' },
+  { value: 'NGN', label: 'NGN (₦)' },
+  { value: 'GHS', label: 'GHS (₵)' },
+  { value: 'MAD', label: 'MAD' },
   { value: 'BRL', label: 'BRL (R$)' },
-  { value: 'INR', label: 'INR' },
+  { value: 'INR', label: 'INR (₹)' },
   { value: 'MXN', label: 'MXN' },
   { value: 'ARS', label: 'ARS' },
   { value: 'COP', label: 'COP' },
@@ -216,7 +222,7 @@ export default function BusinessPage() {
   const [productName, setProductName] = useState('');
   const [productDescription, setProductDescription] = useState('');
   const [productPrice, setProductPrice] = useState('');
-  const [productCurrency, setProductCurrency] = useState('USD');
+  const [productCurrency, setProductCurrency] = useState('XOF');
   const [productImageUrl, setProductImageUrl] = useState('');
   const [productUrl, setProductUrl] = useState('');
   const [productVisible, setProductVisible] = useState(true);
@@ -260,13 +266,32 @@ export default function BusinessPage() {
   }, [activeSessionId]);
 
   useEffect(() => {
-    const loadAll = async () => {
-      setLoading(true);
-      await Promise.all([fetchProducts(), fetchCollections()]);
-      setLoading(false);
+    if (!activeSessionId) return;
+
+    setLoading(true);
+    // First load attempt
+    Promise.all([fetchProducts(), fetchCollections()]).finally(() => setLoading(false));
+
+    // Keep retrying every 5s until products load (session may not be connected yet)
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/business/products?sessionId=${activeSessionId}`);
+        const data = await res.json();
+        if (data.success && data.data && data.data.length > 0) {
+          setProducts(data.data);
+          clearInterval(interval); // Stop retrying once products are loaded
+        }
+      } catch { /* ignore */ }
+    }, 5000);
+
+    // Stop after 60s max
+    const timeout = setTimeout(() => clearInterval(interval), 60000);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
     };
-    loadAll();
-  }, [fetchProducts, fetchCollections]);
+  }, [activeSessionId, fetchProducts, fetchCollections]);
 
   // Product CRUD
   const openCreateProduct = () => {
@@ -330,12 +355,20 @@ export default function BusinessPage() {
         });
         const data = await res.json();
         if (data.success) {
+          // Add product to local list immediately
+          if (data.data) {
+            setProducts((prev) => [...prev, data.data]);
+          }
           setShowProductModal(false);
-          fetchProducts();
+          // Also refresh from WhatsApp after a delay to get full data
+          setTimeout(() => fetchProducts(), 3000);
+          setTimeout(() => fetchProducts(), 8000);
+        } else {
+          alert(data.error || 'Failed to create product');
         }
       }
-    } catch {
-      // handle silently
+    } catch (err) {
+      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setSavingProduct(false);
     }
@@ -622,9 +655,22 @@ export default function BusinessPage() {
                     <h3 className="truncate font-semibold text-wa-text">
                       {product.name}
                     </h3>
-                    <p className="mt-1 text-lg font-bold text-wa-teal">
-                      {formatPrice(product.price, product.currency)}
-                    </p>
+                    <div className="mt-1 flex items-center gap-2">
+                      {product.salePrice ? (
+                        <>
+                          <p className="text-lg font-bold text-wa-teal">
+                            {formatPrice(product.salePrice, product.currency)}
+                          </p>
+                          <p className="text-sm text-wa-text-muted line-through">
+                            {formatPrice(product.price, product.currency)}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-lg font-bold text-wa-teal">
+                          {formatPrice(product.price, product.currency)}
+                        </p>
+                      )}
+                    </div>
                     {product.description && (
                       <p className="mt-1 line-clamp-2 text-sm text-wa-text-secondary">
                         {product.description}
@@ -799,7 +845,17 @@ export default function BusinessPage() {
               value={productPrice}
               onChange={(e) => setProductPrice(e.target.value)}
               placeholder="0.00"
-              prefix={<DollarSign className="h-4 w-4" />}
+              prefix={<span className="text-xs font-medium text-wa-text-secondary">
+                {productCurrency === 'XOF' || productCurrency === 'XAF' ? 'FCFA' :
+                 productCurrency === 'USD' ? '$' :
+                 productCurrency === 'EUR' ? '€' :
+                 productCurrency === 'GBP' ? '£' :
+                 productCurrency === 'NGN' ? '₦' :
+                 productCurrency === 'GHS' ? '₵' :
+                 productCurrency === 'INR' ? '₹' :
+                 productCurrency === 'BRL' ? 'R$' :
+                 productCurrency}
+              </span>}
             />
             <Select
               label="Currency"
@@ -809,13 +865,46 @@ export default function BusinessPage() {
             />
           </div>
 
-          <Input
-            label="Image URL"
-            value={productImageUrl}
-            onChange={(e) => setProductImageUrl(e.target.value)}
-            placeholder="https://example.com/image.jpg"
-            prefix={<ImageIcon className="h-4 w-4" />}
-          />
+          <div>
+            <label className="mb-1 block text-sm font-medium text-wa-text">Product Image</label>
+            <div className="flex items-center gap-3">
+              <label
+                className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border bg-white px-4 py-2 text-sm text-wa-text-secondary transition-colors hover:border-wa-green hover:bg-wa-light-green/30"
+              >
+                <ImageIcon className="h-4 w-4" />
+                Choose Image
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => setProductImageUrl(reader.result as string);
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
+              {productImageUrl && (
+                <button
+                  onClick={() => setProductImageUrl('')}
+                  className="text-xs text-wa-danger hover:underline"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            {!productImageUrl && (
+              <Input
+                value={productImageUrl}
+                onChange={(e) => setProductImageUrl(e.target.value)}
+                placeholder="Or paste an image URL..."
+                prefix={<ImageIcon className="h-4 w-4" />}
+                className="mt-2"
+              />
+            )}
+          </div>
 
           {productImageUrl && (
             <div className="h-32 w-32 overflow-hidden rounded-lg bg-gray-100">
@@ -931,9 +1020,20 @@ export default function BusinessPage() {
                         <span className="text-sm font-medium text-wa-text">
                           {product.name}
                         </span>
-                        <span className="ml-2 text-xs text-wa-text-muted">
-                          {formatPrice(product.price, product.currency)}
-                        </span>
+                        {product.salePrice ? (
+                          <>
+                            <span className="ml-2 text-xs font-medium text-wa-teal">
+                              {formatPrice(product.salePrice, product.currency)}
+                            </span>
+                            <span className="ml-1 text-xs text-wa-text-muted line-through">
+                              {formatPrice(product.price, product.currency)}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="ml-2 text-xs text-wa-text-muted">
+                            {formatPrice(product.price, product.currency)}
+                          </span>
+                        )}
                       </div>
                     </button>
                   );

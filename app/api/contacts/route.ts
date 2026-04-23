@@ -22,11 +22,11 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       rows = db.prepare(
-        `SELECT * FROM contacts WHERE session_id = ? AND is_my_contact = 1 AND (name LIKE ? OR push_name LIKE ? OR phone LIKE ?) ORDER BY name ASC`
+        `SELECT * FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@lid' AND (name LIKE ? OR push_name LIKE ? OR phone LIKE ?) ORDER BY created_at DESC`
       ).all(sessionId, `%${search}%`, `%${search}%`, `%${search}%`) as Record<string, unknown>[];
     } else {
       rows = db.prepare(
-        `SELECT * FROM contacts WHERE session_id = ? AND is_my_contact = 1 ORDER BY name ASC`
+        `SELECT * FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@lid' ORDER BY created_at DESC`
       ).all(sessionId) as Record<string, unknown>[];
     }
 
@@ -112,9 +112,9 @@ export async function POST(request: NextRequest) {
 
         const contactId = existingRow?.id || uuidv4();
         const existingLabels = existingRow?.labels || '[]';
-        const phone = (wppId.replace('@c.us', '').replace('@g.us', '').replace('@lid', '')) || '';
-        const name = (c.name as string) || (c.pushname as string) || (c.shortName as string) || phone;
+        const phone = wppId.replace('@c.us', '') || '';
         const pushName = (c.pushname as string) || '';
+        const name = (c.name as string) || pushName || (c.shortName as string) || (phone ? `+${phone}` : wppId);
         const profilePicUrl = (c.profilePicThumbObj as Record<string, unknown>)?.eurl as string || '';
         const isMyContact = !!(c.isMyContact);
         const isWAContact = !!(c.isWAContact ?? true);

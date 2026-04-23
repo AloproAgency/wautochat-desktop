@@ -5,7 +5,7 @@ import manager from '@/lib/wppconnect-manager';
 export async function GET() {
   try {
     // Trigger auto-reconnect on first access
-    manager.autoReconnect();
+    await manager.autoReconnect();
     const sessions = manager.getAllSessions();
     return Response.json({ success: true, data: sessions });
   } catch (error) {

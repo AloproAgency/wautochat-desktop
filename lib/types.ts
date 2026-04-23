@@ -147,6 +147,7 @@ export interface Product {
   name: string;
   description?: string;
   price: number;
+  salePrice?: number;
   currency: string;
   imageUrl?: string;
   isVisible: boolean;

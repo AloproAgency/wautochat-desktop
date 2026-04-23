@@ -89,7 +89,7 @@ function DropdownMenu({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-lg border border-wa-border bg-wa-panel py-1 shadow-lg">
+          <div className="absolute right-0 bottom-full z-20 mb-1 min-w-[180px] rounded-lg border border-wa-border bg-wa-panel py-1 shadow-lg">
             {items.map((item, i) => (
               <button
                 key={i}
@@ -238,9 +238,28 @@ export default function BroadcastsPage() {
   }, [activeSessionId]);
 
   useEffect(() => {
-    fetchBroadcasts();
+    // Sync broadcast lists from WhatsApp first
+    if (activeSessionId) {
+      fetch('/api/broadcasts', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeSessionId }),
+      })
+        .catch(() => {})
+        .finally(() => fetchBroadcasts());
+    } else {
+      fetchBroadcasts();
+    }
     fetchContacts();
-  }, [fetchBroadcasts, fetchContacts]);
+  }, [activeSessionId, fetchBroadcasts, fetchContacts]);
+
+  // Auto-refresh while any broadcast is still sending
+  useEffect(() => {
+    const hasSending = broadcasts.some((b) => b.status === 'sending');
+    if (!hasSending) return;
+    const interval = setInterval(fetchBroadcasts, 3000);
+    return () => clearInterval(interval);
+  }, [broadcasts, fetchBroadcasts]);
 
   useEffect(() => {
     if (activeSessionId) setFormSessionId(activeSessionId);
@@ -252,7 +271,7 @@ export default function BroadcastsPage() {
 
   const filteredContacts = contacts.filter(
     (c) =>
-      !formRecipients.includes(c.id) &&
+      !formRecipients.includes(c.wppId) &&
       (c.name.toLowerCase().includes(formRecipientSearch.toLowerCase()) ||
         c.phone.includes(formRecipientSearch))
   );
@@ -372,7 +391,7 @@ export default function BroadcastsPage() {
   };
 
   const handleSelectAllContacts = () => {
-    setFormRecipients(contacts.map((c) => c.id));
+    setFormRecipients(contacts.map((c) => c.wppId));
   };
 
   const progressPercent = (broadcast: Broadcast) => {
@@ -636,12 +655,40 @@ export default function BroadcastsPage() {
 
             {formMessageType === 'image' && (
               <>
-                <Input
-                  label="Image URL"
-                  value={formMediaUrl}
-                  onChange={(e) => setFormMediaUrl(e.target.value)}
-                  placeholder="https://example.com/image.jpg or base64..."
-                />
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-wa-text">Image</label>
+                  <div className="flex items-center gap-3">
+                    <label
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border bg-white px-4 py-2 text-sm text-wa-text-secondary transition-colors hover:border-wa-green hover:bg-wa-light-green/30"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                      Choose Image
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => setFormMediaUrl(reader.result as string);
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                    {formMediaUrl && (
+                      <span className="text-xs text-wa-green font-medium">Image selected</span>
+                    )}
+                  </div>
+                  {!formMediaUrl && (
+                    <Input
+                      value={formMediaUrl}
+                      onChange={(e) => setFormMediaUrl(e.target.value)}
+                      placeholder="Or paste an image URL..."
+                      className="mt-2"
+                    />
+                  )}
+                </div>
                 <Input
                   label="Caption"
                   value={formCaption}
@@ -653,12 +700,40 @@ export default function BroadcastsPage() {
 
             {formMessageType === 'video' && (
               <>
-                <Input
-                  label="Video URL"
-                  value={formMediaUrl}
-                  onChange={(e) => setFormMediaUrl(e.target.value)}
-                  placeholder="https://example.com/video.mp4"
-                />
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-wa-text">Video</label>
+                  <div className="flex items-center gap-3">
+                    <label
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border bg-white px-4 py-2 text-sm text-wa-text-secondary transition-colors hover:border-wa-green hover:bg-wa-light-green/30"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
+                      Choose Video
+                      <input
+                        type="file"
+                        accept="video/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => setFormMediaUrl(reader.result as string);
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                    {formMediaUrl && (
+                      <span className="text-xs text-wa-green font-medium">Video selected</span>
+                    )}
+                  </div>
+                  {!formMediaUrl && (
+                    <Input
+                      value={formMediaUrl}
+                      onChange={(e) => setFormMediaUrl(e.target.value)}
+                      placeholder="Or paste a video URL..."
+                      className="mt-2"
+                    />
+                  )}
+                </div>
                 <Input
                   label="Caption"
                   value={formCaption}
@@ -670,12 +745,41 @@ export default function BroadcastsPage() {
 
             {formMessageType === 'document' && (
               <>
-                <Input
-                  label="Document URL"
-                  value={formMediaUrl}
-                  onChange={(e) => setFormMediaUrl(e.target.value)}
-                  placeholder="https://example.com/file.pdf"
-                />
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-wa-text">Document</label>
+                  <div className="flex items-center gap-3">
+                    <label
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border bg-white px-4 py-2 text-sm text-wa-text-secondary transition-colors hover:border-wa-green hover:bg-wa-light-green/30"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+                      Choose File
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          if (!formFilename) setFormFilename(file.name);
+                          const reader = new FileReader();
+                          reader.onload = () => setFormMediaUrl(reader.result as string);
+                          reader.readAsDataURL(file);
+                        }}
+                      />
+                    </label>
+                    {formMediaUrl && (
+                      <span className="text-xs text-wa-green font-medium">{formFilename || 'File selected'}</span>
+                    )}
+                  </div>
+                  {!formMediaUrl && (
+                    <Input
+                      value={formMediaUrl}
+                      onChange={(e) => setFormMediaUrl(e.target.value)}
+                      placeholder="Or paste a document URL..."
+                      className="mt-2"
+                    />
+                  )}
+                </div>
                 <Input
                   label="Filename"
                   value={formFilename}
@@ -733,7 +837,7 @@ export default function BroadcastsPage() {
               {formRecipients.length > 0 && (
                 <div className="mb-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
                   {formRecipients.slice(0, 20).map((rid) => {
-                    const contact = contacts.find((c) => c.id === rid);
+                    const contact = contacts.find((c) => c.wppId === rid);
                     return (
                       <span
                         key={rid}
@@ -778,7 +882,7 @@ export default function BroadcastsPage() {
                     <button
                       key={contact.id}
                       onClick={() =>
-                        setFormRecipients((prev) => [...prev, contact.id])
+                        setFormRecipients((prev) => [...prev, contact.wppId])
                       }
                       className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-wa-hover"
                     >

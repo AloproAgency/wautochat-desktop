@@ -1,21 +1,24 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import NextImage from 'next/image';
 import type { Node } from 'reactflow';
 import type { FlowNodeData, FlowNodeType } from '@/lib/types';
 import {
   X, Trash2, Save, Copy, Check, Info, Plus, Minus,
-  MessageSquare, Type, Image, FileText, Headphones, Video, MapPin, Contact,
+  MessageSquare, Type, Image as ImageIcon, FileText, Headphones, Video, MapPin, Contact,
   Smile, List, BarChart3, LayoutGrid, SmilePlus, Forward, CheckCheck, Keyboard,
   Tag, TagsIcon, UserPlus, UserMinus, Ban, ShieldCheck, GitBranch, Timer,
   Variable, Globe, BrainCircuit, ExternalLink, CircleStop, Clock,
+  Inbox, Reply, AtSign, Heart, Edit, FileX, Eye, Link as LinkIcon, Vote,
+  Users as UsersIcon, User as UserIcon, Radio,
 } from 'lucide-react';
 
 // Node type to icon/color mapping for the header
 const nodeIconConfig: Record<string, { icon: React.ElementType; bg: string }> = {
   'trigger': { icon: MessageSquare, bg: '#22c55e' },
   'send-message': { icon: Type, bg: '#075E54' },
-  'send-image': { icon: Image, bg: '#075E54' },
+  'send-image': { icon: ImageIcon, bg: '#075E54' },
   'send-file': { icon: FileText, bg: '#075E54' },
   'send-audio': { icon: Headphones, bg: '#075E54' },
   'send-video': { icon: Video, bg: '#075E54' },
@@ -60,17 +63,11 @@ export default function NodeConfigPanel({
   onUpdate,
   onDelete,
 }: NodeConfigPanelProps) {
-  const [config, setConfig] = useState<Record<string, unknown>>({});
-  const [label, setLabel] = useState('');
+  const [config, setConfig] = useState<Record<string, unknown>>(
+    () => ({ ...(node?.data.config ?? {}) })
+  );
+  const [label, setLabel] = useState(() => node?.data.label ?? '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-
-  useEffect(() => {
-    if (node) {
-      setConfig({ ...node.data.config });
-      setLabel(node.data.label);
-      setShowDeleteConfirm(false);
-    }
-  }, [node]);
 
   const updateConfig = useCallback((key: string, value: unknown) => {
     setConfig((prev) => ({ ...prev, [key]: value }));
@@ -523,11 +520,96 @@ interface ConfigProps {
 
 // ---- Trigger Config ----
 
-function TriggerConfig({ config, updateConfig }: ConfigProps) {
-  const triggerType = (config.triggerType as string) || 'message_received';
-  const [copied, setCopied] = useState(false);
+// Trigger options grouped by category
+const triggerOptionsByCategory: Record<string, { value: string; label: string }[]> = {
+  message: [
+    { value: 'message_received', label: '💬 Any message' },
+    { value: 'direct_message', label: '👤 Direct (private) message' },
+    { value: 'group_message', label: '👥 Group message' },
+    { value: 'contact_message', label: '📞 Specific contact only' },
+    { value: 'new_contact', label: '🆕 New contact (first message)' },
+    { value: 'keyword', label: '🔑 Keyword match' },
+    { value: 'regex', label: '🧬 Regex pattern' },
+    { value: 'media_received', label: '📎 Media received (image/video/audio/doc)' },
+    { value: 'sticker_received', label: '😀 Sticker received' },
+    { value: 'location_received', label: '📍 Location received' },
+    { value: 'contact_card_received', label: '📇 Contact card received' },
+    { value: 'link_received', label: '🔗 Link/URL received' },
+    { value: 'mention_received', label: '@ Mention (@you)' },
+    { value: 'reply_received', label: '↩️ Reply to my message' },
+    { value: 'reaction_received', label: '❤️ Reaction received' },
+    { value: 'poll_response', label: '🗳️ Poll response' },
+    { value: 'message_edited', label: '✏️ Message edited' },
+    { value: 'message_deleted', label: '🗑️ Message deleted' },
+    { value: 'message_read', label: '👁️ My message read (blue ticks)' },
+  ],
+  presence: [
+    { value: 'presence_changed', label: '🟢 Any presence change' },
+  ],
+  group_event: [
+    { value: 'added_to_group', label: '➕ I was added to a group' },
+    { value: 'group_joined', label: '🎉 Someone joined a group' },
+    { value: 'group_left', label: '👋 Someone left a group' },
+  ],
+  label: [
+    { value: 'label_assigned', label: '🏷️ Label assigned to a chat' },
+    { value: 'label_unassigned', label: '🚫 Label removed from a chat' },
+    { value: 'label_created', label: '✨ New label created' },
+    { value: 'label_updated', label: '✏️ Label renamed / color changed' },
+    { value: 'label_deleted', label: '🗑️ Label deleted' },
+  ],
+  call: [
+    { value: 'incoming_call', label: '📞 Incoming call' },
+  ],
+  system: [
+    { value: 'webhook', label: '🪝 Webhook (external)' },
+  ],
+  schedule: [
+    { value: 'schedule', label: '⏰ Schedule (cron)' },
+  ],
+};
 
-  const webhookPath = (config.path as string) || `/webhook/${Date.now().toString(36)}`;
+const categoryLabels: Record<string, string> = {
+  message: 'Discussion',
+  presence: 'Status',
+  group_event: 'Group Event',
+  label: 'Labels',
+  call: 'Call',
+  system: 'System',
+  schedule: 'Schedule',
+};
+
+const categoryIcons: Record<string, React.ElementType> = {
+  message: MessageSquare,
+  presence: Radio,
+  group_event: UsersIcon,
+  label: Tag,
+  call: MessageSquare, // fallback
+  system: Globe,
+  schedule: Clock,
+};
+
+function CategoryIcon({ category }: { category: string }) {
+  const Icon = categoryIcons[category] || MessageSquare;
+  return (
+    <div className="w-8 h-8 rounded-md bg-emerald-500 flex items-center justify-center shrink-0">
+      <Icon className="w-4 h-4 text-white" />
+    </div>
+  );
+}
+
+function TriggerConfig({ config, updateConfig }: ConfigProps) {
+  const triggerCategory = (config.triggerCategory as string) || 'message';
+  const availableOptions = triggerOptionsByCategory[triggerCategory] || triggerOptionsByCategory.message;
+  const defaultTriggerType = availableOptions[0]?.value || 'message_received';
+  const triggerType = (config.triggerType as string) || defaultTriggerType;
+
+  const [copied, setCopied] = useState(false);
+  const generatedWebhookPath = useState(
+    () => `/webhook/${Math.random().toString(36).slice(2, 10)}`
+  )[0];
+
+  const webhookPath = (config.path as string) || generatedWebhookPath;
 
   function copyWebhookPath() {
     navigator.clipboard.writeText(webhookPath);
@@ -537,26 +619,51 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
 
   return (
     <>
-      <Field label="Trigger Type">
-        <SelectInput
-          value={triggerType}
-          onChange={(v) => updateConfig('triggerType', v)}
-          options={[
-            { value: 'message_received', label: 'Message Received' },
-            { value: 'keyword', label: 'Keyword Match' },
-            { value: 'regex', label: 'Regex Match' },
-            { value: 'media_received', label: 'Media Received' },
-            { value: 'new_contact', label: 'New Contact' },
-            { value: 'webhook', label: 'Webhook' },
-            { value: 'schedule', label: 'Schedule' },
-            { value: 'contact_message', label: 'Contact Message' },
-            { value: 'group_message', label: 'Group Message' },
-            { value: 'added_to_group', label: 'Added to Group' },
-          ]}
-        />
-      </Field>
+      {/* Category badge */}
+      <div className="flex items-center gap-2 p-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg">
+        <CategoryIcon category={triggerCategory} />
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-emerald-900">
+            {categoryLabels[triggerCategory] || 'Discussion'}
+          </div>
+          <div className="text-xs text-emerald-700">
+            {triggerCategory === 'message'
+              ? 'Configurez les filtres ci-dessous'
+              : `${availableOptions.length} événement${availableOptions.length > 1 ? 's' : ''}`}
+          </div>
+        </div>
+      </div>
 
-      {triggerType === 'keyword' && (
+      {/* Trigger Type dropdown — only for non-Discussion categories */}
+      {triggerCategory !== 'message' && (
+        <Field label="Trigger Type" hint="Choose the specific event">
+          <SelectInput
+            value={availableOptions.some((o) => o.value === triggerType) ? triggerType : defaultTriggerType}
+            onChange={(v) => updateConfig('triggerType', v)}
+            options={availableOptions}
+          />
+        </Field>
+      )}
+
+      {/* Help text for non-Discussion categories */}
+      {triggerCategory !== 'message' && (
+        <div className="text-xs text-gray-500 bg-gray-50 rounded-md p-2.5 leading-relaxed">
+          {triggerType === 'added_to_group' && 'Se déclenche quand vous êtes ajouté à un NOUVEAU groupe. Parfait pour auto-saluer.'}
+          {triggerType === 'group_joined' && 'Se déclenche quand une personne rejoint un groupe où vous êtes.'}
+          {triggerType === 'group_left' && 'Se déclenche quand quelqu\'un quitte un groupe.'}
+          {triggerType === 'label_assigned' && 'Se déclenche quand un label est assigné à un chat ou un contact.'}
+          {triggerType === 'label_unassigned' && 'Se déclenche quand un label est retiré d\'un chat ou d\'un contact.'}
+          {triggerType === 'label_created' && 'Se déclenche quand un nouveau label est créé dans WhatsApp.'}
+          {triggerType === 'label_updated' && 'Se déclenche quand un label existant est renommé ou change de couleur.'}
+          {triggerType === 'label_deleted' && 'Se déclenche quand un label est supprimé définitivement.'}
+          {triggerType === 'incoming_call' && 'Se déclenche quand on vous appelle. Vous pouvez rejeter ou répondre.'}
+          {triggerType === 'presence_changed' && 'Se déclenche quand un contact passe en ligne, commence à taper, etc.'}
+          {triggerType === 'webhook' && 'Votre système externe peut appeler cette URL pour déclencher le flow.'}
+          {triggerType === 'schedule' && 'Exécute le flow à intervalles fixes: rappels quotidiens, rapports hebdo, etc.'}
+        </div>
+      )}
+
+      {triggerCategory !== 'message' && triggerType === 'keyword' && (
         <>
           <Field label="Keywords" hint="Enter one keyword per line">
             <textarea
@@ -568,32 +675,17 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
               className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 resize-none transition-all font-mono"
             />
           </Field>
-          <Field label="Match Mode">
-            <SegmentedControl
-              value={(config.matchMode as string) || 'contains'}
-              onChange={(v) => updateConfig('matchMode', v)}
-              options={[
-                { value: 'exact', label: 'Exact' },
-                { value: 'contains', label: 'Contains' },
-              ]}
-            />
-          </Field>
         </>
       )}
 
-      {triggerType === 'regex' && (
-        <>
-          <Field label="Regex Pattern">
-            <TextInput
-              value={(config.pattern as string) || ''}
-              onChange={(v) => updateConfig('pattern', v)}
-              placeholder="^hello.*world$"
-            />
-          </Field>
-          <Field label="Test Input" hint="Type text to preview regex matches">
-            <RegexTester pattern={(config.pattern as string) || ''} />
-          </Field>
-        </>
+      {triggerCategory !== 'message' && triggerType === 'regex' && (
+        <Field label="Regex Pattern">
+          <TextInput
+            value={(config.pattern as string) || ''}
+            onChange={(v) => updateConfig('pattern', v)}
+            placeholder="^hello.*world$"
+          />
+        </Field>
       )}
 
       {triggerType === 'schedule' && (
@@ -649,28 +741,414 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
         </Field>
       )}
 
-      {triggerType === 'media_received' && (
-        <Field label="Media Types">
-          <MediaTypeCheckboxes
-            value={(config.mediaTypes as string[]) || ['any']}
-            onChange={(v) => updateConfig('mediaTypes', v)}
+      {/* All these were for individual Discussion triggerTypes — removed since filters handle them now */}
+
+      {triggerType === 'incoming_call' && (
+        <Field label="Call Type">
+          <SelectInput
+            value={(config.callType as string) || 'any'}
+            onChange={(v) => updateConfig('callType', v)}
+            options={[
+              { value: 'any', label: 'Any call (voice or video)' },
+              { value: 'voice', label: 'Voice only' },
+              { value: 'video', label: 'Video only' },
+            ]}
           />
         </Field>
       )}
 
+      {triggerType === 'presence_changed' && (
+        <Field label="Presence State">
+          <SelectInput
+            value={(config.presenceState as string) || 'any'}
+            onChange={(v) => updateConfig('presenceState', v)}
+            options={[
+              { value: 'any', label: 'Any change' },
+              { value: 'available', label: 'Online' },
+              { value: 'unavailable', label: 'Offline' },
+              { value: 'composing', label: 'Typing' },
+              { value: 'recording', label: 'Recording audio' },
+            ]}
+          />
+        </Field>
+      )}
+
+      {triggerCategory === 'label' && (
+        <>
+          <Field label="Label name filter" hint="Leave empty to match ANY label. Supports comma-separated list.">
+            <TextInput
+              value={(config.labelName as string) || ''}
+              onChange={(v) => updateConfig('labelName', v)}
+              placeholder="Important, VIP, Lead"
+            />
+          </Field>
+
+          <Field label="Match mode">
+            <SelectInput
+              value={(config.labelMatchMode as string) || 'exact'}
+              onChange={(v) => updateConfig('labelMatchMode', v)}
+              options={[
+                { value: 'exact', label: 'Exact match' },
+                { value: 'contains', label: 'Contains' },
+                { value: 'startsWith', label: 'Starts with' },
+                { value: 'regex', label: 'Regex pattern' },
+              ]}
+            />
+          </Field>
+
+          <Field label="Label color filter (optional)" hint="Hex, e.g. #FF0000 — leave empty to ignore color">
+            <TextInput
+              value={(config.labelColor as string) || ''}
+              onChange={(v) => updateConfig('labelColor', v)}
+              placeholder="#ef4444"
+            />
+          </Field>
+
+          {(triggerType === 'label_assigned' || triggerType === 'label_unassigned') && (
+            <>
+              <Field label="Target type">
+                <SelectInput
+                  value={(config.labelTargetType as string) || 'any'}
+                  onChange={(v) => updateConfig('labelTargetType', v)}
+                  options={[
+                    { value: 'any', label: 'Any target' },
+                    { value: 'contact', label: 'Contact only' },
+                    { value: 'chat', label: 'Chat only' },
+                    { value: 'group', label: 'Group only' },
+                  ]}
+                />
+              </Field>
+
+              <Field label="Specific chat/contact ID (optional)" hint="Format: 12345@c.us or 12345@g.us">
+                <TextInput
+                  value={(config.labelTargetId as string) || ''}
+                  onChange={(v) => updateConfig('labelTargetId', v)}
+                  placeholder="22912345678@c.us"
+                />
+              </Field>
+            </>
+          )}
+
+          <Field label="Trigger only if chat has this label count" hint="Optional. e.g. '>2' means more than 2 labels">
+            <TextInput
+              value={(config.labelCountFilter as string) || ''}
+              onChange={(v) => updateConfig('labelCountFilter', v)}
+              placeholder=">0"
+            />
+          </Field>
+        </>
+      )}
+
+      {triggerCategory !== 'message' &&
+        (triggerType === 'group_joined' ||
+         triggerType === 'group_left') && (
+          <Field label="Group ID (optional)" hint="Leave empty to match ALL groups. Format: 12345@g.us">
+            <TextInput
+              value={(config.groupId as string) || ''}
+              onChange={(v) => updateConfig('groupId', v)}
+              placeholder="120363xxx@g.us"
+            />
+          </Field>
+        )}
+
+      {/* 🎯 Discussion filters — always shown for Discussion category */}
+      {triggerCategory === 'message' && (
+        <TriggerFilters config={config} updateConfig={updateConfig} />
+      )}
+    </>
+  );
+}
+
+// ---- Filter Block (card wrapper) ----
+
+function FilterBlock({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: React.ElementType;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-gray-200 overflow-hidden">
+      <div className="p-3">
+        <div className="flex items-start gap-2.5 mb-2">
+          <div className="w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center shrink-0">
+            <Icon className="w-4 h-4 text-gray-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-gray-900">{title}</div>
+            <div className="text-xs text-gray-500">{description}</div>
+          </div>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ---- Filter Selector Component ----
+
+function TriggerFilters({ config, updateConfig }: ConfigProps) {
+  const filters = (config.filters as Record<string, unknown>) || {};
+
+  const updateFilter = (key: string, value: unknown) => {
+    updateConfig('filters', { ...filters, [key]: value });
+  };
+
+  // ===== 4 FILTRES PRINCIPAUX =====
+  // 1. Type de message (Message Type)
+  // 2. Type de contenu (Content Type / Media Type)
+  // 3. Type de discussion (Chat Type)
+  // 4. Expéditeur (Sender)
+
+  const messageTypeFilter = (filters.messageType as string) || 'any';
+  const contentTypeFilter = (filters.mediaType as string) || 'none';
+  const chatTypeFilter = (filters.chatType as string) || 'all';
+  const senderFilter = (filters.sender as string) || '';
+
+  const messageFilter = (filters.content as Record<string, unknown>) || {};
+  const keywordFilter = (filters.keyword as Record<string, unknown>) || {};
+
+  const messageTypeEnabled = messageTypeFilter !== 'any';
+  const contentTypeEnabled = contentTypeFilter !== 'none';
+  const chatTypeEnabled = chatTypeFilter !== 'all';
+  const senderEnabled = senderFilter.length > 0;
+
+  // Legacy hidden filters (kept for backward compat)
+  const keywordEnabled = keywordFilter.enabled === true;
+  const contentEnabled = messageFilter.enabled === true;
+
+  const activeFiltersCount =
+    (messageTypeEnabled ? 1 : 0) +
+    (contentTypeEnabled ? 1 : 0) +
+    (chatTypeEnabled ? 1 : 0) +
+    (senderEnabled ? 1 : 0) +
+    (keywordEnabled ? 1 : 0) +
+    (contentEnabled ? 1 : 0);
+
+  return (
+    <>
       <div className="w-full h-px bg-gray-100" />
 
-      <Field label="Filter: Group Only">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium text-gray-900">Filtres</div>
+          <div className="text-xs text-gray-500 mt-0.5">Affiner quand ce trigger se déclenche</div>
+        </div>
+        {activeFiltersCount > 0 && (
+          <span className="px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 rounded-full">
+            {activeFiltersCount} actif{activeFiltersCount > 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+
+      {/* 1. Type de message — WHAT EVENT happened */}
+      <FilterBlock icon={Inbox} title="Type de message" description="Quel genre d'événement message">
+        <SelectInput
+          value={messageTypeFilter}
+          onChange={(v) => updateFilter('messageType', v)}
+          options={[
+            { value: 'any', label: 'Tous les événements' },
+            { value: 'new', label: 'Nouveau message reçu' },
+            { value: 'reply', label: 'Réponse à mon message' },
+            { value: 'mention', label: 'Mention (@moi)' },
+            { value: 'reaction', label: 'Réaction' },
+            { value: 'forwarded', label: 'Message transféré' },
+            { value: 'quoted', label: 'Message cité' },
+            { value: 'edited', label: 'Message modifié' },
+            { value: 'deleted', label: 'Message supprimé' },
+            { value: 'read', label: 'Message lu (coche bleue)' },
+          ]}
+        />
+      </FilterBlock>
+
+      {/* 2. Type de contenu — WHAT's in the message */}
+      <FilterBlock icon={FileText} title="Type de contenu" description="Quel type de contenu est envoyé">
+        <SelectInput
+          value={contentTypeFilter}
+          onChange={(v) => updateFilter('mediaType', v)}
+          options={[
+            { value: 'none', label: 'Aucun filtre (tout type)' },
+            { value: 'text_only', label: 'Texte uniquement' },
+            { value: 'any_media', label: 'Tout média (image/vidéo/audio/doc)' },
+            { value: 'image', label: 'Images' },
+            { value: 'video', label: 'Vidéos' },
+            { value: 'audio', label: 'Audio / message vocal' },
+            { value: 'document', label: 'Documents (PDF, Word, etc.)' },
+            { value: 'location', label: 'Localisation' },
+            { value: 'contact', label: 'Carte de contact' },
+            { value: 'link', label: 'Lien / URL' },
+            { value: 'poll', label: 'Sondage' },
+          ]}
+        />
+      </FilterBlock>
+
+      {/* 3. Type de discussion — WHERE */}
+      <FilterBlock icon={MessageSquare} title="Type de discussion" description="Où ce trigger doit écouter">
+        <SelectInput
+          value={chatTypeFilter}
+          onChange={(v) => updateFilter('chatType', v)}
+          options={[
+            { value: 'all', label: 'Toutes les discussions' },
+            { value: 'private', label: 'Message privé uniquement' },
+            { value: 'group', label: 'Groupe uniquement' },
+            { value: 'broadcast', label: 'Liste de diffusion uniquement' },
+            { value: 'private_or_group', label: 'Privé + Groupes (exclure diffusions)' },
+          ]}
+        />
+        {chatTypeFilter === 'group' && (
+          <div className="mt-2">
+            <TextInput
+              value={(filters.groupId as string) || ''}
+              onChange={(v) => updateFilter('groupId', v)}
+              placeholder="Groupe spécifique (optionnel): 120363xxx@g.us"
+            />
+          </div>
+        )}
+      </FilterBlock>
+
+      {/* 4. Expéditeur — WHO */}
+      <FilterBlock icon={UserIcon} title="Expéditeur" description="Filtrer par numéro ou liste de contacts (vide = tous)">
+        <TextInput
+          value={senderFilter}
+          onChange={(v) => updateFilter('sender', v)}
+          placeholder="22991234567 (séparer par virgule pour plusieurs)"
+        />
+      </FilterBlock>
+
+      {/* 5. État du contact — WHO ELSE */}
+      <FilterBlock icon={UserPlus} title="État du contact" description="Distinguer nouveaux et anciens contacts">
+        <SelectInput
+          value={(filters.contactStatus as string) || 'all'}
+          onChange={(v) => updateFilter('contactStatus', v)}
+          options={[
+            { value: 'all', label: 'Tous les contacts' },
+            { value: 'new', label: 'Nouveau contact uniquement (1er message)' },
+            { value: 'existing', label: 'Contact existant uniquement' },
+            { value: 'saved', label: 'Contact enregistré dans le carnet' },
+            { value: 'unsaved', label: 'Contact non enregistré' },
+            { value: 'labeled', label: 'Contact avec label spécifique' },
+          ]}
+        />
+        {(filters.contactStatus as string) === 'labeled' && (
+          <div className="mt-2">
+            <TextInput
+              value={(filters.contactLabel as string) || ''}
+              onChange={(v) => updateFilter('contactLabel', v)}
+              placeholder="Nom du label (ex: VIP, Prospect)"
+            />
+          </div>
+        )}
+      </FilterBlock>
+
+      {/* BONUS: Keyword & content filters (collapsed by default) */}
+      <details className="rounded-lg border border-gray-200 overflow-hidden">
+        <summary className="p-3 cursor-pointer hover:bg-gray-50 text-sm font-medium text-gray-700 flex items-center gap-2">
+          <GitBranch className="w-4 h-4 text-gray-500" />
+          Filtres avancés (mots-clés, regex…)
+        </summary>
+        <div className="p-3 border-t border-gray-200 bg-gray-50 space-y-3">
+          {/* Keyword */}
+          <div>
+            <label className="flex items-center gap-2 mb-1.5 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={keywordEnabled}
+                onChange={(e) => updateFilter('keyword', { ...keywordFilter, enabled: e.target.checked })}
+                className="rounded border-gray-300 text-emerald-500"
+              />
+              <Keyboard className="w-3.5 h-3.5 text-gray-500" />
+              Mots-clés
+            </label>
+            {keywordEnabled && (
+              <>
+                <textarea
+                  value={(keywordFilter.words as string) || ''}
+                  onChange={(e) => updateFilter('keyword', { ...keywordFilter, words: e.target.value })}
+                  placeholder={"bonjour\ncommande\nprix"}
+                  rows={2}
+                  className="w-full px-2 py-1.5 text-xs rounded-md border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 resize-none font-mono"
+                />
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="text-xs text-gray-600">Mode:</span>
+                  <SegmentedControl
+                    value={(keywordFilter.mode as string) || 'contains'}
+                    onChange={(v) => updateFilter('keyword', { ...keywordFilter, mode: v })}
+                    options={[
+                      { value: 'contains', label: 'Contient' },
+                      { value: 'exact', label: 'Exact' },
+                      { value: 'startsWith', label: 'Commence par' },
+                    ]}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Content filter */}
+          <div>
+            <label className="flex items-center gap-2 mb-1.5 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={contentEnabled}
+                onChange={(e) => updateFilter('content', { ...messageFilter, enabled: e.target.checked })}
+                className="rounded border-gray-300 text-emerald-500"
+              />
+              <FileText className="w-3.5 h-3.5 text-gray-500" />
+              Contenu exact / regex
+            </label>
+            {contentEnabled && (
+              <div className="space-y-1.5">
+                <SelectInput
+                  value={(messageFilter.operator as string) || 'contains'}
+                  onChange={(v) => updateFilter('content', { ...messageFilter, operator: v })}
+                  options={[
+                    { value: 'contains', label: 'Contient' },
+                    { value: 'equals', label: 'Égal à' },
+                    { value: 'startsWith', label: 'Commence par' },
+                    { value: 'endsWith', label: 'Finit par' },
+                    { value: 'regex', label: 'Regex' },
+                    { value: 'minLength', label: 'Longueur min.' },
+                    { value: 'maxLength', label: 'Longueur max.' },
+                  ]}
+                />
+                <TextInput
+                  value={(messageFilter.value as string) || ''}
+                  onChange={(v) => updateFilter('content', { ...messageFilter, value: v })}
+                  placeholder="Valeur..."
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </details>
+
+      {/* Advanced toggles (existing) */}
+      <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+        <div className="text-sm font-medium text-gray-900">⚙️ Advanced options</div>
         <label className="flex items-center gap-2.5 text-xs text-gray-700 cursor-pointer">
           <input
             type="checkbox"
-            checked={(config.groupOnly as boolean) || false}
-            onChange={(e) => updateConfig('groupOnly', e.target.checked)}
+            checked={(config.ignoreOwnMessages as boolean) !== false}
+            onChange={(e) => updateConfig('ignoreOwnMessages', e.target.checked)}
             className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
           />
-          Only trigger for group messages
+          Ignore messages I send myself
         </label>
-      </Field>
+        <label className="flex items-center gap-2.5 text-xs text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={(config.ignoreForwarded as boolean) || false}
+            onChange={(e) => updateConfig('ignoreForwarded', e.target.checked)}
+            className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
+          />
+          Ignore forwarded messages
+        </label>
+      </div>
     </>
   );
 }
@@ -919,10 +1397,14 @@ function SendMediaConfig({ config, updateConfig, nodeType }: ConfigProps & { nod
 
       {url && (nodeType === 'send-image' || nodeType === 'send-sticker') && (
         <div className="rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
-          <img
+          <NextImage
             src={url}
             alt="Preview"
+            width={512}
+            height={128}
+            unoptimized
             className="w-full h-32 object-contain"
+            style={{ height: '8rem' }}
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
         </div>

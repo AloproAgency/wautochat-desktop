@@ -39,7 +39,7 @@ import ActionNode from './nodes/action-node';
 import ConditionNode from './nodes/condition-node';
 import DelayNode from './nodes/delay-node';
 import LogicNode from './nodes/logic-node';
-import NodePalette, { paletteItems, triggerTypeMap, type PaletteItem } from './node-palette';
+import NodePalette, { triggerTypeMap, type PaletteItem } from './node-palette';
 import NodeConfigPanel from './node-config-panel';
 import {
   Save,
@@ -351,7 +351,7 @@ function FlowCanvasInner({
       const raw = event.dataTransfer.getData('application/reactflow');
       if (!raw) return;
 
-      const { type, nodeCategory, label, triggerType } = JSON.parse(raw);
+      const { type, nodeCategory, label, triggerType, triggerCategory } = JSON.parse(raw);
 
       const bounds = reactFlowWrapper.current.getBoundingClientRect();
       const position = rfInstance.screenToFlowPosition({
@@ -361,6 +361,10 @@ function FlowCanvasInner({
 
       saveHistory();
 
+      const triggerConfig: Record<string, unknown> = {};
+      if (triggerType) triggerConfig.triggerType = triggerType;
+      if (triggerCategory) triggerConfig.triggerCategory = triggerCategory;
+
       const newNode: Node<FlowNodeData> = {
         id: `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         type: nodeTypeMap[nodeCategory] || 'logicNode',
@@ -368,7 +372,7 @@ function FlowCanvasInner({
         data: {
           label,
           type,
-          config: triggerType ? { triggerType } : {},
+          config: Object.keys(triggerConfig).length > 0 ? triggerConfig : {},
           description: '',
         },
       };
@@ -391,6 +395,10 @@ function FlowCanvasInner({
           })
         : { x: 200, y: 200 };
 
+      const mobileTriggerConfig: Record<string, unknown> = {};
+      if (triggerTypeMap[item.label]) mobileTriggerConfig.triggerType = triggerTypeMap[item.label];
+      if (item.triggerCategory) mobileTriggerConfig.triggerCategory = item.triggerCategory;
+
       const newNode: Node<FlowNodeData> = {
         id: `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         type: nodeTypeMap[item.nodeCategory] || 'logicNode',
@@ -398,7 +406,7 @@ function FlowCanvasInner({
         data: {
           label: item.label,
           type: item.type,
-          config: triggerTypeMap[item.label] ? { triggerType: triggerTypeMap[item.label] } : {},
+          config: Object.keys(mobileTriggerConfig).length > 0 ? mobileTriggerConfig : {},
           description: '',
         },
       };
@@ -823,6 +831,7 @@ function FlowCanvasInner({
         {isMobile && showMobileConfig && selectedNode && (
           <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
             <NodeConfigPanel
+              key={selectedNode.id}
               node={selectedNode}
               sessionId={sessionId}
               onClose={() => {
@@ -847,6 +856,7 @@ function FlowCanvasInner({
       {/* Right config panel - tablet & desktop only */}
       {!isMobile && selectedNode && (
         <NodeConfigPanel
+          key={selectedNode.id}
           node={selectedNode}
           sessionId={sessionId}
           onClose={() => setSelectedNode(null)}

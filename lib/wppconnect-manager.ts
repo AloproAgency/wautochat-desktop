@@ -9,6 +9,91 @@ import { executeFlow, resumeFlowAfterWait } from '@/lib/flow-engine';
 // Store wppconnect tokens outside the project to avoid Turbopack crashes
 const TOKENS_PATH = path.join(os.tmpdir(), 'wautochat-tokens');
 
+import fs from 'fs';
+
+function browserDataDirFor(sessionId: string): string {
+  return path.join(TOKENS_PATH, sessionId);
+}
+
+// Per-session lock files to support multiple WhatsApp accounts simultaneously
+function lockFileFor(sessionId: string): string {
+  return path.join(os.tmpdir(), `wautochat-browser-${sessionId}.lock`);
+}
+
+function readLockPid(sessionId: string): number | null {
+  try {
+    const lockFile = lockFileFor(sessionId);
+    if (!fs.existsSync(lockFile)) return null;
+
+    const pid = parseInt(fs.readFileSync(lockFile, 'utf-8').trim(), 10);
+    return Number.isNaN(pid) ? null : pid;
+  } catch {
+    return null;
+  }
+}
+
+function isPidRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isSessionRunning(sessionId: string): boolean {
+  try {
+    const pid = readLockPid(sessionId);
+    if (!pid) {
+      clearLock(sessionId);
+      return false;
+    }
+
+    if (isPidRunning(pid)) {
+      return true;
+    }
+
+    clearLock(sessionId);
+  } catch { /* ignore */ }
+  return false;
+}
+
+function writeLock(sessionId: string, pid: number): void {
+  try { fs.writeFileSync(lockFileFor(sessionId), String(pid)); } catch { /* ignore */ }
+}
+
+function clearLock(sessionId: string): void {
+  try {
+    const lockFile = lockFileFor(sessionId);
+    if (fs.existsSync(lockFile)) fs.unlinkSync(lockFile);
+  } catch { /* ignore */ }
+}
+
+async function terminateLockedBrowser(sessionId: string, reason: string): Promise<void> {
+  const pid = readLockPid(sessionId);
+  if (!pid) {
+    clearLock(sessionId);
+    return;
+  }
+
+  if (pid === process.pid) {
+    clearLock(sessionId);
+    return;
+  }
+
+  if (isPidRunning(pid)) {
+    console.log(`[${sessionId}] ${reason}. Stopping orphaned browser PID ${pid}...`);
+    try {
+      process.kill(pid);
+    } catch {
+      // Browser may already be exiting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  clearLock(sessionId);
+}
+
 interface ActiveSession {
   client: Whatsapp;
   sessionId: string;
@@ -28,6 +113,9 @@ class WppConnectManager {
   private qrCodes: Map<string, string> = new Map();
   private pausedConversations: Map<string, PausedConversation> = new Map();
   private autoReconnectDone = false;
+  private reconnectPromises: Map<string, Promise<void>> = new Map();
+  // Sessions that WhatsApp has reported as Unpaired - stop auto-reconnect
+  private blockedSessions: Set<string> = new Set();
 
   /**
    * Auto-reconnect all sessions that were previously connected.
@@ -37,26 +125,23 @@ class WppConnectManager {
     if (this.autoReconnectDone) return;
     this.autoReconnectDone = true;
 
-    try {
-      const db = getDb();
-      const rows = db.prepare(
-        `SELECT id, device_name FROM sessions WHERE status = 'connected' OR status = 'qr_ready'`
-      ).all() as Record<string, unknown>[];
+    const db = getDb();
+    const rows = db.prepare(
+      `SELECT id FROM sessions WHERE status = 'connected' ORDER BY updated_at DESC`
+    ).all() as { id: string }[];
 
-      for (const row of rows) {
-        const sid = row.id as string;
-        if (!this.sessions.has(sid)) {
-          console.log(`[auto-reconnect] Reconnecting session ${sid}...`);
-          // Mark as connecting
-          db.prepare(`UPDATE sessions SET status = 'connecting', updated_at = datetime('now') WHERE id = ?`).run(sid);
-          this.initClient(sid, row.device_name as string).catch((err) => {
-            console.error(`[auto-reconnect] Failed to reconnect ${sid}:`, err);
-            db.prepare(`UPDATE sessions SET status = 'disconnected', updated_at = datetime('now') WHERE id = ?`).run(sid);
-          });
-        }
-      }
-    } catch (err) {
-      console.error('[auto-reconnect] Error:', err);
+    // Clean up orphaned browsers from previous dev server runs
+    // These are browsers that were opened by a prior Node.js process that's now dead
+    for (const row of rows) {
+      await terminateLockedBrowser(row.id, 'Cleaning up orphaned browser from previous run');
+    }
+
+    // Start sessions sequentially with 3s delay to avoid overload
+    for (const row of rows) {
+      void this.reconnectSession(row.id).catch((error) => {
+        console.error(`[${row.id}] Auto-reconnect failed:`, error);
+      });
+      await new Promise((r) => setTimeout(r, 3000));
     }
   }
 
@@ -66,6 +151,9 @@ class WppConnectManager {
     deviceName?: string
   ): Promise<string> {
     const db = getDb();
+
+    // Unblock this session (user is explicitly creating it)
+    this.blockedSessions.delete(sessionId);
 
     db.prepare(
       `INSERT INTO sessions (id, name, status, device_name, created_at, updated_at)
@@ -87,10 +175,12 @@ class WppConnectManager {
     deviceName?: string
   ): Promise<void> {
     const db = getDb();
+    const userDataDir = browserDataDirFor(sessionId);
 
     try {
       this.updateSessionStatus(sessionId, 'connecting');
       console.log(`[${sessionId}] Starting WPPConnect browser...`);
+      fs.mkdirSync(userDataDir, { recursive: true });
 
       // Wrap create() with a timeout to avoid infinite hanging
       const createWithTimeout = (timeoutMs: number) => {
@@ -103,12 +193,15 @@ class WppConnectManager {
             session: sessionId,
             headless: true,
             useChrome: false,
-            autoClose: 0,
+            autoClose: 120000,
             deviceName: deviceName || 'WAutoChat',
             logQR: false,
             disableWelcome: true,
             folderNameToken: TOKENS_PATH,
             updatesLog: false,
+            puppeteerOptions: {
+              userDataDir,
+            },
             browserArgs: [
               '--no-sandbox',
               '--disable-setuid-sandbox',
@@ -120,29 +213,47 @@ class WppConnectManager {
             catchQR: (
               base64Qr: string,
               _asciiQR: string,
-              attempts: number,
-              _urlCode: string | undefined
+              attempts: number
             ) => {
               console.log(`[${sessionId}] QR code generated (attempt ${attempts})`);
               this.qrCodes.set(sessionId, base64Qr);
               this.updateSessionStatus(sessionId, 'qr_ready');
             },
-            statusFind: (statusSession: string, _session: string) => {
+            statusFind: (statusSession: string) => {
               console.log(`[${sessionId}] Status: ${statusSession}`);
               if (
                 statusSession === 'isLogged' ||
-                statusSession === 'inChat' ||
                 statusSession === 'qrReadSuccess'
               ) {
                 this.updateSessionStatus(sessionId, 'connected');
                 this.qrCodes.delete(sessionId);
+              } else if (statusSession === 'inChat') {
+                // "inChat" can also appear before a QR is shown on unpaired sessions.
+                // Only treat it as connected when no QR is pending for this session.
+                if (!this.qrCodes.has(sessionId)) {
+                  this.updateSessionStatus(sessionId, 'connected');
+                }
+              } else if (statusSession === 'notLogged') {
+                // Only downgrade status if we're NOT already connected.
+                // WPPConnect sometimes emits notLogged spuriously after login.
+                const currentSession = this.sessions.get(sessionId);
+                if (!currentSession || currentSession.status !== 'connected') {
+                  this.updateSessionStatus(
+                    sessionId,
+                    this.qrCodes.has(sessionId) ? 'qr_ready' : 'connecting'
+                  );
+                }
               } else if (
-                statusSession === 'notLogged' ||
                 statusSession === 'browserClose' ||
+                statusSession === 'disconnectedMobile' ||
                 statusSession === 'desconnectedMobile' ||
                 statusSession === 'deleteToken'
               ) {
                 this.updateSessionStatus(sessionId, 'disconnected');
+                // Block this session from being auto-reconnected again
+                this.blockedSessions.add(sessionId);
+                // Session was logged out from the phone - stop auto-reconnect loop
+                void this.disconnectSession(sessionId).catch(() => {});
               }
             },
           })
@@ -160,6 +271,12 @@ class WppConnectManager {
       const client = await createWithTimeout(120000); // 2 min timeout
 
       console.log(`[${sessionId}] Browser started successfully.`);
+
+      // Write lock with browser PID for THIS session only
+      try {
+        const pid = await client.getPID();
+        if (pid) writeLock(sessionId, pid);
+      } catch { /* ignore */ }
 
       this.sessions.set(sessionId, {
         client,
@@ -208,6 +325,11 @@ class WppConnectManager {
       else if (ackValue === 3) status = 'read';
 
       db.prepare(`UPDATE messages SET status = ? WHERE wpp_id = ?`).run(status, wppId);
+
+      // Trigger "Message Read" flows when ack = 3 (read)
+      if (ackValue === 3) {
+        this.triggerFlowsByEvent(sessionId, 'message_read', ackData).catch(() => {});
+      }
     });
 
     client.onStateChange((state) => {
@@ -215,24 +337,33 @@ class WppConnectManager {
       if (state === 'CONNECTED') {
         this.updateSessionStatus(sessionId, 'connected');
       } else if (state === 'CONFLICT') {
-        // CONFLICT means another device took over — force reconnect
+        // CONFLICT means WhatsApp is open on another device
+        // Just call useHere() to reclaim, don't reconnect
+        console.log(`[${sessionId}] CONFLICT detected, reclaiming session...`);
         client.useHere().catch(() => {});
-      } else if (state === 'UNPAIRED' || state === 'UNLAUNCHED') {
+      } else if (state === 'UNPAIRED') {
+        // Session was logged out from phone - mark as disconnected
+        // Don't auto-reconnect to avoid zombie browser loops
+        console.log(`[${sessionId}] UNPAIRED - session logged out`);
         this.updateSessionStatus(sessionId, 'disconnected');
-        // Attempt auto-reconnect after a short delay
-        setTimeout(() => {
-          console.log(`[${sessionId}] Attempting auto-reconnect after ${state}...`);
-          this.reconnectSession(sessionId).catch((err) => {
-            console.error(`[${sessionId}] Auto-reconnect failed:`, err);
-          });
-        }, 5000);
+      } else if (state === 'UNLAUNCHED') {
+        console.log(`[${sessionId}] UNLAUNCHED - browser closed`);
+        this.updateSessionStatus(sessionId, 'disconnected');
       }
     });
 
 
     client.onIncomingCall(async (call) => {
-      // Log incoming calls - can be extended with flow triggers
-      console.log(`[${sessionId}] Incoming call from:`, (call as unknown as Record<string, unknown>).peerJid);
+      const callData = call as unknown as Record<string, unknown>;
+      console.log(`[${sessionId}] Incoming call from:`, callData.peerJid);
+      const isVideo = !!callData.isVideo;
+      this.triggerFlowsByEvent(sessionId, 'incoming_call', callData, (config) => {
+        const callType = (config.callType as string) || 'any';
+        if (callType === 'any') return true;
+        if (callType === 'video') return isVideo;
+        if (callType === 'voice') return !isVideo;
+        return true;
+      }).catch(() => {});
     });
 
     client.onAddedToGroup(async (chat) => {
@@ -275,6 +406,9 @@ class WppConnectManager {
       } catch {
         // Profile pic may not be available
       }
+
+      // Trigger "Added to Group" flows
+      this.triggerFlowsByEvent(sessionId, 'added_to_group', chatData).catch(() => {});
     });
 
     client.onParticipantsChanged(async (participantChange) => {
@@ -294,6 +428,17 @@ class WppConnectManager {
         } catch {
           // Group may no longer be accessible
         }
+      }
+
+      // Trigger group_joined / group_left flows
+      const triggerType = data.action === 'add' ? 'group_joined' :
+                          data.action === 'remove' ? 'group_left' : null;
+      if (triggerType) {
+        this.triggerFlowsByEvent(sessionId, triggerType, data, (config) => {
+          const filterGroupId = (config.groupId as string) || '';
+          if (filterGroupId && filterGroupId !== groupId) return false;
+          return true;
+        }).catch(() => {});
       }
     });
 
@@ -318,6 +463,13 @@ class WppConnectManager {
            VALUES (?, ?, ?, ?, 'reaction', ?, ?, 0, datetime('now'), 'delivered', ?)`
         ).run(msgId, sessionId, chatRow.id, '', body, sender, parentMsgId);
       }
+
+      // Trigger reaction_received flows
+      this.triggerFlowsByEvent(sessionId, 'reaction_received', reactionData, (config) => {
+        const filterEmoji = (config.emoji as string) || '';
+        if (filterEmoji && filterEmoji !== body) return false;
+        return true;
+      }).catch(() => {});
     });
 
     client.onPollResponse(async (pollResponse) => {
@@ -339,7 +491,236 @@ class WppConnectManager {
            VALUES (?, ?, ?, ?, 'poll', ?, ?, 0, datetime('now'), 'delivered')`
         ).run(msgId, sessionId, chatRow.id, '', selectedOptions, sender);
       }
+
+      // Trigger poll_response flows
+      this.triggerFlowsByEvent(sessionId, 'poll_response', pollData).catch(() => {});
     });
+
+    // Message Edit trigger
+    try {
+      const clientAny = client as unknown as { onMessageEdit?: (cb: (m: unknown) => void) => void };
+      if (typeof clientAny.onMessageEdit === 'function') {
+        clientAny.onMessageEdit((edited: unknown) => {
+          const editData = edited as Record<string, unknown>;
+          this.triggerFlowsByEvent(sessionId, 'message_edited', editData).catch(() => {});
+        });
+      }
+    } catch { /* event not available in this version */ }
+
+    // Message Revoked/Deleted trigger
+    try {
+      const clientAny = client as unknown as { onRevokedMessage?: (cb: (m: unknown) => void) => void };
+      if (typeof clientAny.onRevokedMessage === 'function') {
+        clientAny.onRevokedMessage((revoked: unknown) => {
+          const revokedData = revoked as Record<string, unknown>;
+          this.triggerFlowsByEvent(sessionId, 'message_deleted', revokedData).catch(() => {});
+        });
+      }
+    } catch { /* event not available */ }
+
+    // Presence Changed trigger
+    try {
+      const clientAny = client as unknown as { onPresenceChanged?: (cb: (p: unknown) => void) => void };
+      if (typeof clientAny.onPresenceChanged === 'function') {
+        clientAny.onPresenceChanged((presence: unknown) => {
+          const pData = presence as Record<string, unknown>;
+          const state = (pData.isOnline as boolean) ? 'available' :
+                        (pData.isTyping as boolean) ? 'composing' :
+                        (pData.isRecording as boolean) ? 'recording' :
+                        (pData.state as string) || 'unavailable';
+          this.triggerFlowsByEvent(sessionId, 'presence_changed', pData, (config) => {
+            const filterState = (config.presenceState as string) || 'any';
+            if (filterState === 'any') return true;
+            return filterState === state;
+          }).catch(() => {});
+        });
+      }
+    } catch { /* event not available */ }
+
+    // Label events — onUpdateLabel fires for assign/unassign.
+    // For created/updated/deleted we poll getAllLabels() and diff.
+    try {
+      const clientAny = client as unknown as {
+        onUpdateLabel?: (cb: (l: unknown) => void) => void;
+      };
+      if (typeof clientAny.onUpdateLabel === 'function') {
+        clientAny.onUpdateLabel((labelUpdate: unknown) => {
+          const lData = labelUpdate as Record<string, unknown>;
+          const changeType = (lData.type as string) || 'add';
+          const labels = (lData.labels as Array<Record<string, unknown>>) || [];
+          const chat = (lData.chat as Record<string, unknown>) || {};
+          const chatWppId = (chat.id as Record<string, unknown>)?._serialized as string
+            || (chat.id as string) || '';
+          const isGroupTarget = !!chat.isGroup || chatWppId.endsWith('@g.us');
+
+          const triggerType = changeType === 'remove' ? 'label_unassigned' : 'label_assigned';
+
+          for (const label of labels) {
+            const eventData: Record<string, unknown> = {
+              ...lData,
+              label,
+              labelName: label.name,
+              labelId: label.id,
+              labelColor: label.hexColor || label.color,
+              chatId: chatWppId,
+              targetType: isGroupTarget ? 'group' : 'chat',
+            };
+            this.triggerFlowsByEvent(sessionId, triggerType, eventData, (config) =>
+              this.matchLabelFilters(config, eventData)
+            ).catch(() => {});
+          }
+        });
+      }
+    } catch { /* event not available */ }
+
+    // Polling for created / updated / deleted labels
+    this.startLabelPolling(sessionId, client);
+  }
+
+  // Per-session label snapshot used to diff against getAllLabels() poll
+  private labelSnapshots: Map<string, Map<string, { name: string; color: string }>> = new Map();
+  private labelPollTimers: Map<string, NodeJS.Timeout> = new Map();
+
+  private startLabelPolling(sessionId: string, client: Whatsapp): void {
+    // Clear any previous timer for this session
+    const prev = this.labelPollTimers.get(sessionId);
+    if (prev) clearInterval(prev);
+
+    const clientAny = client as unknown as { getAllLabels?: () => Promise<Array<Record<string, unknown>>> };
+    if (typeof clientAny.getAllLabels !== 'function') return;
+
+    const poll = async () => {
+      try {
+        if (!this.sessions.has(sessionId)) return;
+        const labels = await clientAny.getAllLabels!();
+        const current = new Map<string, { name: string; color: string }>();
+        for (const l of labels || []) {
+          const id = String(l.id || '');
+          if (!id) continue;
+          current.set(id, {
+            name: (l.name as string) || '',
+            color: ((l.hexColor as string) || (l.color as string) || '').toString(),
+          });
+        }
+
+        const previous = this.labelSnapshots.get(sessionId);
+        if (previous) {
+          // Detect created
+          for (const [id, cur] of current) {
+            if (!previous.has(id)) {
+              const eventData: Record<string, unknown> = { labelId: id, labelName: cur.name, labelColor: cur.color };
+              this.triggerFlowsByEvent(sessionId, 'label_created', eventData, (config) =>
+                this.matchLabelFilters(config, eventData)
+              ).catch(() => {});
+            }
+          }
+          // Detect updated (name or color change)
+          for (const [id, cur] of current) {
+            const prevLabel = previous.get(id);
+            if (prevLabel && (prevLabel.name !== cur.name || prevLabel.color !== cur.color)) {
+              const eventData: Record<string, unknown> = {
+                labelId: id,
+                labelName: cur.name,
+                labelColor: cur.color,
+                previousName: prevLabel.name,
+                previousColor: prevLabel.color,
+              };
+              this.triggerFlowsByEvent(sessionId, 'label_updated', eventData, (config) =>
+                this.matchLabelFilters(config, eventData)
+              ).catch(() => {});
+            }
+          }
+          // Detect deleted
+          for (const [id, prevLabel] of previous) {
+            if (!current.has(id)) {
+              const eventData: Record<string, unknown> = { labelId: id, labelName: prevLabel.name, labelColor: prevLabel.color };
+              this.triggerFlowsByEvent(sessionId, 'label_deleted', eventData, (config) =>
+                this.matchLabelFilters(config, eventData)
+              ).catch(() => {});
+            }
+          }
+        }
+        this.labelSnapshots.set(sessionId, current);
+      } catch { /* WhatsApp may not be ready yet */ }
+    };
+
+    // Warm up the snapshot immediately, then poll every 30s
+    void poll();
+    const timer = setInterval(poll, 30000);
+    this.labelPollTimers.set(sessionId, timer);
+  }
+
+  private stopLabelPolling(sessionId: string): void {
+    const timer = this.labelPollTimers.get(sessionId);
+    if (timer) {
+      clearInterval(timer);
+      this.labelPollTimers.delete(sessionId);
+    }
+    this.labelSnapshots.delete(sessionId);
+  }
+
+  // Applies all label filter options from the node config
+  private matchLabelFilters(
+    config: Record<string, unknown>,
+    event: Record<string, unknown>
+  ): boolean {
+    const labelName = (event.labelName as string) || '';
+    const labelColor = ((event.labelColor as string) || '').toLowerCase();
+    const targetType = (event.targetType as string) || '';
+    const targetId = (event.chatId as string) || '';
+
+    // Name filter with match mode
+    const filterRaw = ((config.labelName as string) || '').trim();
+    if (filterRaw) {
+      const mode = (config.labelMatchMode as string) || 'exact';
+      const names = filterRaw.split(',').map((s) => s.trim()).filter(Boolean);
+      const lowerLabel = labelName.toLowerCase();
+      const matched = names.some((n) => {
+        const lowerN = n.toLowerCase();
+        if (mode === 'contains') return lowerLabel.includes(lowerN);
+        if (mode === 'startsWith') return lowerLabel.startsWith(lowerN);
+        if (mode === 'regex') {
+          try { return new RegExp(n, 'i').test(labelName); } catch { return false; }
+        }
+        return lowerLabel === lowerN;
+      });
+      if (!matched) return false;
+    }
+
+    // Color filter
+    const colorFilter = ((config.labelColor as string) || '').trim().toLowerCase();
+    if (colorFilter && labelColor && labelColor !== colorFilter) return false;
+
+    // Target type filter (only meaningful for assigned/unassigned)
+    const targetFilter = (config.labelTargetType as string) || 'any';
+    if (targetFilter !== 'any' && targetType) {
+      if (targetFilter === 'contact' && targetType !== 'chat') return false;
+      if (targetFilter === 'chat' && targetType === 'group') return false;
+      if (targetFilter === 'group' && targetType !== 'group') return false;
+    }
+
+    // Specific target ID
+    const targetIdFilter = ((config.labelTargetId as string) || '').trim();
+    if (targetIdFilter && targetId && targetIdFilter !== targetId) return false;
+
+    // Label count comparison (e.g. ">2", "<=5", "=1")
+    const countFilter = ((config.labelCountFilter as string) || '').trim();
+    if (countFilter) {
+      const labelsArr = (event.labels as unknown[]) || [];
+      const count = Array.isArray(labelsArr) ? labelsArr.length : 0;
+      const m = countFilter.match(/^(>=|<=|>|<|=)?\s*(\d+)$/);
+      if (m) {
+        const op = m[1] || '=';
+        const threshold = parseInt(m[2], 10);
+        if (op === '>' && !(count > threshold)) return false;
+        if (op === '<' && !(count < threshold)) return false;
+        if (op === '>=' && !(count >= threshold)) return false;
+        if (op === '<=' && !(count <= threshold)) return false;
+        if (op === '=' && count !== threshold) return false;
+      }
+    }
+
+    return true;
   }
 
   private async handleIncomingMessage(
@@ -476,6 +857,7 @@ class WppConnectManager {
     ).run(msgId, fromMe ? 1 : 0, chatRow.id);
 
     // Ensure contact exists for non-group direct messages
+    let isNewContact = false;
     if (!isGroup && !fromMe) {
       const contactWppId = sender;
       const existing = db.prepare(
@@ -483,6 +865,7 @@ class WppConnectManager {
       ).get(sessionId, contactWppId) as { id: string; profile_pic_url?: string } | undefined;
 
       if (!existing) {
+        isNewContact = true;
         const contactId = uuidv4();
         db.prepare(
           `INSERT INTO contacts (id, session_id, wpp_id, name, push_name, phone, is_wa_contact, created_at)
@@ -503,6 +886,11 @@ class WppConnectManager {
           }
         });
       }
+    }
+
+    // Trigger "New Contact" flows when first message from unknown contact
+    if (isNewContact) {
+      this.triggerFlowsByEvent(sessionId, 'new_contact', message).catch(() => {});
     }
 
     // --- Trigger active flows ---
@@ -539,6 +927,11 @@ class WppConnectManager {
       (message.chatId as Record<string, unknown>)?._serialized as string ||
       (message.chatId as string) ||
       (message.from as string) || '';
+
+    // Ignore system chats (status broadcasts)
+    if (chatId === 'status@broadcast' || chatId.endsWith('@broadcast')) {
+      return;
+    }
 
     // First: check for any paused conversations waiting for a reply from this chat
     let resumedAny = false;
@@ -615,7 +1008,7 @@ class WppConnectManager {
         if (!triggerNode) continue;
 
         const triggerType = (triggerNode.data.config?.triggerType as string) || 'message_received';
-        const shouldTrigger = this.checkTrigger(triggerType, triggerNode.data.config, body, msgType, isGroup);
+        const shouldTrigger = this.checkTrigger(triggerType, triggerNode.data.config, body, msgType, isGroup, message);
 
         if (shouldTrigger) {
           console.log(`[${sessionId}] Triggering flow "${flow.name}" (${triggerType})`);
@@ -628,29 +1021,226 @@ class WppConnectManager {
     }
   }
 
+  /**
+   * Trigger flows for event-based triggers (not message-based).
+   * Used for: reaction, call, presence, edit, delete, poll, ack, label, group events.
+   */
+  private async triggerFlowsByEvent(
+    sessionId: string,
+    triggerType: string,
+    eventData: Record<string, unknown>,
+    matcher?: (config: Record<string, unknown>) => boolean
+  ): Promise<void> {
+    const db = getDb();
+    const session = this.getSession(sessionId);
+    if (!session) return;
+
+    const flowRows = db.prepare(
+      `SELECT * FROM flows WHERE session_id = ? AND is_active = 1`
+    ).all(sessionId) as Record<string, unknown>[];
+
+    for (const row of flowRows) {
+      try {
+        const flow: Flow = {
+          id: row.id as string,
+          sessionId: row.session_id as string,
+          name: row.name as string,
+          description: (row.description as string) || undefined,
+          isActive: true,
+          trigger: JSON.parse((row.trigger_config as string) || '{}'),
+          nodes: JSON.parse((row.nodes as string) || '[]'),
+          edges: JSON.parse((row.edges as string) || '[]'),
+          variables: JSON.parse((row.variables as string) || '{}'),
+          createdAt: row.created_at as string,
+          updatedAt: row.updated_at as string,
+        };
+
+        if (flow.nodes.length === 0) continue;
+        const triggerNode = flow.nodes.find((n) => n.data.type === 'trigger');
+        if (!triggerNode) continue;
+
+        const flowTriggerType = (triggerNode.data.config?.triggerType as string) || '';
+        if (flowTriggerType !== triggerType) continue;
+
+        // Optional custom matcher (ex: specific emoji, presence state)
+        if (matcher && !matcher(triggerNode.data.config || {})) continue;
+
+        console.log(`[${sessionId}] Triggering flow "${flow.name}" (${triggerType})`);
+        const log = await executeFlow(flow, eventData, session);
+        console.log(`[${sessionId}] Flow "${flow.name}" completed:`, log.length, 'steps');
+      } catch (err) {
+        console.error(`[${sessionId}] Error in event flow "${row.name}":`, err);
+      }
+    }
+  }
+
   private checkTrigger(
     triggerType: string,
     config: Record<string, unknown>,
     body: string,
     msgType: string,
-    isGroup: boolean
+    isGroup: boolean,
+    message?: Record<string, unknown>
   ): boolean {
+    const chatId =
+      (message?.chatId as Record<string, unknown>)?._serialized as string ||
+      (message?.chatId as string) ||
+      (message?.from as string) || '';
+    const caption = (message?.caption as string) || '';
+    const sender =
+      (message?.from as Record<string, unknown>)?._serialized as string ||
+      (message?.from as string) ||
+      (message?.author as string) || '';
+
+    // Advanced filters — applied to all message-based triggers
+    const applyCommonFilters = (): boolean => {
+      if (!message) return true;
+
+      // Legacy: ignore own messages
+      const ignoreOwn = (config?.ignoreOwnMessages as boolean) !== false;
+      if (ignoreOwn && message.fromMe) return false;
+
+      // Legacy: ignore forwarded
+      const ignoreForwarded = (config?.ignoreForwarded as boolean) || false;
+      if (ignoreForwarded && message.isForwarded) return false;
+
+      // ============ NEW FILTER SELECTOR LOGIC ============
+      const filters = (config?.filters as Record<string, unknown>) || {};
+
+      // 1. Keyword filter
+      const keywordFilter = (filters.keyword as Record<string, unknown>) || {};
+      if (keywordFilter.enabled === true) {
+        const words = ((keywordFilter.words as string) || '')
+          .split(/[,\n]/)
+          .map((w) => w.trim().toLowerCase())
+          .filter(Boolean);
+        if (words.length > 0) {
+          const searchText = (body + ' ' + caption).toLowerCase();
+          const mode = (keywordFilter.mode as string) || 'contains';
+          const matched = words.some((w) => {
+            if (mode === 'exact') return body.toLowerCase() === w;
+            if (mode === 'startsWith') return searchText.startsWith(w);
+            return searchText.includes(w);
+          });
+          if (!matched) return false;
+        }
+      }
+
+      // 1b. Message Type filter (event kind)
+      const messageTypeFilter = (filters.messageType as string) || 'any';
+      if (messageTypeFilter !== 'any') {
+        const hasReaction = !!message.reactionText;
+        const hasQuoted = !!(message.quotedMsg || message.quotedMsgId);
+        const quotedFromMe = hasQuoted && !!((message.quotedMsg as Record<string, unknown>)?.fromMe);
+        const mentionedMe = Array.isArray(message.mentionedIds) && (message.mentionedIds as unknown[]).length > 0;
+
+        if (messageTypeFilter === 'reply' && !quotedFromMe) return false;
+        if (messageTypeFilter === 'mention' && !mentionedMe) return false;
+        if (messageTypeFilter === 'reaction' && !hasReaction) return false;
+        if (messageTypeFilter === 'forwarded' && !message.isForwarded) return false;
+        if (messageTypeFilter === 'quoted' && !hasQuoted) return false;
+        // 'edited', 'deleted', 'read' are triggered by dedicated events, not here
+        // 'new' is any fresh incoming message - always true
+      }
+
+      // 2. Media type filter
+      const mediaTypeFilter = (filters.mediaType as string) || 'none';
+      if (mediaTypeFilter !== 'none') {
+        const mediaTypes = ['image', 'video', 'audio', 'ptt', 'document', 'sticker', 'location', 'contact', 'vcard', 'multi_vcard'];
+        const isMedia = mediaTypes.includes(msgType);
+        if (mediaTypeFilter === 'text_only' && isMedia) return false;
+        if (mediaTypeFilter === 'any_media' && !isMedia) return false;
+        if (mediaTypeFilter === 'image' && msgType !== 'image') return false;
+        if (mediaTypeFilter === 'video' && msgType !== 'video') return false;
+        if (mediaTypeFilter === 'audio' && !['audio', 'ptt'].includes(msgType)) return false;
+        if (mediaTypeFilter === 'document' && msgType !== 'document') return false;
+        if (mediaTypeFilter === 'sticker' && msgType !== 'sticker') return false;
+        if (mediaTypeFilter === 'location' && msgType !== 'location') return false;
+        if (mediaTypeFilter === 'contact' && !['contact', 'vcard', 'multi_vcard'].includes(msgType)) return false;
+        if (mediaTypeFilter === 'link') {
+          const urlRegex = /https?:\/\/[^\s]+|www\.[^\s]+/i;
+          if (!urlRegex.test(body)) return false;
+        }
+        if (mediaTypeFilter === 'poll' && msgType !== 'poll' && msgType !== 'poll_creation') return false;
+      }
+
+      // 3. Message content filter
+      const contentFilter = (filters.content as Record<string, unknown>) || {};
+      if (contentFilter.enabled === true) {
+        const operator = (contentFilter.operator as string) || 'contains';
+        const value = (contentFilter.value as string) || '';
+        if (value) {
+          const lowerBody = body.toLowerCase();
+          const lowerValue = value.toLowerCase();
+          let matched = false;
+          switch (operator) {
+            case 'contains': matched = lowerBody.includes(lowerValue); break;
+            case 'equals': matched = lowerBody === lowerValue; break;
+            case 'startsWith': matched = lowerBody.startsWith(lowerValue); break;
+            case 'endsWith': matched = lowerBody.endsWith(lowerValue); break;
+            case 'regex': {
+              try { matched = new RegExp(value, 'i').test(body); } catch { matched = false; }
+              break;
+            }
+            case 'minLength': matched = body.length >= parseInt(value, 10); break;
+            case 'maxLength': matched = body.length <= parseInt(value, 10); break;
+          }
+          if (!matched) return false;
+        }
+      }
+
+      // 4. Sender filter (supports comma-separated list)
+      const senderFilter = (filters.sender as string) || '';
+      if (senderFilter.trim()) {
+        const allowedSenders = senderFilter
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((s) => (s.includes('@') ? s : `${s}@c.us`));
+        const senderPhone = sender.replace(/@.*$/, '');
+        const matched = allowedSenders.some((allowed) => {
+          const allowedPhone = allowed.replace(/@.*$/, '');
+          return sender === allowed || senderPhone === allowedPhone;
+        });
+        if (!matched) return false;
+      }
+
+      // 5. Chat type filter (+ optional specific group ID)
+      const chatTypeFilter = (filters.chatType as string) || 'all';
+      if (chatTypeFilter !== 'all') {
+        const isBroadcast = chatId.endsWith('@broadcast') || chatId === 'status@broadcast';
+        if (chatTypeFilter === 'private' && (isGroup || isBroadcast)) return false;
+        if (chatTypeFilter === 'group' && !isGroup) return false;
+        if (chatTypeFilter === 'broadcast' && !isBroadcast) return false;
+        if (chatTypeFilter === 'private_or_group' && isBroadcast) return false;
+      }
+      // Specific group ID filter (only relevant if in group)
+      const filterGroupId = (filters.groupId as string) || '';
+      if (filterGroupId && isGroup && chatId !== filterGroupId) return false;
+
+      return true;
+    };
+
     switch (triggerType) {
       case 'message_received':
-        return true;
+        return applyCommonFilters();
 
       case 'keyword': {
+        if (!applyCommonFilters()) return false;
         const keywords = ((config?.keywords as string) || '').split(/[,\n]/).map((k) => k.trim().toLowerCase()).filter(Boolean);
         if (keywords.length === 0) return true;
-        const lowerBody = body.toLowerCase();
+        const matchLocation = (config?.matchLocation as string) || 'body';
+        const searchText =
+          matchLocation === 'caption' ? caption.toLowerCase() :
+          matchLocation === 'both' ? (body + ' ' + caption).toLowerCase() :
+          body.toLowerCase();
         const matchMode = (config?.matchMode as string) || 'contains';
-        if (matchMode === 'exact') {
-          return keywords.some((k) => lowerBody === k);
-        }
-        return keywords.some((k) => lowerBody.includes(k));
+        if (matchMode === 'exact') return keywords.some((k) => searchText === k);
+        return keywords.some((k) => searchText.includes(k));
       }
 
       case 'regex': {
+        if (!applyCommonFilters()) return false;
         const pattern = (config?.pattern as string) || '';
         if (!pattern) return false;
         try {
@@ -660,26 +1250,81 @@ class WppConnectManager {
         }
       }
 
-      case 'media_received': {
-        const allowedTypes = (config?.mediaTypes as string[]) || [];
-        if (allowedTypes.length === 0) return ['image', 'video', 'audio', 'document', 'sticker'].includes(msgType);
-        return allowedTypes.includes(msgType);
+      case 'direct_message':
+        return !isGroup && applyCommonFilters();
+
+      case 'group_message': {
+        if (!isGroup || !applyCommonFilters()) return false;
+        const filterGroupId = (config?.groupId as string) || '';
+        if (filterGroupId && chatId !== filterGroupId) return false;
+        return true;
       }
 
-      case 'group_message':
-        return isGroup;
-
       case 'contact_message': {
-        const contactId = (config?.contactId as string) || '';
-        if (!contactId) return !isGroup;
-        return !isGroup; // TODO: match specific contact
+        if (isGroup || !applyCommonFilters()) return false;
+        const phone = (config?.contactPhone as string) || (config?.contactId as string) || '';
+        if (!phone) return true;
+        const expectedWppId = phone.includes('@') ? phone : `${phone}@c.us`;
+        return chatId === expectedWppId;
       }
 
       case 'new_contact':
-        return false; // Handled separately
+        return false; // Handled by dedicated check in handleIncomingMessage
 
+      case 'media_received': {
+        if (!applyCommonFilters()) return false;
+        const allowedTypes = (config?.mediaTypes as string[]) || [];
+        const mediaTypes = ['image', 'video', 'audio', 'ptt', 'document'];
+        if (!mediaTypes.includes(msgType)) return false;
+        if (allowedTypes.length === 0 || allowedTypes.includes('any')) return true;
+        return allowedTypes.includes(msgType);
+      }
+
+      case 'sticker_received':
+        return msgType === 'sticker' && applyCommonFilters();
+
+      case 'location_received':
+        return msgType === 'location' && applyCommonFilters();
+
+      case 'contact_card_received':
+        return (msgType === 'vcard' || msgType === 'contact' || msgType === 'multi_vcard') && applyCommonFilters();
+
+      case 'link_received': {
+        if (!applyCommonFilters()) return false;
+        const urlRegex = /https?:\/\/[^\s]+|www\.[^\s]+/i;
+        return urlRegex.test(body);
+      }
+
+      case 'mention_received': {
+        if (!applyCommonFilters()) return false;
+        const mentionedIds = (message?.mentionedIds as string[]) || [];
+        if (mentionedIds.length === 0) return false;
+        const filterGroupId = (config?.groupId as string) || '';
+        if (filterGroupId && chatId !== filterGroupId) return false;
+        return true;
+      }
+
+      case 'reply_received': {
+        if (!applyCommonFilters()) return false;
+        const quoted = message?.quotedMsg || message?.quotedMsgId;
+        if (!quoted) return false;
+        const quotedData = quoted as Record<string, unknown>;
+        return !!(quotedData.fromMe);
+      }
+
+      // Events handled by dedicated event handlers, not onMessage
       case 'added_to_group':
-        return false; // Handled by onAddedToGroup event
+      case 'group_joined':
+      case 'group_left':
+      case 'reaction_received':
+      case 'message_edited':
+      case 'message_deleted':
+      case 'poll_response':
+      case 'message_read':
+      case 'incoming_call':
+      case 'presence_changed':
+      case 'label_updated':
+        return false;
 
       case 'webhook':
         return false; // Handled by webhook API route
@@ -700,36 +1345,69 @@ class WppConnectManager {
       throw new Error('Session not found');
     }
 
-    if (this.sessions.has(sessionId)) {
-      const activeSession = this.sessions.get(sessionId)!;
-      try {
-        const state = await activeSession.client.getConnectionState();
-        if (state === 'CONNECTED') {
-          this.updateSessionStatus(sessionId, 'connected');
-          return;
-        }
-      } catch {
-        // Client may be stale, reinitialize
-      }
-      this.sessions.delete(sessionId);
-    }
-
-    // Start client initialization in the background
-    this.initClient(sessionId, session.device_name as string).catch((error) => {
+    void this.reconnectSession(sessionId).catch((error) => {
       console.error(`[${sessionId}] Failed to reconnect client:`, error);
       this.updateSessionStatus(sessionId, 'failed');
     });
   }
 
   async reconnectSession(sessionId: string): Promise<void> {
-    // Don't reconnect if already connected
-    const existing = this.sessions.get(sessionId);
-    if (existing && existing.status === 'connected') return;
+    // Skip if this session is blocked (phone unpaired it)
+    if (this.blockedSessions.has(sessionId)) {
+      console.log(`[${sessionId}] Session is unpaired - skipping reconnect. Delete and recreate session to use again.`);
+      return;
+    }
 
-    // Clean up old client if any
+    const inFlight = this.reconnectPromises.get(sessionId);
+    if (inFlight) {
+      await inFlight;
+      return;
+    }
+
+    const reconnectPromise = this.performReconnectSession(sessionId);
+    this.reconnectPromises.set(sessionId, reconnectPromise);
+
+    try {
+      await reconnectPromise;
+    } finally {
+      this.reconnectPromises.delete(sessionId);
+    }
+  }
+
+  private async performReconnectSession(sessionId: string): Promise<void> {
+    const existing = this.sessions.get(sessionId);
     if (existing) {
+      try {
+        const state = await existing.client.getConnectionState();
+        if (state === 'CONNECTED') {
+          this.updateSessionStatus(sessionId, 'connected');
+          return;
+        }
+      } catch {
+        // Client handle is stale and needs a clean restart.
+      }
+    }
+
+    // If Fast Refresh or a server restart dropped our in-memory handle but left
+    // the headless browser alive, recover by stopping that orphaned browser first.
+    if (!existing && isSessionRunning(sessionId)) {
+      await terminateLockedBrowser(
+        sessionId,
+        'Recovering session after server reload'
+      );
+    }
+
+    if (existing) {
+      try {
+        const pid = await existing.client.getPID();
+        if (pid) {
+          try { process.kill(pid); } catch { /* ignore */ }
+        }
+      } catch { /* ignore */ }
       try { await existing.client.close(); } catch { /* ignore */ }
       this.sessions.delete(sessionId);
+      clearLock(sessionId);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     const db = getDb();
@@ -749,19 +1427,26 @@ class WppConnectManager {
   }
 
   async disconnectSession(sessionId: string): Promise<void> {
+    this.stopLabelPolling(sessionId);
     const activeSession = this.sessions.get(sessionId);
     if (activeSession) {
-      try {
-        await activeSession.client.logout();
-      } catch {
-        // May already be disconnected
-      }
-      try {
-        await activeSession.client.close();
-      } catch {
-        // Ignore close errors
-      }
+      const client = activeSession.client;
       this.sessions.delete(sessionId);
+
+      const safeCall = async (fn: () => Promise<unknown>) => {
+        try {
+          await fn();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!/Connection closed|Target closed|Session closed/i.test(msg)) {
+            console.warn(`[${sessionId}] disconnect cleanup:`, msg);
+          }
+        }
+      };
+
+      await safeCall(() => client.logout());
+      await safeCall(() => client.close());
+      clearLock(sessionId);
     }
     this.qrCodes.delete(sessionId);
     this.updateSessionStatus(sessionId, 'disconnected');
@@ -800,7 +1485,11 @@ class WppConnectManager {
 
   getClient(sessionId: string): Whatsapp | null {
     const activeSession = this.sessions.get(sessionId);
-    return activeSession?.client || null;
+    if (!activeSession) return null;
+    // Accept any status where the browser is alive (not failed/disconnected)
+    // The client might be 'connecting', 'qr_ready' or 'connected' - all are usable if in memory
+    if (activeSession.status === 'failed' || activeSession.status === 'disconnected') return null;
+    return activeSession.client;
   }
 
   getQrCode(sessionId: string): string | null {
