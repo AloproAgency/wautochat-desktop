@@ -207,10 +207,17 @@ export function humanizeError(rawError: string, nodeType: FlowNodeType): string 
 
   // Media / URL
   if (lower.includes('invalid url') || lower.includes('err_invalid_url')) {
+    if (nodeType === 'http-request') return "L'URL de l'API est invalide.";
     return "L'URL du fichier est invalide.";
   }
   if (lower.includes('failed to fetch') || lower.includes('fetch failed')) {
+    if (nodeType === 'http-request') {
+      return "Impossible de joindre l'API. Vérifiez que l'URL est correcte et que le serveur est en ligne.";
+    }
     return 'Impossible de télécharger le fichier. Vérifiez que le lien est accessible.';
+  }
+  if (lower.includes('aborted') && nodeType === 'http-request') {
+    return "La requête API a dépassé le délai de 30 secondes. Le serveur met trop de temps à répondre.";
   }
   if (lower.includes('unsupported media') || lower.includes('unsupported format')) {
     return 'Format de fichier non supporté par WhatsApp.';
@@ -932,17 +939,20 @@ async function executeNode(
           responseData = responseText;
         }
 
-        // Store response in variable if configured
-        const responseVar = (config.responseVariable as string) || (config.saveAs as string) || '';
-        if (responseVar) {
-          ctx.variables[responseVar] = typeof responseData === 'string'
-            ? responseData
-            : JSON.stringify(responseData);
-        }
-        ctx.variables['__http_status'] = String(response.status);
-        ctx.variables['__http_response'] = typeof responseData === 'string'
+        // Store response in variable — default to "apiResponse" if not configured,
+        // so the node is useful out of the box.
+        const responseVar =
+          (config.responseVariable as string) ||
+          (config.saveAs as string) ||
+          'apiResponse';
+        const serialized = typeof responseData === 'string'
           ? responseData
           : JSON.stringify(responseData);
+        ctx.variables[responseVar] = serialized;
+        // Always-available fallbacks for convenience
+        ctx.variables['apiResponse'] = serialized;
+        ctx.variables['__http_status'] = String(response.status);
+        ctx.variables['__http_response'] = serialized;
 
         entry.result = {
           method,
