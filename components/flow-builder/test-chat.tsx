@@ -71,6 +71,18 @@ const typingDotsStyle = `
 }
 `;
 
+const SIM_MSG_TYPES = [
+  { value: 'text',     label: 'Texte' },
+  { value: 'image',    label: 'Image' },
+  { value: 'video',    label: 'Vidéo' },
+  { value: 'audio',    label: 'Audio' },
+  { value: 'document', label: 'Document' },
+  { value: 'sticker',  label: 'Sticker' },
+  { value: 'location', label: 'Position' },
+  { value: 'contact',  label: 'Contact' },
+  { value: 'poll',     label: 'Sondage' },
+];
+
 export default function TestChat({ flowId, sessionId }: TestChatProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -78,6 +90,9 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
   const [isTyping, setIsTyping] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
+  const [simMsgType, setSimMsgType] = useState('text');
+  const [simIsGroup, setSimIsGroup] = useState(false);
+  const [showSimOptions, setShowSimOptions] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -140,7 +155,11 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
       const res = await fetch(`/api/flows/${flowId}/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, sessionId }),
+        body: JSON.stringify({
+          message: text,
+          sessionId,
+          simOptions: { msgType: simMsgType, isGroup: simIsGroup },
+        }),
       });
 
       const json = await res.json();
@@ -605,6 +624,39 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Simulation options panel */}
+          {showSimOptions && (
+            <div
+              className="shrink-0 px-3 py-2 border-t flex flex-wrap gap-2 items-center"
+              style={{ backgroundColor: '#f0f2f5', borderColor: '#d1d5db' }}
+            >
+              <span className="text-xs text-gray-500 font-medium mr-1">Simuler :</span>
+              <select
+                value={simMsgType}
+                onChange={(e) => setSimMsgType(e.target.value)}
+                className="text-xs border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-green-400"
+              >
+                {SIM_MSG_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+              <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={simIsGroup}
+                  onChange={(e) => setSimIsGroup(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                Groupe
+              </label>
+              {(simMsgType !== 'text' || simIsGroup) && (
+                <span className="text-xs text-green-600 font-medium">
+                  {simMsgType !== 'text' ? simMsgType : ''}{simMsgType !== 'text' && simIsGroup ? ' · ' : ''}{simIsGroup ? 'groupe' : ''}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Input area */}
           <div
             className="flex items-center shrink-0 px-2 gap-1"
@@ -613,16 +665,14 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
               height: 56,
             }}
           >
-            {/* Attachment icon (decorative) */}
+            {/* Sim options toggle */}
             <button
-              className="flex items-center justify-center rounded-full shrink-0"
-              style={{ width: 40, height: 40 }}
-              title="Attach (decorative)"
+              className="flex items-center justify-center rounded-full shrink-0 transition-colors"
+              style={{ width: 40, height: 40, color: showSimOptions ? '#25D366' : '#54656f' }}
+              title="Options de simulation"
+              onClick={() => setShowSimOptions((v) => !v)}
             >
-              <Paperclip
-                className="w-5 h-5 rotate-45"
-                style={{ color: '#54656f' }}
-              />
+              <Paperclip className="w-5 h-5 rotate-45" />
             </button>
 
             {/* Input field */}

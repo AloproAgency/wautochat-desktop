@@ -24,7 +24,6 @@ import ReactFlow, {
   type NodeChange,
   type EdgeChange,
   type ReactFlowInstance,
-  MarkerType,
 } from 'reactflow';
 import { CanvasContextMenu, type ContextMenuTarget } from './canvas-context-menu';
 import { QuickAddNode } from './quick-add-node';
@@ -42,6 +41,8 @@ import ActionNode from './nodes/action-node';
 import ConditionNode from './nodes/condition-node';
 import DelayNode from './nodes/delay-node';
 import LogicNode from './nodes/logic-node';
+import AiNode, { AiAgentNodeComponent, LlmNodeComponent, MemoryNodeComponent, ToolNodeComponent, WppConnectAllNodeComponent } from './nodes/ai-node';
+import FlowEdge from './custom-edge';
 import NodePalette, { triggerTypeMap, type PaletteItem } from './node-palette';
 import NodeConfigPanel from './node-config-panel';
 import {
@@ -110,6 +111,12 @@ const nodeTypeMap: Record<string, string> = {
   condition: 'conditionNode',
   delay: 'delayNode',
   logic: 'logicNode',
+  ai: 'aiNode',
+  aiAgent: 'aiAgentNode',
+  llm: 'llmNode',
+  memory: 'memoryNode',
+  tool: 'toolNode',
+  wppconnect: 'wppconnectAllNode',
 };
 
 function getNodeCategory(flowNodeType: string): string {
@@ -132,6 +139,12 @@ function getNodeCategory(flowNodeType: string): string {
   if (flowNodeType.startsWith('send-')) return 'message';
   if (flowNodeType === 'condition') return 'condition';
   if (flowNodeType === 'delay') return 'delay';
+  if (flowNodeType === 'ai-agent') return 'aiAgent';
+  if (['ai-response', 'ai-classifier', 'ai-extractor', 'ai-summarizer', 'ai-sentiment', 'ai-translator', 'ai-vision'].includes(flowNodeType)) return 'ai';
+  if (['llm-claude', 'llm-openai', 'llm-gemini', 'llm-ollama'].includes(flowNodeType)) return 'llm';
+  if (['memory-buffer', 'memory-vector', 'memory-window'].includes(flowNodeType)) return 'memory';
+  if (['tool-code', 'tool-http', 'tool-search', 'tool-mcp'].includes(flowNodeType)) return 'tool';
+  if (flowNodeType === 'wppconnect-all') return 'wppconnect';
   return 'logic';
 }
 
@@ -208,9 +221,7 @@ function FlowCanvasInner({
       sourceHandle: e.sourceHandle || undefined,
       label: e.label || undefined,
       animated: false,
-      type: 'default',
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
-      style: { stroke: '#94a3b8', strokeWidth: 2 },
+      type: 'colored',
     }))
   );
 
@@ -225,23 +236,23 @@ function FlowCanvasInner({
         if (targetState?.status === 'executing') {
           return {
             ...edge,
+            type: 'colored',
             style: { stroke: '#22c55e', strokeWidth: 3 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
             animated: true,
           };
         }
         if (targetState?.status === 'success' || targetState?.status === 'error') {
           return {
             ...edge,
+            type: 'colored',
             style: { stroke: targetState.status === 'error' ? '#ef4444' : '#22c55e', strokeWidth: 3 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: targetState.status === 'error' ? '#ef4444' : '#22c55e' },
             animated: false,
           };
         }
         return {
           ...edge,
+          type: 'colored',
           style: { stroke: '#22c55e', strokeWidth: 2.5 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#22c55e' },
           animated: true,
         };
       }
@@ -249,8 +260,8 @@ function FlowCanvasInner({
       if (sourceState?.status === 'error') {
         return {
           ...edge,
+          type: 'colored',
           style: { stroke: '#ef4444', strokeWidth: 2.5 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#ef4444' },
           animated: false,
         };
       }
@@ -267,9 +278,17 @@ function FlowCanvasInner({
       conditionNode: ConditionNode,
       delayNode: DelayNode,
       logicNode: LogicNode,
+      aiNode: AiNode,
+      aiAgentNode: AiAgentNodeComponent,
+      llmNode: LlmNodeComponent,
+      memoryNode: MemoryNodeComponent,
+      toolNode: ToolNodeComponent,
+      wppconnectAllNode: WppConnectAllNodeComponent,
     }),
     []
   );
+
+  const edgeTypes = useMemo(() => ({ colored: FlowEdge }), []);
 
   const { pushState, undo, redo, canUndo, canRedo } = useUndoRedoStore();
 
@@ -299,9 +318,7 @@ function FlowCanvasInner({
           {
             ...connection,
             animated: false,
-            type: 'default',
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
-            style: { stroke: '#94a3b8', strokeWidth: 2 },
+            type: 'colored',
           },
           eds
         )
@@ -565,7 +582,7 @@ function FlowCanvasInner({
     );
 
     // Fit view after repositioning so the whole flow is visible
-    setTimeout(() => rfInstance?.fitView({ padding: 0.15, duration: 400 }), 50);
+    setTimeout(() => rfInstance?.fitView({ padding: 0.15, duration: 400, minZoom: 1.3, maxZoom: 1.3 }), 50);
   }, [nodes, edges, saveHistory, rfInstance]);
 
   // ---- Right-click context menu handlers ----
@@ -934,6 +951,7 @@ function FlowCanvasInner({
           onMoveEnd={onMoveEnd}
           isValidConnection={isValidConnection}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onPaneContextMenu={onPaneContextMenu}
           onNodeContextMenu={onNodeContextMenu}
           onEdgeContextMenu={onEdgeContextMenu}
@@ -943,20 +961,15 @@ function FlowCanvasInner({
           multiSelectionKeyCode="Shift"
           selectionKeyCode="Shift"
           fitView
-          fitViewOptions={{ padding: 0.2 }}
+          fitViewOptions={{ padding: 0.15, minZoom: 1.3, maxZoom: 1.3 }}
           deleteKeyCode={['Backspace', 'Delete']}
           snapToGrid
           snapGrid={[20, 20]}
           minZoom={0.2}
           maxZoom={3}
           connectionMode={ConnectionMode.Loose}
-          connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 2, strokeDasharray: '6 3' }}
-          defaultEdgeOptions={{
-            animated: false,
-            type: 'default',
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
-            style: { stroke: '#94a3b8', strokeWidth: 2 },
-          }}
+          connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 1.5, strokeDasharray: '5 4', opacity: 0.6 }}
+          defaultEdgeOptions={{ type: 'colored' }}
           proOptions={{ hideAttribution: true }}
         >
           <Controls position="bottom-left" className="shadow-lg border border-slate-200 rounded-xl overflow-hidden" />
@@ -964,19 +977,40 @@ function FlowCanvasInner({
             <MiniMap
               position="bottom-right"
               nodeColor={(n) => {
-                const cat = n.type?.replace('Node', '');
-                const colors: Record<string, string> = {
-                  trigger: '#16a34a',
-                  message: '#0d9488',
-                  action: '#4f46e5',
-                  condition: '#d97706',
-                  delay: '#0284c7',
-                  logic: '#7c3aed',
+                const t = (n.data as { type?: string })?.type ?? '';
+                const m: Record<string, string> = {
+                  trigger: '#15803d',
+                  'send-message': '#3f3f46', 'send-image': '#3f3f46', 'send-file': '#3f3f46',
+                  'send-audio': '#3f3f46', 'send-video': '#3f3f46', 'send-location': '#3f3f46',
+                  'send-contact': '#3f3f46', 'send-sticker': '#3f3f46', 'send-list': '#3f3f46',
+                  'send-poll': '#3f3f46', 'send-buttons': '#3f3f46',
+                  'send-reaction': '#5b21b6', 'forward-message': '#5b21b6', 'mark-as-read': '#5b21b6',
+                  'typing-indicator': '#5b21b6', 'assign-label': '#5b21b6', 'remove-label': '#5b21b6',
+                  'add-to-group': '#5b21b6', 'remove-from-group': '#5b21b6',
+                  'block-contact': '#5b21b6', 'unblock-contact': '#5b21b6',
+                  condition: '#c2410c', delay: '#c2410c', 'set-variable': '#c2410c',
+                  'http-request': '#c2410c',
+                  'go-to-flow': '#c2410c', 'wait-for-reply': '#c2410c',
+                  'ai-response': '#0c4a6e', 'ai-agent': '#0c4a6e', 'ai-classifier': '#0c4a6e',
+                  'ai-extractor': '#0c4a6e', 'ai-summarizer': '#0c4a6e', 'ai-sentiment': '#0c4a6e',
+                  'ai-translator': '#0c4a6e', 'ai-vision': '#0c4a6e',
+                  'llm-claude': '#312e81', 'llm-openai': '#312e81', 'llm-gemini': '#312e81', 'llm-ollama': '#312e81',
+                  'memory-buffer': '#0f766e', 'memory-vector': '#0f766e', 'memory-window': '#0f766e',
+                  'tool-code': '#92400e', 'tool-http': '#92400e',
+                  'tool-search': '#92400e', 'tool-mcp': '#92400e',
+                  'wppconnect-all': '#064e3b',
+                  end: '#18181b',
                 };
-                return colors[cat || ''] || '#94a3b8';
+                return m[t] || '#52525b';
               }}
-              className="border border-slate-200 rounded-xl overflow-hidden shadow-lg"
-              maskColor="rgba(248, 250, 252, 0.7)"
+              nodeStrokeWidth={0}
+              style={{
+                backgroundColor: '#0f172a',
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,0.08)',
+                overflow: 'hidden',
+              }}
+              maskColor="rgba(0,0,0,0.55)"
             />
           )}
           <Background
@@ -1009,7 +1043,7 @@ function FlowCanvasInner({
               onPaste: handlePaste,
               onSelectAll: handleSelectAll,
               onAutoLayout: handleAutoLayout,
-              onFitView: () => rfInstance?.fitView({ padding: 0.15, duration: 400 }),
+              onFitView: () => rfInstance?.fitView({ padding: 0.15, duration: 400, minZoom: 1.3, maxZoom: 1.3 }),
               // node actions
               onDuplicate: contextMenu.target.kind === 'node'
                 ? () => handleDuplicateNode((contextMenu.target as { nodeId: string }).nodeId)

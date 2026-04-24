@@ -43,6 +43,21 @@ import {
   PhoneIncoming,
   Wifi,
   Plus,
+  Bot,
+  Tags,
+  Layers,
+  FileSearch,
+  ThumbsUp,
+  Languages,
+  Eye,
+  Sparkles,
+  CircleDot,
+  Cpu,
+  Server,
+  Database,
+  Code2,
+  Wrench,
+  Zap,
 } from 'lucide-react';
 import type { FlowNodeType } from '@/lib/types';
 
@@ -51,14 +66,15 @@ interface PaletteItem {
   label: string;
   description: string;
   icon: React.ElementType;
-  category: 'Triggers' | 'Messages' | 'Actions' | 'Logic';
+  category: 'Triggers' | 'Messages' | 'Actions' | 'Logic' | 'AI';
   nodeCategory: string;
   triggerCategory?: string;
+  subCategory?: 'Agent' | 'Models' | 'Memory' | 'Tools';
 }
 
 const paletteItems: PaletteItem[] = [
   // Triggers
-  { type: 'trigger', label: 'Discussion',   description: 'Any message: private, group, broadcast, media, keyword, regex…', icon: MessageSquare, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'message' },
+  { type: 'trigger', label: 'Message event', description: 'Any message: private, group, broadcast, media, keyword, regex…', icon: MessageSquare, category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'message' },
   { type: 'trigger', label: 'Status',        description: 'Contact presence: online, offline, typing, recording…',           icon: Wifi,          category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'presence' },
   { type: 'trigger', label: 'Group Event',   description: 'Added to group, participant joined/left…',                        icon: Users,         category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'group_event' },
   { type: 'trigger', label: 'Labels',        description: 'Label created, updated, removed, assigned or unassigned',         icon: Tag,           category: 'Triggers', nodeCategory: 'trigger', triggerCategory: 'label' },
@@ -93,14 +109,37 @@ const paletteItems: PaletteItem[] = [
   { type: 'delay',         label: 'Delay',          description: 'Wait before continuing',              icon: Timer,       category: 'Logic', nodeCategory: 'delay' },
   { type: 'set-variable',  label: 'Set Variable',   description: 'Store a value in a variable',        icon: Variable,    category: 'Logic', nodeCategory: 'logic' },
   { type: 'http-request',  label: 'HTTP Request',   description: 'Make an API call',                   icon: Globe,       category: 'Logic', nodeCategory: 'logic' },
-  { type: 'ai-response',   label: 'AI Response',    description: 'Generate AI-powered reply',          icon: BrainCircuit,category: 'Logic', nodeCategory: 'logic' },
+  { type: 'ai-response',   label: 'AI Response',    description: 'Generate AI-powered reply',          icon: BrainCircuit,category: 'AI', nodeCategory: 'ai', subCategory: 'Agent' },
   { type: 'go-to-flow',    label: 'Go to Flow',     description: 'Jump to another flow',               icon: ExternalLink,category: 'Logic', nodeCategory: 'logic' },
   { type: 'wait-for-reply',label: 'Wait for Reply', description: 'Pause until user replies',           icon: MessageCircle,category: 'Logic', nodeCategory: 'logic' },
   { type: 'end',           label: 'End',            description: 'End the flow execution',             icon: CircleStop,  category: 'Logic', nodeCategory: 'logic' },
+  // AI — Agent
+  { type: 'ai-agent',      label: 'AI Agent',       description: 'Autonomous agent with Model, Memory & Tools', icon: Bot,        category: 'AI', nodeCategory: 'aiAgent', subCategory: 'Agent' },
+  { type: 'ai-classifier', label: 'AI Classifier',  description: 'Classify text into categories',               icon: Tags,       category: 'AI', nodeCategory: 'ai',      subCategory: 'Agent' },
+  { type: 'ai-extractor',  label: 'AI Extractor',   description: 'Extract structured data from text',           icon: Layers,     category: 'AI', nodeCategory: 'ai',      subCategory: 'Agent' },
+  { type: 'ai-summarizer', label: 'AI Summarizer',  description: 'Summarize a text or conversation',            icon: FileSearch, category: 'AI', nodeCategory: 'ai',      subCategory: 'Agent' },
+  { type: 'ai-sentiment',  label: 'AI Sentiment',   description: 'Analyze the sentiment of a message',          icon: ThumbsUp,   category: 'AI', nodeCategory: 'ai',      subCategory: 'Agent' },
+  { type: 'ai-translator', label: 'AI Translator',  description: 'Translate text to another language',          icon: Languages,  category: 'AI', nodeCategory: 'ai',      subCategory: 'Agent' },
+  { type: 'ai-vision',     label: 'AI Vision',      description: 'Analyze image content with AI',               icon: Eye,        category: 'AI', nodeCategory: 'ai',      subCategory: 'Agent' },
+  // AI — Models
+  { type: 'llm-claude',  label: 'Claude',        description: 'Anthropic Claude model',             icon: Sparkles,      category: 'AI', nodeCategory: 'llm',    subCategory: 'Models' },
+  { type: 'llm-openai',  label: 'OpenAI GPT',    description: 'OpenAI GPT-4 model',                icon: CircleDot,     category: 'AI', nodeCategory: 'llm',    subCategory: 'Models' },
+  { type: 'llm-gemini',  label: 'Gemini',        description: 'Google Gemini model',               icon: Cpu,           category: 'AI', nodeCategory: 'llm',    subCategory: 'Models' },
+  { type: 'llm-ollama',  label: 'Ollama',        description: 'Local Ollama model',                icon: Server,        category: 'AI', nodeCategory: 'llm',    subCategory: 'Models' },
+  // AI — Memory
+  { type: 'memory-buffer', label: 'Buffer Memory', description: 'Store last N messages',           icon: Database,      category: 'AI', nodeCategory: 'memory', subCategory: 'Memory' },
+  { type: 'memory-vector', label: 'Vector Store',  description: 'Semantic memory with embeddings', icon: Layers,        category: 'AI', nodeCategory: 'memory', subCategory: 'Memory' },
+  { type: 'memory-window', label: 'Window Buffer', description: 'Sliding window of messages',      icon: FileSearch,    category: 'AI', nodeCategory: 'memory', subCategory: 'Memory' },
+  // AI — Tools
+  { type: 'wppconnect-all', label: 'WPPConnect',   description: 'Full WhatsApp account access — all wppconnect tools', icon: Zap,   category: 'AI', nodeCategory: 'wppconnect', subCategory: 'Tools' },
+  { type: 'tool-code',      label: 'Execute Code', description: 'Run JavaScript or Python',                           icon: Code2, category: 'AI', nodeCategory: 'tool',       subCategory: 'Tools' },
+  { type: 'tool-http',      label: 'HTTP Request', description: 'Make external API calls',                            icon: Globe, category: 'AI', nodeCategory: 'tool',       subCategory: 'Tools' },
+  { type: 'tool-search',    label: 'Web Search',   description: 'Search the web',                                     icon: Search,category: 'AI', nodeCategory: 'tool',       subCategory: 'Tools' },
+  { type: 'tool-mcp',       label: 'MCP Server',   description: 'Connect any MCP server tool',                        icon: Wrench,category: 'AI', nodeCategory: 'tool',       subCategory: 'Tools' },
 ];
 
 const triggerTypeMap: Record<string, string> = {
-  'Discussion':  'message_received',
+  'Message event': 'message_received',
   'Status':      'presence_changed',
   'Group Event': 'added_to_group',
   'Labels':      'label_assigned',
@@ -126,7 +165,7 @@ export const triggerCategoryMap: Record<string, string> = {
   schedule: 'schedule',
 };
 
-type TabCategory = 'All' | 'Triggers' | 'Messages' | 'Actions' | 'Logic';
+type TabCategory = 'All' | 'Triggers' | 'Messages' | 'Actions' | 'Logic' | 'AI';
 
 interface CategoryColor {
   text: string;
@@ -141,15 +180,16 @@ const categoryColors: Record<string, CategoryColor> = {
   Messages: { text: 'text-zinc-800',   bg: 'bg-zinc-100',   activeBg: 'bg-zinc-900',   from: '#09090b', to: '#3f3f46' },
   Actions:  { text: 'text-violet-800', bg: 'bg-violet-100', activeBg: 'bg-violet-800', from: '#5b21b6', to: '#7c3aed' },
   Logic:    { text: 'text-orange-800', bg: 'bg-orange-100', activeBg: 'bg-orange-700', from: '#c2410c', to: '#ea580c' },
+  AI:       { text: 'text-sky-800',    bg: 'bg-sky-100',    activeBg: 'bg-sky-800',    from: '#0c4a6e', to: '#0284c7' },
 };
 
-const tabActiveClass: Record<TabCategory, string> = {
-  All:      'bg-slate-900 text-white shadow-sm',
-  Triggers: 'bg-green-700 text-white shadow-sm shadow-green-300',
-  Messages: 'bg-zinc-900 text-white shadow-sm shadow-zinc-300',
-  Actions:  'bg-violet-800 text-white shadow-sm shadow-violet-300',
-  Logic:    'bg-orange-700 text-white shadow-sm shadow-orange-300',
+const subCategoryColors: Record<string, CategoryColor> = {
+  Agent:  { text: 'text-sky-800',    bg: 'bg-sky-100',    activeBg: 'bg-sky-800',    from: '#0c4a6e', to: '#0284c7' },
+  Models: { text: 'text-indigo-800', bg: 'bg-indigo-100', activeBg: 'bg-indigo-800', from: '#312e81', to: '#6366f1' },
+  Memory: { text: 'text-teal-800',   bg: 'bg-teal-100',   activeBg: 'bg-teal-800',   from: '#0f766e', to: '#0d9488' },
+  Tools:  { text: 'text-amber-800',  bg: 'bg-amber-100',  activeBg: 'bg-amber-800',  from: '#92400e', to: '#d97706' },
 };
+
 
 interface NodePaletteProps {
   mode?: 'sidebar' | 'overlay';
@@ -174,6 +214,7 @@ function NodeCard({
   return (
     <div
       draggable
+      title={item.description}
       onDragStart={(e) => onDragStart(e, item)}
       onClick={() => onClick?.(item)}
       className="relative flex items-center gap-2.5 px-2.5 py-2 rounded-xl cursor-grab active:cursor-grabbing hover:bg-slate-50 active:scale-[0.98] transition-all group border border-transparent hover:border-slate-100 hover:shadow-sm"
@@ -219,12 +260,21 @@ export default function NodePalette({ mode = 'sidebar', onClose, onItemSelect }:
     return matchesSearch && matchesTab;
   });
 
-  const categories: TabCategory[] = ['Triggers', 'Messages', 'Actions', 'Logic'];
+  const categories: TabCategory[] = ['Triggers', 'Messages', 'Actions', 'Logic', 'AI'];
 
+  // For non-AI categories or 'All' mode, flat groups by category.
+  // For AI category specifically, we group by subCategory.
   const groupedItems = (activeCategory === 'All' ? categories : [activeCategory]).flatMap((cat) => {
     const items = filteredItems.filter((i) => i.category === cat);
     if (items.length === 0) return [];
     return [{ category: cat as TabCategory, color: categoryColors[cat], items }];
+  });
+
+  // AI sub-groups (used when activeCategory === 'AI')
+  const aiSubGroups: { subCategory: string; color: CategoryColor; items: PaletteItem[] }[] = (['Agent', 'Models', 'Memory', 'Tools'] as const).flatMap((sub) => {
+    const items = filteredItems.filter((i) => i.category === 'AI' && i.subCategory === sub);
+    if (items.length === 0) return [];
+    return [{ subCategory: sub, color: subCategoryColors[sub], items }];
   });
 
   function onDragStart(e: DragEvent<HTMLDivElement>, item: PaletteItem) {
@@ -271,46 +321,79 @@ export default function NodePalette({ mode = 'sidebar', onClose, onItemSelect }:
               />
               {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2"><X className="w-3.5 h-3.5 text-slate-400" /></button>}
             </div>
-            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+            <div className="flex flex-wrap gap-1.5 pb-1">
               {(['All', ...categories] as TabCategory[]).map((cat) => (
                 <button key={cat} onClick={() => setActiveCategory(cat)}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap transition-all ${activeCategory === cat ? tabActiveClass[cat] : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}>
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-semibold whitespace-nowrap transition-all ${activeCategory === cat ? 'bg-zinc-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}>
                   {cat}
                 </button>
               ))}
             </div>
           </div>
           <div className="flex-1 overflow-y-auto px-3 pb-6">
-            {groupedItems.map((group) => (
-              <div key={group.category} className="mb-2">
-                {activeCategory === 'All' && (
+            {activeCategory === 'AI' ? (
+              /* AI tab overlay: sub-groups */
+              aiSubGroups.map(({ subCategory, color, items }) => (
+                <div key={subCategory} className="mb-2">
                   <div className="flex items-center gap-2 px-1 py-2">
-                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: group.color.to }} />
-                    <span className={`text-[10px] font-bold uppercase tracking-widest ${group.color.text}`}>{group.category}</span>
+                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color.to }} />
+                    <span className={`text-[10px] font-bold uppercase tracking-widest ${color.text}`}>{subCategory}</span>
                     <div className="flex-1 h-px bg-slate-100" />
-                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${group.color.bg} ${group.color.text}`}>{group.items.length}</span>
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${color.bg} ${color.text}`}>{items.length}</span>
                   </div>
-                )}
-                <div className="space-y-0.5">
-                  {group.items.map((item, idx) => {
-                    const Icon = item.icon;
-                    return (
-                      <button key={`${item.type}-${item.label}-${idx}`} onClick={() => handleItemClick(item)}
-                        className="flex w-full items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 transition-colors text-left">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
-                          style={{ background: `linear-gradient(135deg, ${group.color.from}, ${group.color.to})` }}>
-                          <Icon className="w-5 h-5 text-white" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-semibold text-slate-800 truncate leading-tight">{item.label}</div>
-                          <div className="text-xs text-slate-400 truncate leading-tight mt-0.5">{item.description}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
+
+                  <div className="space-y-0.5">
+                    {items.map((item, idx) => {
+                      const Icon = item.icon;
+                      return (
+                        <button key={`${item.type}-${item.label}-${idx}`} onClick={() => handleItemClick(item)}
+                          className="flex w-full items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 transition-colors text-left">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
+                            style={{ background: `linear-gradient(135deg, ${color.from}, ${color.to})` }}>
+                            <Icon className="w-5 h-5 text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-slate-800 truncate leading-tight">{item.label}</div>
+                            <div className="text-xs text-slate-400 truncate leading-tight mt-0.5">{item.description}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              groupedItems.map((group) => (
+                <div key={group.category} className="mb-2">
+                  {activeCategory === 'All' && (
+                    <div className="flex items-center gap-2 px-1 py-2">
+                      <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: group.color.to }} />
+                      <span className={`text-[10px] font-bold uppercase tracking-widest ${group.color.text}`}>{group.category}</span>
+                      <div className="flex-1 h-px bg-slate-100" />
+                      <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${group.color.bg} ${group.color.text}`}>{group.items.length}</span>
+                    </div>
+                  )}
+                  <div className="space-y-0.5">
+                    {group.items.map((item, idx) => {
+                      const Icon = item.icon;
+                      return (
+                        <button key={`${item.type}-${item.label}-${idx}`} onClick={() => handleItemClick(item)}
+                          className="flex w-full items-center gap-3 px-3 py-3 rounded-xl hover:bg-slate-50 transition-colors text-left">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm"
+                            style={{ background: `linear-gradient(135deg, ${group.color.from}, ${group.color.to})` }}>
+                            <Icon className="w-5 h-5 text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold text-slate-800 truncate leading-tight">{item.label}</div>
+                            <div className="text-xs text-slate-400 truncate leading-tight mt-0.5">{item.description}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
             {filteredItems.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-slate-400">
                 <Search className="w-8 h-8 mb-3 opacity-30" />
@@ -325,6 +408,15 @@ export default function NodePalette({ mode = 'sidebar', onClose, onItemSelect }:
   }
 
   // ── Sidebar mode ─────────────────────────────────────────────────────────────
+  const totalByCategory: Record<string, number> = {
+    All: paletteItems.length,
+    Triggers: paletteItems.filter(i => i.category === 'Triggers').length,
+    Messages: paletteItems.filter(i => i.category === 'Messages').length,
+    Actions: paletteItems.filter(i => i.category === 'Actions').length,
+    Logic: paletteItems.filter(i => i.category === 'Logic').length,
+    AI: paletteItems.filter(i => i.category === 'AI').length,
+  };
+
   return (
     <div className="h-full w-full flex flex-col bg-white border-r border-slate-200/80 select-none">
 
@@ -354,7 +446,7 @@ export default function NodePalette({ mode = 'sidebar', onClose, onItemSelect }:
         </div>
       </div>
 
-      {/* Category tabs — flex-wrap so no scrolling */}
+      {/* Category tabs — flex-wrap, no scroll, always black when active */}
       <div className="flex flex-wrap gap-1 px-3 pb-2">
         {(['All', ...categories] as TabCategory[]).map((cat) => (
           <button
@@ -362,11 +454,14 @@ export default function NodePalette({ mode = 'sidebar', onClose, onItemSelect }:
             onClick={() => setActiveCategory(cat)}
             className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
               activeCategory === cat
-                ? tabActiveClass[cat]
+                ? 'bg-zinc-900 text-white shadow-sm'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800'
             }`}
           >
             {cat}
+            <span className="ml-1 text-[9px] opacity-50 tabular-nums">
+              {totalByCategory[cat]}
+            </span>
           </button>
         ))}
       </div>
@@ -376,35 +471,64 @@ export default function NodePalette({ mode = 'sidebar', onClose, onItemSelect }:
 
       {/* Nodes list */}
       <div className="flex-1 overflow-y-auto px-2 pb-4">
-        {groupedItems.map(({ category, color, items }) => (
-          <div key={category} className="mb-1">
-
-            {/* Section header */}
-            <div className="flex items-center gap-2 px-1.5 pt-3 pb-1.5">
-              <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color.to }} />
-                <span className={`text-[10px] font-bold uppercase tracking-widest ${color.text}`}>{category}</span>
+        {activeCategory === 'AI' ? (
+          /* AI tab: render sub-groups */
+          aiSubGroups.map(({ subCategory, color, items }) => (
+            <div key={subCategory} className="mb-1">
+              <div className="flex items-center gap-2 px-1.5 pt-3 pb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color.to }} />
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${color.text}`}>{subCategory}</span>
+                </div>
+                <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${color.to}25, transparent)` }} />
+                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${color.bg} ${color.text}`}>
+                  {items.length}
+                </span>
               </div>
-              <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${color.to}25, transparent)` }} />
-              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${color.bg} ${color.text}`}>
-                {items.length}
-              </span>
+              <div className="space-y-0.5">
+                {items.map((item) => (
+                  <NodeCard
+                    key={`${item.type}-${item.label}`}
+                    item={item}
+                    color={color}
+                    onDragStart={onDragStart}
+                    onClick={handleItemClick}
+                  />
+                ))}
+              </div>
             </div>
+          ))
+        ) : (
+          groupedItems.map(({ category, color, items }) => (
+            <div key={category} className="mb-1">
 
-            {/* Cards */}
-            <div className="space-y-0.5">
-              {items.map((item) => (
-                <NodeCard
-                  key={`${item.type}-${item.triggerCategory || item.label}`}
-                  item={item}
-                  color={color}
-                  onDragStart={onDragStart}
-                  onClick={handleItemClick}
-                />
-              ))}
+              {/* Section header */}
+              <div className="flex items-center gap-2 px-1.5 pt-3 pb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color.to }} />
+                  <span className={`text-[10px] font-bold uppercase tracking-widest ${color.text}`}>{category}</span>
+                </div>
+                <div className="flex-1 h-px" style={{ background: `linear-gradient(to right, ${color.to}25, transparent)` }} />
+                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${color.bg} ${color.text}`}>
+                  {items.length}
+                </span>
+              </div>
+
+              {/* Cards */}
+              <div className="space-y-0.5">
+                {items.map((item) => (
+                  <NodeCard
+                    key={`${item.type}-${item.triggerCategory || item.label}`}
+                    item={item}
+                    color={color}
+                    onDragStart={onDragStart}
+                    onClick={handleItemClick}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
 
         {/* Empty state */}
         {filteredItems.length === 0 && (

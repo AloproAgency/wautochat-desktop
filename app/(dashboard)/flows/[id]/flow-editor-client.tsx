@@ -110,21 +110,24 @@ export default function FlowEditorClient({ flow }: FlowEditorClientProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gray-50">
-      {/* Top bar */}
+      {/* Top bar — dark */}
       <div
-        className="bg-white border-b border-gray-200 flex items-center px-2 md:px-4 gap-2 md:gap-3 shrink-0"
-        style={{ height: isMobile ? 48 : 56 }}
+        className="flex items-center px-2 md:px-4 gap-2 md:gap-3 shrink-0"
+        style={{ height: isMobile ? 48 : 56, backgroundColor: '#09090b' }}
       >
-        {/* Left side: back + name */}
+        {/* Back */}
         <button
           onClick={() => router.push('/flows')}
-          className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors shrink-0"
+          className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-lg transition-colors shrink-0"
+          style={{}}
+          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)')}
+          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
           title="Back to Flows"
         >
-          <ArrowLeft className="w-4 h-4 text-gray-500" />
+          <ArrowLeft className="w-4 h-4 text-white/70" />
         </button>
 
-        <div className="w-px h-5 md:h-7 bg-gray-200" />
+        <div className="w-px h-5 md:h-7 bg-white/10" />
 
         {/* Editable flow name */}
         {editingName ? (
@@ -142,47 +145,56 @@ export default function FlowEditorClient({ flow }: FlowEditorClientProps) {
                 }
               }}
               onBlur={handleNameSave}
-              className="px-2 md:px-3 py-1 md:py-1.5 text-sm font-semibold text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-400 bg-white min-w-0 flex-1"
+              className="px-2 md:px-3 py-1 md:py-1.5 text-sm font-semibold text-white rounded-lg focus:outline-none min-w-0 flex-1"
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
             />
             <button
               onClick={handleNameSave}
               disabled={savingName}
-              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 shrink-0"
+              className="w-7 h-7 flex items-center justify-center rounded-lg shrink-0"
             >
-              <Check className="w-4 h-4 text-emerald-500" />
+              <Check className="w-4 h-4 text-emerald-400" />
             </button>
           </div>
         ) : (
           <button
             onClick={() => setEditingName(true)}
-            className="flex items-center gap-1.5 md:gap-2 hover:bg-gray-50 px-2 md:px-3 py-1 md:py-1.5 rounded-lg transition-colors group min-w-0"
+            className="flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-lg transition-colors group min-w-0"
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
-            <span className="text-sm font-semibold text-gray-900 truncate">{flowName}</span>
-            <Pencil className="w-3.5 h-3.5 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+            <span className="text-sm font-semibold text-white truncate">{flowName}</span>
+            <Pencil className="w-3.5 h-3.5 text-white/30 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
           </button>
         )}
 
         {/* Right side */}
         <div className="ml-auto flex items-center gap-2 md:gap-3 shrink-0">
-          {/* Saved timestamp - hide on mobile */}
-          <div className="items-center gap-1.5 text-xs text-gray-400 hidden md:flex">
+          <div className="hidden md:flex items-center gap-1.5">
             {lastSaved ? (
-              <span>Saved {savedText}</span>
+              <>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="text-xs text-white/40">Saved {savedText}</span>
+              </>
             ) : (
-              <span>Not saved yet</span>
+              <>
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-xs text-white/40">Unsaved</span>
+              </>
             )}
           </div>
 
-          <div className="w-px h-5 md:h-7 bg-gray-200 hidden md:block" />
+          <div className="w-px h-5 md:h-7 bg-white/10 hidden md:block" />
 
           {/* Active/Inactive toggle */}
           <button
             onClick={handleToggleActive}
             className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1 md:py-1.5 rounded-full text-xs font-semibold transition-all ${
               isActive
-                ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 ring-1 ring-emerald-200'
-                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 ring-1 ring-gray-200'
+                ? 'bg-emerald-500 text-white hover:bg-emerald-400'
+                : 'text-white/50 hover:text-white/70'
             }`}
+            style={!isActive ? { backgroundColor: 'rgba(255,255,255,0.08)' } : {}}
           >
             {isActive ? (
               <>

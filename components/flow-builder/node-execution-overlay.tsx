@@ -5,13 +5,39 @@ import { useNodeExecutionState } from './execution-context';
 interface NodeExecutionOverlayProps {
   nodeId: string;
   children: React.ReactNode;
+  warning?: boolean;
 }
 
-export default function NodeExecutionOverlay({ nodeId, children }: NodeExecutionOverlayProps) {
+export default function NodeExecutionOverlay({ nodeId, children, warning }: NodeExecutionOverlayProps) {
   const execState = useNodeExecutionState(nodeId);
   const status = execState?.status;
 
   if (!status || status === 'idle') {
+    if (warning) {
+      return (
+        <div style={{ position: 'relative' }}>
+          {children}
+          <div style={{
+            position: 'absolute',
+            bottom: -6,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#f59e0b',
+            color: '#fff',
+            fontSize: 7,
+            fontWeight: 700,
+            padding: '0px 3px',
+            borderRadius: 2,
+            whiteSpace: 'nowrap',
+            boxShadow: 'none',
+            zIndex: 10,
+            letterSpacing: '0.04em',
+          }}>
+            ! Config required
+          </div>
+        </div>
+      );
+    }
     return <>{children}</>;
   }
 

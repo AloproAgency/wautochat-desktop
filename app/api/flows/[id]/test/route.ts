@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/db';
 import flowExecutionBus from '@/lib/flow-execution-bus';
 import { humanizeError } from '@/lib/flow-engine';
+import { applyTriggerFilters } from '@/lib/trigger-filters';
 import type {
   Flow,
   FlowNodeSerialized,
@@ -503,60 +504,72 @@ async function walkFlow(
   return 'done';
 }
 
-// Check if trigger matches the message
+export interface SimOptions {
+  msgType?: string;   // 'text'|'image'|'video'|'audio'|'document'|'sticker'|'location'|'contact'|'poll'
+  isGroup?: boolean;
+  sender?: string;    // phone number like "2299xxxxxxx" or full JID
+}
+
+// Check if trigger matches the simulated message (applies ALL configured filters)
 function checkTriggerMatch(
   trigger: Flow['trigger'],
   triggerConfig: Record<string, unknown>,
-  message: string
+  message: string,
+  sim: SimOptions = {}
 ): boolean {
   const triggerType = trigger?.type || (triggerConfig.triggerType as string) || 'message_received';
+  const msgType = sim.msgType || 'text';
+  const isGroup = sim.isGroup ?? false;
+  const rawSender = sim.sender || 'test-user';
+  const sender = rawSender.includes('@') ? rawSender : `${rawSender}@c.us`;
+  const chatId = isGroup ? 'test-group@g.us' : sender;
 
-  switch (triggerType) {
-    case 'message_received':
-      return true; // Any message triggers
+  // For keyword / regex triggers: check body first
+  if (triggerType === 'keyword') {
+    const rawKeywords = triggerConfig.keywords || triggerConfig.keyword || '';
+    const keywords = (typeof rawKeywords === 'string'
+      ? rawKeywords.split(/[,\n]/).map((k: string) => k.trim()).filter(Boolean)
+      : Array.isArray(rawKeywords) ? rawKeywords : []) as string[];
+    if (keywords.length === 0) return applyFilters();
+    const matchMode = (triggerConfig.matchMode as string) || 'contains';
+    const lowerMsg = message.toLowerCase();
+    const kwMatched = keywords.some((kw: string) => {
+      const lowerKw = kw.toLowerCase();
+      if (matchMode === 'exact') return lowerMsg === lowerKw;
+      if (matchMode === 'startsWith') return lowerMsg.startsWith(lowerKw);
+      return lowerMsg.includes(lowerKw);
+    });
+    if (!kwMatched) return false;
+    return applyFilters();
+  }
 
-    case 'keyword': {
-      const rawKeywords = triggerConfig.keywords || triggerConfig.keyword || '';
-      const keywords = (typeof rawKeywords === 'string'
-        ? rawKeywords.split(/[,\n]/).map((k: string) => k.trim()).filter(Boolean)
-        : Array.isArray(rawKeywords) ? rawKeywords : []) as string[];
-      if (keywords.length === 0) return true;
-      const matchMode = (triggerConfig.matchMode as string) || 'contains';
-      const lowerMsg = message.toLowerCase();
+  if (triggerType === 'regex') {
+    const pattern = (triggerConfig.pattern as string) || '';
+    if (!pattern) return applyFilters();
+    try {
+      if (!new RegExp(pattern, 'i').test(message)) return false;
+    } catch { return false; }
+    return applyFilters();
+  }
 
-      return keywords.some((kw: string) => {
-        const lowerKw = kw.toLowerCase();
-        switch (matchMode) {
-          case 'exact': return lowerMsg === lowerKw;
-          case 'startsWith': return lowerMsg.startsWith(lowerKw);
-          case 'contains': return lowerMsg.includes(lowerKw);
-          default: return lowerMsg.includes(lowerKw);
-        }
-      });
-    }
+  // For message_received and all other message-based triggers: apply all filters
+  return applyFilters();
 
-    case 'regex': {
-      const pattern = (triggerConfig.pattern as string) || (triggerConfig.regex as string) || '';
-      if (!pattern) return true;
-      try {
-        return new RegExp(pattern, 'i').test(message);
-      } catch {
-        return false;
-      }
-    }
-
-    // For test mode, these triggers always match
-    case 'contact_message':
-    case 'group_message':
-    case 'media_received':
-    case 'new_contact':
-    case 'added_to_group':
-    case 'webhook':
-    case 'schedule':
-      return true;
-
-    default:
-      return true;
+  function applyFilters(): boolean {
+    return applyTriggerFilters(triggerConfig, {
+      body: message,
+      caption: '',
+      msgType,
+      isGroup,
+      isBroadcast: false,
+      sender,
+      chatId,
+      fromMe: false,
+      mentionedJidList: [],
+      isForwarded: false,
+      quotedMsgId: '',
+      quotedFromMe: false,
+    });
   }
 }
 
@@ -568,7 +581,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { message, sessionId } = await request.json();
+    const { message, sessionId, simOptions } = await request.json();
 
     if (!message || typeof message !== 'string') {
       return Response.json(
@@ -652,7 +665,7 @@ export async function POST(
     }
 
     const triggerConfig = triggerNode.data.config || {};
-    const matched = checkTriggerMatch(flow.trigger, triggerConfig, message);
+    const matched = checkTriggerMatch(flow.trigger, triggerConfig, message, simOptions || {});
 
     if (!matched) {
       return Response.json({

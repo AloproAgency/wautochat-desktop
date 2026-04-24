@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import os from 'os';
+import { applyTriggerFilters } from '@/lib/trigger-filters';
 import type { Session, SessionStatus, Flow } from '@/lib/types';
 import { executeFlow, resumeFlowAfterWait } from '@/lib/flow-engine';
 
@@ -1126,143 +1127,45 @@ class WppConnectManager {
     isGroup: boolean,
     message?: Record<string, unknown>
   ): boolean {
+    // chatId: group JID in groups, contact JID in private. Can be Wid object or plain string.
     const chatId =
       (message?.chatId as Record<string, unknown>)?._serialized as string ||
       (message?.chatId as string) ||
+      (message?.to as string) ||
       (message?.from as string) || '';
+
     const caption = (message?.caption as string) || '';
+
+    // message.from is always a plain string ("xxxxxxx@c.us") per wppconnect model.
+    // In groups: from = individual sender JID; chatId = group JID.
     const sender =
-      (message?.from as Record<string, unknown>)?._serialized as string ||
+      (message?.sender as Record<string, unknown>)?.id as string ||
       (message?.from as string) ||
       (message?.author as string) || '';
 
-    // Advanced filters — applied to all message-based triggers
     const applyCommonFilters = (): boolean => {
       if (!message) return true;
 
-      // Legacy: ignore own messages
-      const ignoreOwn = (config?.ignoreOwnMessages as boolean) !== false;
-      if (ignoreOwn && message.fromMe) return false;
+      const quotedMsgId =
+        (message.quotedMsgId as Record<string, unknown>)?._serialized as string ||
+        (message.quotedMsgId as string) || '';
+      const quotedFromMe = !!quotedMsgId && !!((message.quotedMsg as Record<string, unknown>)?.fromMe);
+      const isBroadcast = chatId.endsWith('@broadcast') || chatId === 'status@broadcast';
 
-      // Legacy: ignore forwarded
-      const ignoreForwarded = (config?.ignoreForwarded as boolean) || false;
-      if (ignoreForwarded && message.isForwarded) return false;
-
-      // ============ NEW FILTER SELECTOR LOGIC ============
-      const filters = (config?.filters as Record<string, unknown>) || {};
-
-      // 1. Keyword filter
-      const keywordFilter = (filters.keyword as Record<string, unknown>) || {};
-      if (keywordFilter.enabled === true) {
-        const words = ((keywordFilter.words as string) || '')
-          .split(/[,\n]/)
-          .map((w) => w.trim().toLowerCase())
-          .filter(Boolean);
-        if (words.length > 0) {
-          const searchText = (body + ' ' + caption).toLowerCase();
-          const mode = (keywordFilter.mode as string) || 'contains';
-          const matched = words.some((w) => {
-            if (mode === 'exact') return body.toLowerCase() === w;
-            if (mode === 'startsWith') return searchText.startsWith(w);
-            return searchText.includes(w);
-          });
-          if (!matched) return false;
-        }
-      }
-
-      // 1b. Message Type filter (event kind)
-      const messageTypeFilter = (filters.messageType as string) || 'any';
-      if (messageTypeFilter !== 'any') {
-        const hasReaction = !!message.reactionText;
-        const hasQuoted = !!(message.quotedMsg || message.quotedMsgId);
-        const quotedFromMe = hasQuoted && !!((message.quotedMsg as Record<string, unknown>)?.fromMe);
-        const mentionedMe = Array.isArray(message.mentionedIds) && (message.mentionedIds as unknown[]).length > 0;
-
-        if (messageTypeFilter === 'reply' && !quotedFromMe) return false;
-        if (messageTypeFilter === 'mention' && !mentionedMe) return false;
-        if (messageTypeFilter === 'reaction' && !hasReaction) return false;
-        if (messageTypeFilter === 'forwarded' && !message.isForwarded) return false;
-        if (messageTypeFilter === 'quoted' && !hasQuoted) return false;
-        // 'edited', 'deleted', 'read' are triggered by dedicated events, not here
-        // 'new' is any fresh incoming message - always true
-      }
-
-      // 2. Media type filter
-      const mediaTypeFilter = (filters.mediaType as string) || 'none';
-      if (mediaTypeFilter !== 'none') {
-        const mediaTypes = ['image', 'video', 'audio', 'ptt', 'document', 'sticker', 'location', 'contact', 'vcard', 'multi_vcard'];
-        const isMedia = mediaTypes.includes(msgType);
-        if (mediaTypeFilter === 'text_only' && isMedia) return false;
-        if (mediaTypeFilter === 'any_media' && !isMedia) return false;
-        if (mediaTypeFilter === 'image' && msgType !== 'image') return false;
-        if (mediaTypeFilter === 'video' && msgType !== 'video') return false;
-        if (mediaTypeFilter === 'audio' && !['audio', 'ptt'].includes(msgType)) return false;
-        if (mediaTypeFilter === 'document' && msgType !== 'document') return false;
-        if (mediaTypeFilter === 'sticker' && msgType !== 'sticker') return false;
-        if (mediaTypeFilter === 'location' && msgType !== 'location') return false;
-        if (mediaTypeFilter === 'contact' && !['contact', 'vcard', 'multi_vcard'].includes(msgType)) return false;
-        if (mediaTypeFilter === 'link') {
-          const urlRegex = /https?:\/\/[^\s]+|www\.[^\s]+/i;
-          if (!urlRegex.test(body)) return false;
-        }
-        if (mediaTypeFilter === 'poll' && msgType !== 'poll' && msgType !== 'poll_creation') return false;
-      }
-
-      // 3. Message content filter
-      const contentFilter = (filters.content as Record<string, unknown>) || {};
-      if (contentFilter.enabled === true) {
-        const operator = (contentFilter.operator as string) || 'contains';
-        const value = (contentFilter.value as string) || '';
-        if (value) {
-          const lowerBody = body.toLowerCase();
-          const lowerValue = value.toLowerCase();
-          let matched = false;
-          switch (operator) {
-            case 'contains': matched = lowerBody.includes(lowerValue); break;
-            case 'equals': matched = lowerBody === lowerValue; break;
-            case 'startsWith': matched = lowerBody.startsWith(lowerValue); break;
-            case 'endsWith': matched = lowerBody.endsWith(lowerValue); break;
-            case 'regex': {
-              try { matched = new RegExp(value, 'i').test(body); } catch { matched = false; }
-              break;
-            }
-            case 'minLength': matched = body.length >= parseInt(value, 10); break;
-            case 'maxLength': matched = body.length <= parseInt(value, 10); break;
-          }
-          if (!matched) return false;
-        }
-      }
-
-      // 4. Sender filter (supports comma-separated list)
-      const senderFilter = (filters.sender as string) || '';
-      if (senderFilter.trim()) {
-        const allowedSenders = senderFilter
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean)
-          .map((s) => (s.includes('@') ? s : `${s}@c.us`));
-        const senderPhone = sender.replace(/@.*$/, '');
-        const matched = allowedSenders.some((allowed) => {
-          const allowedPhone = allowed.replace(/@.*$/, '');
-          return sender === allowed || senderPhone === allowedPhone;
-        });
-        if (!matched) return false;
-      }
-
-      // 5. Chat type filter (+ optional specific group ID)
-      const chatTypeFilter = (filters.chatType as string) || 'all';
-      if (chatTypeFilter !== 'all') {
-        const isBroadcast = chatId.endsWith('@broadcast') || chatId === 'status@broadcast';
-        if (chatTypeFilter === 'private' && (isGroup || isBroadcast)) return false;
-        if (chatTypeFilter === 'group' && !isGroup) return false;
-        if (chatTypeFilter === 'broadcast' && !isBroadcast) return false;
-        if (chatTypeFilter === 'private_or_group' && isBroadcast) return false;
-      }
-      // Specific group ID filter (only relevant if in group)
-      const filterGroupId = (filters.groupId as string) || '';
-      if (filterGroupId && isGroup && chatId !== filterGroupId) return false;
-
-      return true;
+      return applyTriggerFilters(config, {
+        body,
+        caption,
+        msgType,
+        isGroup,
+        isBroadcast,
+        sender,
+        chatId,
+        fromMe: !!(message.fromMe),
+        mentionedJidList: (message.mentionedJidList as string[]) || [],
+        isForwarded: !!(message.isForwarded),
+        quotedMsgId,
+        quotedFromMe,
+      });
     };
 
     switch (triggerType) {
