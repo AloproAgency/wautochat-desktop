@@ -59,8 +59,12 @@ export async function GET(request: NextRequest) {
       `SELECT COUNT(*) as c FROM messages WHERE chat_id = ? AND session_id = ?`
     ).get(chatId, sessionId) as { c: number }).c;
 
-    // If no messages in DB, try to fetch from WhatsApp
-    if (msgCount === 0) {
+    // Pull historical messages from WhatsApp whenever the local store is
+    // significantly smaller than what the client asked for. This covers both
+    // first-time opens (count = 0) and partially-synced chats (e.g. the chat
+    // was created from a single onMessage event and never fully backfilled).
+    const historyThreshold = Math.min(limit, 100);
+    if (msgCount < historyThreshold) {
       const client = manager.getClient(sessionId);
       if (client) {
         try {

@@ -747,6 +747,82 @@ class WppConnectManager {
     return true;
   }
 
+  /**
+   * Decrypt and cache a media message's binary payload on disk immediately
+   * after the message is received. Running during `onMessage` is critical:
+   * wppconnect still holds the message in memory so `decryptFile` works
+   * without hitting the "msgChunks" error we get on older messages.
+   *
+   * On success, updates the DB so `media_url` points to our internal proxy
+   * endpoint and future page loads are served from disk cache.
+   */
+  private async cacheMediaInBackground(
+    client: Whatsapp,
+    message: Record<string, unknown>,
+    msgId: string,
+    fallbackMime: string
+  ): Promise<void> {
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const CACHE_DIR = path.join(process.cwd(), 'data', 'media');
+
+    try {
+      const clientAny = client as unknown as {
+        decryptFile: (m: unknown) => Promise<Buffer>;
+        downloadMedia: (id: string) => Promise<string | Buffer>;
+      };
+
+      let buf: Buffer | null = null;
+      let mime = fallbackMime || 'application/octet-stream';
+
+      // Primary path: decryptFile with the fresh message object.
+      try {
+        const decrypted = await clientAny.decryptFile(message);
+        if (decrypted && decrypted.length > 0) {
+          buf = decrypted;
+          const m = message as Record<string, unknown>;
+          if (typeof m.mimetype === 'string' && m.mimetype) mime = m.mimetype;
+        }
+      } catch {
+        // Fallback: downloadMedia via the message id.
+        const wppMsgId =
+          (message.id as Record<string, unknown>)?._serialized as string ||
+          (message.id as string) || '';
+        if (wppMsgId) {
+          try {
+            const result = await clientAny.downloadMedia(wppMsgId);
+            if (typeof result === 'string') {
+              if (result.startsWith('data:')) {
+                const [header, payload] = result.split(',', 2);
+                const mt = /data:([^;]+);base64/.exec(header);
+                if (mt) mime = mt[1];
+                buf = Buffer.from(payload || '', 'base64');
+              } else {
+                buf = Buffer.from(result, 'base64');
+              }
+            } else if (result) {
+              buf = result as Buffer;
+            }
+          } catch {
+            /* give up */
+          }
+        }
+      }
+
+      if (!buf || buf.length === 0) return;
+
+      await fs.mkdir(CACHE_DIR, { recursive: true });
+      await fs.writeFile(path.join(CACHE_DIR, msgId), buf);
+
+      const db = getDb();
+      db.prepare(
+        `UPDATE messages SET media_url = ?, media_type = ? WHERE id = ?`
+      ).run(`/api/messages/${msgId}/media`, mime, msgId);
+    } catch (err) {
+      console.warn('[cacheMediaInBackground] error:', err);
+    }
+  }
+
   private async handleIncomingMessage(
     sessionId: string,
     message: Record<string, unknown>
@@ -874,6 +950,21 @@ class WppConnectManager {
       caption || null,
       isForwarded ? 1 : 0
     );
+
+    // For media messages, kick off a background download right now while the
+    // `message` object is still fresh in wppconnect's memory. This avoids the
+    // dreaded `msgChunks` error that happens when we try to download older
+    // messages after the chat cache has been evicted.
+    if (['image', 'video', 'audio', 'ptt', 'sticker', 'document'].includes(type)) {
+      const client = this.sessions.get(sessionId)?.client;
+      if (client) {
+        this.cacheMediaInBackground(client, message, msgId, mediaType || '').catch(
+          (err) => {
+            console.warn(`[${sessionId}] Media cache failed for ${msgId}:`, err?.message || err);
+          }
+        );
+      }
+    }
 
     // Update chat
     db.prepare(
@@ -1534,6 +1625,30 @@ class WppConnectManager {
     const db = getDb();
     const rows = db.prepare(`SELECT * FROM sessions ORDER BY created_at DESC`).all() as Record<string, unknown>[];
     return rows.map((row) => this.rowToSession(row));
+  }
+
+  /**
+   * Ask WhatsApp Web for the host device metadata (phone number of the linked
+   * account) and persist it. Safe to call on any session — returns silently
+   * if the session isn't connected or the client is missing.
+   */
+  async refreshHostPhone(sessionId: string): Promise<string | null> {
+    const active = this.sessions.get(sessionId);
+    if (!active || !active.client) return null;
+    try {
+      const hostDevice = await active.client.getHostDevice();
+      if (!hostDevice) return null;
+      const wid = (hostDevice as unknown as Record<string, unknown>).wid as Record<string, unknown> | undefined;
+      const phone = (wid?.user as string) || '';
+      if (!phone) return null;
+      const db = getDb();
+      db.prepare(
+        `UPDATE sessions SET phone = ?, updated_at = datetime('now') WHERE id = ?`
+      ).run(phone, sessionId);
+      return phone;
+    } catch {
+      return null;
+    }
   }
 
   getClient(sessionId: string): Whatsapp | null {

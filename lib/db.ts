@@ -177,4 +177,29 @@ function initializeDatabase(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_flows_session ON flows(session_id);
     CREATE INDEX IF NOT EXISTS idx_groups_session ON groups_table(session_id);
   `);
+
+  // Messages deduplication: enforce one row per (session, chat, wpp_id).
+  // We apply this as a partial unique index (excluding empty wpp_id which
+  // belongs to optimistic/temp client-side messages). Before creating the
+  // index we clean up any existing duplicates that crept in before the
+  // constraint existed.
+  try {
+    db.exec(`
+      DELETE FROM messages
+      WHERE wpp_id != ''
+        AND rowid NOT IN (
+          SELECT MIN(rowid) FROM messages
+          WHERE wpp_id != ''
+          GROUP BY session_id, chat_id, wpp_id
+        );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_unique_wpp
+        ON messages(session_id, chat_id, wpp_id)
+        WHERE wpp_id != '';
+    `);
+  } catch (err) {
+    // If deduplication fails (e.g. locked DB), log and continue — the index
+    // still helps on subsequent inserts.
+    console.error('[db] Messages dedup/migration failed:', err);
+  }
 }

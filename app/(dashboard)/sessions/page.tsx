@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import Image from 'next/image';
 import {
   Smartphone,
@@ -13,29 +13,32 @@ import {
   Calendar,
   Phone,
   Hash,
+  RefreshCw,
+  MoreVertical,
+  Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardBody } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Spinner } from '@/components/ui/spinner';
-import { EmptyState } from '@/components/ui/empty-state';
 import { useToast } from '@/components/ui/toast';
 import { useSessionStore } from '@/lib/store';
-import { formatTimestamp } from '@/lib/utils';
+import { formatTimestamp, formatPhoneNumber } from '@/lib/utils';
 import type { Session, ApiResponse } from '@/lib/types';
 
-const statusConfig: Record<
+// Status palette — sober solid colors only, no gradients.
+const statusMeta: Record<
   Session['status'],
-  { variant: 'success' | 'danger' | 'warning' | 'info' | 'default'; label: string }
+  { dot: string; text: string; pillBg: string; pillBorder: string; label: string }
 > = {
-  connected: { variant: 'success', label: 'Connected' },
-  disconnected: { variant: 'danger', label: 'Disconnected' },
-  connecting: { variant: 'warning', label: 'Connecting' },
-  qr_ready: { variant: 'info', label: 'QR Ready' },
-  failed: { variant: 'danger', label: 'Failed' },
+  connected:    { dot: 'bg-emerald-500', text: 'text-emerald-700', pillBg: 'bg-emerald-50',  pillBorder: 'border-emerald-200',  label: 'Connected' },
+  connecting:   { dot: 'bg-amber-500',   text: 'text-amber-700',   pillBg: 'bg-amber-50',    pillBorder: 'border-amber-200',    label: 'Connecting' },
+  qr_ready:     { dot: 'bg-sky-500',     text: 'text-sky-700',     pillBg: 'bg-sky-50',      pillBorder: 'border-sky-200',      label: 'QR ready' },
+  disconnected: { dot: 'bg-slate-400',   text: 'text-slate-600',   pillBg: 'bg-slate-100',   pillBorder: 'border-slate-200',    label: 'Disconnected' },
+  failed:       { dot: 'bg-red-500',     text: 'text-red-700',     pillBg: 'bg-red-50',      pillBorder: 'border-red-200',      label: 'Failed' },
 };
+
+type FilterKey = 'all' | Session['status'];
 
 export default function SessionsPage() {
   const { sessions, setSessions, addSession, updateSession, removeSession } = useSessionStore();
@@ -55,6 +58,8 @@ export default function SessionsPage() {
   const [connectPhoneNumber, setConnectPhoneNumber] = useState('');
   const [creating, setCreating] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterKey>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const qrIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
 
@@ -276,128 +281,239 @@ export default function SessionsPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  // All hooks must be called on every render in the same order. The loading
+  // skeleton is handled inside the render tree below (not as an early return)
+  // so that `useMemo` calls always run.
+
+  // Count sessions per status for filter chips (always from full list, so the
+  // numbers reflect the real state even while the user has filters active).
+  const counts = useMemo(() => {
+    const c: Record<FilterKey, number> = {
+      all: sessions.length,
+      connected: 0,
+      connecting: 0,
+      qr_ready: 0,
+      disconnected: 0,
+      failed: 0,
+    };
+    for (const s of sessions) c[s.status] = (c[s.status] || 0) + 1;
+    return c;
+  }, [sessions]);
+
+  const filteredSessions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return sessions.filter((s) => {
+      if (filter !== 'all' && s.status !== filter) return false;
+      if (q) {
+        const hit =
+          s.name.toLowerCase().includes(q) ||
+          (s.phone || '').includes(searchQuery) ||
+          (s.deviceName || '').toLowerCase().includes(q);
+        if (!hit) return false;
+      }
+      return true;
+    });
+  }, [sessions, filter, searchQuery]);
+
+  const filters: { key: FilterKey; label: string; count: number }[] = (
+    [
+      { key: 'all', label: 'All', count: counts.all },
+      { key: 'connected', label: 'Connected', count: counts.connected },
+      { key: 'qr_ready', label: 'QR ready', count: counts.qr_ready },
+      { key: 'connecting', label: 'Connecting', count: counts.connecting },
+      { key: 'disconnected', label: 'Disconnected', count: counts.disconnected },
+      { key: 'failed', label: 'Failed', count: counts.failed },
+    ] as const
+  ).filter((f) => f.key === 'all' || f.count > 0);
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-wa-text">Sessions WhatsApp</h1>
-          <p className="mt-1 text-sm text-wa-text-secondary">
-            Manage your WhatsApp sessions and connections
-          </p>
-        </div>
-        <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowNewModal(true)}>
-          New Session
-        </Button>
-      </div>
+    // Negative margins cancel the parent layout's padding so this page is
+    // edge-to-edge (header stuck to the top, cards touch the sidebar and the
+    // right edge). `lg:max-w-none` overrides the parent's `max-w-7xl`.
+    <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none bg-slate-50 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+      {/* ===== Sticky header — single compact row ===== */}
+      <header className="sticky top-0 z-20 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-3 px-5 h-14">
+          <div className="flex items-baseline gap-2 shrink-0">
+            <h1 className="text-base font-semibold tracking-tight text-slate-900">Sessions</h1>
+            <span className="text-xs font-mono text-slate-400 tabular-nums">{sessions.length}</span>
+          </div>
 
-      {/* Sessions Grid */}
-      {sessions.length === 0 ? (
-        <EmptyState
-          icon={<Smartphone className="h-8 w-8" />}
-          title="No sessions yet"
-          description="Create your first WhatsApp session to get started with automation."
-          action={
-            <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowNewModal(true)}>
-              Create Session
-            </Button>
-          }
-        />
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {sessions.map((session) => {
-            const statusInfo = statusConfig[session.status];
-            return (
-              <Card key={session.id} className="hover:shadow-md transition-shadow">
-                <CardBody className="space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-wa-teal/10">
-                        <Smartphone className="h-5 w-5 text-wa-teal" />
+          <div className="h-5 w-px bg-slate-200" />
+
+          {/* Search */}
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search name, phone…"
+              className="w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 h-8 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition"
+            />
+          </div>
+
+          {/* Filter pills */}
+          <div className="hidden md:flex items-center gap-0.5 overflow-x-auto">
+            {filters.map((f) => {
+              const active = filter === f.key;
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={`inline-flex items-center gap-1.5 rounded-md h-8 px-2.5 text-[13px] font-medium transition-colors whitespace-nowrap ${
+                    active ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {f.label}
+                  <span
+                    className={`rounded px-1 text-[10px] font-mono tabular-nums ${
+                      active ? 'bg-white/20 text-white' : 'text-slate-400'
+                    }`}
+                  >
+                    {f.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Primary action — ml-auto to stick to the edge */}
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-slate-900 h-8 px-3 text-[13px] font-medium text-white hover:bg-slate-800 active:scale-[0.98] transition-all"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">New session</span>
+          </button>
+        </div>
+      </header>
+
+      {/* ===== Grid ===== */}
+      <div className="flex-1 overflow-y-auto p-5">
+        {loading ? (
+          <SessionGridSkeleton />
+        ) : sessions.length === 0 ? (
+          <SessionEmptyState onCreate={() => setShowNewModal(true)} />
+        ) : filteredSessions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <p className="text-sm text-slate-500">No sessions match your filters.</p>
+            <button
+              onClick={() => { setFilter('all'); setSearchQuery(''); }}
+              className="mt-3 text-xs font-medium text-slate-700 hover:underline"
+            >
+              Clear filters
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredSessions.map((session, idx) => {
+              const meta = statusMeta[session.status];
+              const isConnected = session.status === 'connected';
+              const isQrReady = session.status === 'qr_ready';
+              const isConnecting = session.status === 'connecting';
+              return (
+                <div
+                  key={session.id}
+                  className="group relative rounded-xl border border-slate-200 bg-white p-4 transition-all hover:border-slate-300 hover:shadow-sm animate-in-row"
+                  style={{ animationDelay: `${Math.min(idx * 25, 200)}ms` }}
+                >
+                  {/* Top row: avatar + name + status */}
+                  <div className="flex items-start gap-3">
+                    <div className="relative shrink-0">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                        <Smartphone className="h-5 w-5" />
                       </div>
-                      <div>
-                        <h3 className="text-sm font-semibold text-wa-text">{session.name}</h3>
-                        <Badge variant={statusInfo.variant} className="mt-1">
-                          {statusInfo.label}
-                        </Badge>
-                      </div>
+                      {isConnected && (
+                        <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center">
+                          <span className="absolute h-3.5 w-3.5 rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                          <span className="relative h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
+                        </span>
+                      )}
                     </div>
-                    {session.status === 'qr_ready' && (
+
+                    <div className="flex-1 min-w-0">
+                      <h3 className="truncate text-sm font-semibold text-slate-900">
+                        {session.name}
+                      </h3>
+                      <span
+                        className={`mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.pillBg} ${meta.pillBorder} ${meta.text}`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                        {meta.label}
+                      </span>
+                    </div>
+
+                    {/* Quick QR button when applicable */}
+                    {isQrReady && (
                       <button
                         onClick={() => setShowQrModal(session.id)}
-                        className="rounded-lg p-2 text-wa-blue hover:bg-wa-blue/10 transition-colors"
-                        title="Show QR Code"
+                        className="rounded-lg p-1.5 text-sky-600 hover:bg-sky-50 transition-colors shrink-0"
+                        title="Show QR code"
                       >
-                        <QrCode className="h-5 w-5" />
+                        <QrCode className="h-4 w-4" />
                       </button>
                     )}
                   </div>
 
-                  <div className="space-y-2 text-xs text-wa-text-secondary">
-                    {session.phone && (
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-3.5 w-3.5" />
-                        <span>{session.phone}</span>
-                      </div>
-                    )}
-                    {session.deviceName && (
-                      <div className="flex items-center gap-2">
-                        <Monitor className="h-3.5 w-3.5" />
-                        <span>{session.deviceName}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-3.5 w-3.5" />
-                      <span>Created {formatTimestamp(session.createdAt)}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-2 border-t border-wa-border">
-                    {session.status === 'connected' ? (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        icon={<WifiOff className="h-3.5 w-3.5" />}
-                        loading={actionLoading === session.id}
-                        onClick={() => handleDisconnect(session.id)}
-                        className="flex-1"
-                      >
-                        Disconnect
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        icon={<Wifi className="h-3.5 w-3.5" />}
-                        loading={actionLoading === session.id}
-                        onClick={() => handleConnect(session.id)}
-                        className="flex-1"
-                      >
-                        Connect
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon={<Trash2 className="h-3.5 w-3.5" />}
-                      onClick={() => setShowDeleteModal(session.id)}
-                      className="text-wa-danger hover:bg-wa-danger/10"
+                  {/* Meta info */}
+                  <dl className="mt-3.5 space-y-1.5 text-xs">
+                    <InfoLine
+                      icon={<Phone className="h-3 w-3" />}
+                      value={session.phone ? formatPhoneNumber(session.phone) : '—'}
+                      muted={!session.phone}
                     />
+                    <InfoLine
+                      icon={<Monitor className="h-3 w-3" />}
+                      value={session.deviceName || '—'}
+                      muted={!session.deviceName}
+                    />
+                    <InfoLine
+                      icon={<Calendar className="h-3 w-3" />}
+                      value={`Created ${formatTimestamp(session.createdAt)}`}
+                      muted
+                    />
+                  </dl>
+
+                  {/* Actions row */}
+                  <div className="mt-4 flex items-center gap-1.5 pt-3 border-t border-slate-100">
+                    {isConnected ? (
+                      <button
+                        onClick={() => handleDisconnect(session.id)}
+                        disabled={actionLoading === session.id}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white h-8 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                      >
+                        <WifiOff className="h-3.5 w-3.5" />
+                        {actionLoading === session.id ? 'Disconnecting…' : 'Disconnect'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleConnect(session.id)}
+                        disabled={actionLoading === session.id || isConnecting}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 h-8 px-3 text-xs font-medium text-white hover:bg-slate-800 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                      >
+                        {isConnecting || actionLoading === session.id ? (
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Wifi className="h-3.5 w-3.5" />
+                        )}
+                        {isConnecting ? 'Connecting…' : 'Connect'}
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setShowDeleteModal(session.id)}
+                      className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                      title="Delete session"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                </CardBody>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Connect Method Modal */}
       <Modal
@@ -616,31 +732,168 @@ export default function SessionsPage() {
         </div>
       </Modal>
 
-      {/* Delete Confirmation Modal */}
-      <Modal
-        open={!!showDeleteModal}
-        onClose={() => setShowDeleteModal(null)}
-        title="Delete Session"
-        description="Are you sure you want to delete this session? This action cannot be undone."
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowDeleteModal(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              loading={actionLoading === showDeleteModal}
-              onClick={() => showDeleteModal && handleDelete(showDeleteModal)}
+      {/* ===== Delete Session — confirmation dialog ===== */}
+      {showDeleteModal && (() => {
+        const target = sessions.find((s) => s.id === showDeleteModal);
+        const isDeleting = actionLoading === showDeleteModal;
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-session-title"
+          >
+            <div
+              className="absolute inset-0 bg-slate-900/40"
+              onClick={() => !isDeleting && setShowDeleteModal(null)}
+            />
+            <div
+              className="relative w-full max-w-sm rounded-xl bg-white shadow-xl ring-1 ring-slate-900/5 animate-dialog-in"
+              onClick={(e) => e.stopPropagation()}
             >
-              Delete
-            </Button>
-          </>
+              <div className="flex items-center gap-3 px-5 pt-5 pb-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600 shrink-0">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 id="delete-session-title" className="text-base font-semibold text-slate-900">
+                    Delete this session?
+                  </h3>
+                  <p className="mt-0.5 text-xs text-slate-500 truncate">
+                    {target?.name}
+                    {target?.phone ? ` · ${target.phone}` : ''}
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-5 pb-5 space-y-2.5">
+                <ul className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-sm text-slate-700 leading-relaxed">
+                  <li className="flex gap-2">
+                    <span className="shrink-0 text-slate-400">•</span>
+                    <span className="flex-1 min-w-0">
+                      La session sera déconnectée de WhatsApp Web.
+                    </span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="shrink-0 text-slate-400">•</span>
+                    <span className="flex-1 min-w-0">
+                      Les messages, contacts, groupes et flows stockés dans
+                      WAutoChat pour cette session seront supprimés
+                      définitivement.
+                    </span>
+                  </li>
+                </ul>
+                <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800 leading-relaxed">
+                  <p>
+                    <span className="font-semibold">Bon à savoir :</span>{' '}
+                    ton numéro WhatsApp n&apos;est pas affecté. Tu pourras le
+                    reconnecter à tout moment en créant une nouvelle session et
+                    en scannant un QR code. Seules les données locales de cette
+                    session sont effacées.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 px-5 pb-5">
+                <button
+                  onClick={() => setShowDeleteModal(null)}
+                  disabled={isDeleting}
+                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 transition active:scale-[0.98]"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={() => showDeleteModal && handleDelete(showDeleteModal)}
+                  disabled={isDeleting}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed transition active:scale-[0.98]"
+                >
+                  {isDeleting ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  {isDeleting ? 'Suppression…' : 'Supprimer'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Local animations */}
+      <style jsx global>{`
+        @keyframes sessions-row-in {
+          from { opacity: 0; transform: translateY(4px); }
+          to   { opacity: 1; transform: translateY(0); }
         }
+        .animate-in-row { animation: sessions-row-in 220ms ease-out both; }
+        @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+        .animate-fade-in { animation: fade-in 150ms ease-out; }
+        @keyframes dialog-in {
+          from { transform: translateY(8px) scale(0.98); opacity: 0; }
+          to   { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        .animate-dialog-in { animation: dialog-in 180ms cubic-bezier(0.16, 1, 0.3, 1); }
+      `}</style>
+    </div>
+  );
+}
+
+// ---------- Small local components ----------
+
+function InfoLine({ icon, value, muted }: { icon: React.ReactNode; value: string; muted?: boolean }) {
+  return (
+    <div className={`flex items-center gap-2 ${muted ? 'text-slate-400' : 'text-slate-600'}`}>
+      <span className="shrink-0">{icon}</span>
+      <span className="truncate">{value}</span>
+    </div>
+  );
+}
+
+function SessionGridSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div
+          key={i}
+          className="rounded-xl border border-slate-200 bg-white p-4"
+          style={{ opacity: 1 - i * 0.08 }}
+        >
+          <div className="flex items-start gap-3">
+            <div className="h-11 w-11 rounded-xl bg-slate-100 animate-pulse" />
+            <div className="flex-1 space-y-2">
+              <div className="h-3.5 w-32 rounded bg-slate-100 animate-pulse" />
+              <div className="h-4 w-20 rounded-full bg-slate-100 animate-pulse" />
+            </div>
+          </div>
+          <div className="mt-4 space-y-2">
+            <div className="h-2.5 w-full rounded bg-slate-100 animate-pulse" />
+            <div className="h-2.5 w-3/4 rounded bg-slate-100 animate-pulse" />
+          </div>
+          <div className="mt-4 h-8 rounded bg-slate-100 animate-pulse" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SessionEmptyState({ onCreate }: { onCreate: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
+        <Smartphone className="h-7 w-7 text-slate-400" />
+      </div>
+      <h3 className="text-base font-semibold text-slate-900">No sessions yet</h3>
+      <p className="mt-1 max-w-xs text-sm text-slate-500">
+        Connect your first WhatsApp account to start building conversations and automations.
+      </p>
+      <button
+        onClick={onCreate}
+        className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition-all active:scale-[0.98]"
       >
-        <p className="text-sm text-wa-text-secondary">
-          All data associated with this session including messages, contacts, and flows will be permanently removed.
-        </p>
-      </Modal>
+        <Plus className="h-4 w-4" />
+        Create a session
+      </button>
     </div>
   );
 }

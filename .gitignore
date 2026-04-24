@@ -31,3 +31,6 @@ yarn-error.log*
 .pnpm-debug.log*
 # uploads (user-uploaded media for flow nodes)
 public/uploads/
+
+# Cached contact avatars (downloaded from WhatsApp, can be regenerated)
+data/avatars/

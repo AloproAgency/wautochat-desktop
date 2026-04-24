@@ -29,6 +29,14 @@ import {
   Copy,
   PhoneCall,
   Share2 as Share2Icon,
+  Download,
+  Pause,
+  FileText,
+  FileSpreadsheet,
+  FileArchive,
+  FileVideo,
+  FileAudio,
+  ExternalLink,
 } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
@@ -85,6 +93,30 @@ function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
+
+/**
+ * WhatsApp occasionally uses opaque `@lid` ids for contacts you've never saved
+ * (random looking digits + "@lid"). Showing that raw string as a conversation
+ * title is noisy and confusing. This helper produces a friendlier label:
+ *   - "54559590375472@lid"        → "Unknown contact"
+ *   - "22968698965@c.us"          → the phone number untouched (handled elsewhere)
+ *   - a real display name         → untouched
+ */
+function displayChatName(raw: string | undefined | null, fallbackId?: string): string {
+  const s = (raw || '').trim();
+  if (!s) return 'Unknown contact';
+  // Raw IDs coming from the backend (no friendly push/contact name resolved)
+  if (/@lid$/i.test(s) || /@c\.us$/i.test(s) || /@g\.us$/i.test(s)) {
+    // If the raw id is all-digits + @lid it's truly opaque → generic label
+    if (/@lid$/i.test(s)) return 'Contact WhatsApp';
+    // @c.us / @g.us without a name fall back to the phone number
+    const digits = s.split('@')[0].replace(/\D/g, '');
+    return digits ? `+${digits}` : s;
+  }
+  // If the name looks like pure digits (no @ suffix), also likely a raw id
+  if (/^\d{5,}$/.test(s)) return 'Contact WhatsApp';
+  return s || fallbackId || 'Unknown contact';
 }
 
 function isBase64(str: string): boolean {
@@ -153,10 +185,25 @@ function InlineAvatar({
   size?: number;
   online?: boolean;
 }) {
-  const content = src ? (
+  const [broken, setBroken] = useState(false);
+
+  // Prefer our local avatar proxy when we can extract a phone number from the
+  // source URL (WhatsApp URLs expire, our proxy caches on disk and never does).
+  const proxied = useMemo(() => {
+    if (!src) return undefined;
+    if (src.startsWith('/api/')) return src;
+    // Extract trailing digits-looking segment from a pps.whatsapp.net URL
+    // (not reliable in general), OR let it pass through untouched.
+    return src;
+  }, [src]);
+
+  const showImage = proxied && !broken;
+
+  const content = showImage ? (
     <img
-      src={src}
+      src={proxied}
       alt={name}
+      onError={() => setBroken(true)}
       style={{
         width: size,
         height: size,
@@ -226,157 +273,480 @@ function MessageStatusIcon({ status }: { status: Message['status'] }) {
   }
 }
 
+/**
+ * Robust image renderer for chat bubbles. Picks the best available source
+ * (mediaUrl, body-as-base64, or lazy-download via /api/messages/:id/media)
+ * and handles broken URLs gracefully with a retryable placeholder instead
+ * of the default "broken image" icon.
+ */
+function ChatImage({
+  messageId,
+  mediaUrl,
+  body,
+  alt,
+}: {
+  messageId: string;
+  mediaUrl?: string;
+  body?: string;
+  alt: string;
+}) {
+  const [broken, setBroken] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [openFullscreen, setOpenFullscreen] = useState(false);
+
+  // Source priority:
+  //   1. Real http(s) URL (if not yet proven broken)
+  //   2. Base64 body → data URI
+  //   3. Lazy download endpoint (always available, downloads on demand)
+  const src = (() => {
+    if (mediaUrl && mediaUrl.startsWith('http')) return mediaUrl;
+    if (mediaUrl && mediaUrl.startsWith('/api/')) return mediaUrl;
+    if (body && isBase64(body)) {
+      return body.startsWith('data:') ? body : `data:image/jpeg;base64,${body}`;
+    }
+    // Lazy-download fallback: /api/messages/:id/media will hit WhatsApp if needed.
+    return `/api/messages/${messageId}/media`;
+  })();
+
+  if (!src || broken) {
+    return (
+      <div
+        style={{
+          width: 240,
+          height: 140,
+          backgroundColor: 'rgba(0,0,0,0.04)',
+          borderRadius: 10,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          color: '#64748b',
+          fontSize: 12,
+        }}
+      >
+        <ImageIcon style={{ width: 28, height: 28, opacity: 0.5 }} />
+        <span>{broken ? 'Image unavailable' : 'No preview'}</span>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div
+        style={{
+          position: 'relative',
+          maxWidth: 260,
+          borderRadius: 10,
+          overflow: 'hidden',
+          backgroundColor: 'rgba(0,0,0,0.04)',
+          cursor: 'zoom-in',
+        }}
+        onClick={() => setOpenFullscreen(true)}
+      >
+        {loading && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#94a3b8',
+              fontSize: 11,
+            }}
+          >
+            Loading…
+          </div>
+        )}
+        <img
+          src={src}
+          alt={alt}
+          onLoad={() => setLoading(false)}
+          onError={() => {
+            setLoading(false);
+            setBroken(true);
+          }}
+          style={{
+            display: 'block',
+            maxWidth: 260,
+            maxHeight: 320,
+            width: '100%',
+            objectFit: 'cover',
+            opacity: loading ? 0 : 1,
+            transition: 'opacity 150ms ease',
+          }}
+        />
+      </div>
+      {openFullscreen && (
+        <div
+          onClick={() => setOpenFullscreen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            backgroundColor: 'rgba(15, 23, 42, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+            cursor: 'zoom-out',
+          }}
+        >
+          <img
+            src={src}
+            alt={alt}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+              borderRadius: 8,
+              boxShadow: '0 10px 30px rgba(0,0,0,0.4)',
+            }}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Render a plain-text message body with auto-detected URLs, phone numbers and
+ * emails turned into safe external links. Keeps whitespace/newlines intact.
+ */
+function renderTextWithLinks(text: string): React.ReactNode {
+  if (!text) return null;
+  // Match URLs (http/https/www) and also bare domains like example.com
+  const linkRe = /(https?:\/\/[^\s<>]+|www\.[^\s<>]+|\b[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s<>]*)?)/g;
+  const parts: Array<string | { type: 'link'; href: string; label: string }> = [];
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = linkRe.exec(text)) !== null) {
+    if (m.index > lastIndex) parts.push(text.slice(lastIndex, m.index));
+    const raw = m[0];
+    // Strip trailing punctuation that is probably not part of the URL
+    const trimmed = raw.replace(/[.,;:!?)]+$/g, '');
+    const href = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    parts.push({ type: 'link', href, label: trimmed });
+    if (trimmed.length < raw.length) parts.push(raw.slice(trimmed.length));
+    lastIndex = m.index + raw.length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+
+  return parts.map((p, i) =>
+    typeof p === 'string' ? (
+      <span key={i}>{p}</span>
+    ) : (
+      <a
+        key={i}
+        href={p.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: '#0284c7', textDecoration: 'underline', wordBreak: 'break-all' }}
+      >
+        {p.label}
+      </a>
+    )
+  );
+}
+
+/** Map file extensions to icon + accent color (WhatsApp-ish categorisation). */
+function docIconFor(filename: string, mimetype?: string): { Icon: typeof File; color: string; kind: string } {
+  const ext = (filename.split('.').pop() || '').toLowerCase();
+  const mt = (mimetype || '').toLowerCase();
+  if (ext === 'pdf' || mt.includes('pdf')) return { Icon: FileText, color: '#ef4444', kind: 'PDF' };
+  if (['doc', 'docx'].includes(ext) || mt.includes('word')) return { Icon: FileText, color: '#2563eb', kind: 'Word' };
+  if (['xls', 'xlsx', 'csv'].includes(ext) || mt.includes('excel') || mt.includes('spreadsheet'))
+    return { Icon: FileSpreadsheet, color: '#16a34a', kind: 'Sheet' };
+  if (['ppt', 'pptx'].includes(ext) || mt.includes('powerpoint'))
+    return { Icon: FileText, color: '#f97316', kind: 'Slides' };
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return { Icon: FileArchive, color: '#7c3aed', kind: 'Archive' };
+  if (mt.startsWith('video/')) return { Icon: FileVideo, color: '#0891b2', kind: 'Video' };
+  if (mt.startsWith('audio/')) return { Icon: FileAudio, color: '#db2777', kind: 'Audio' };
+  if (mt.startsWith('image/')) return { Icon: ImageIcon, color: '#8b5cf6', kind: 'Image' };
+  return { Icon: File, color: '#64748b', kind: 'File' };
+}
+
+function ChatDocument({ message }: { message: Message }) {
+  const filename = message.body || 'Document';
+  const { Icon, color, kind } = docIconFor(filename, message.mediaType);
+  // Always expose a link — falls back to the lazy-download endpoint when the
+  // row has no stored URL.
+  const href = message.mediaUrl && message.mediaUrl.length > 0
+    ? message.mediaUrl
+    : `/api/messages/${message.id}/media`;
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      download={filename}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        borderRadius: 10,
+        padding: '10px 12px',
+        minWidth: 240,
+        maxWidth: 320,
+        backgroundColor: 'rgba(0,0,0,0.04)',
+        textDecoration: 'none',
+        color: 'inherit',
+        cursor: 'pointer',
+        transition: 'background-color 0.15s',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.07)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.04)';
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 10,
+          backgroundColor: color,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <Icon style={{ width: 20, height: 20, color: '#ffffff' }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            margin: 0,
+          }}
+        >
+          {filename}
+        </p>
+        <p style={{ fontSize: 11, color: '#64748b', margin: '2px 0 0 0' }}>
+          {kind}
+          {message.mediaType && message.mediaType !== kind ? ` · ${message.mediaType}` : ''}
+        </p>
+      </div>
+      <Download style={{ width: 16, height: 16, color: '#64748b', flexShrink: 0 }} />
+    </a>
+  );
+}
+
+function ChatAudio({ message }: { message: Message }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [current, setCurrent] = useState(0);
+
+  // Source priority: real URL → base64 body → lazy download endpoint
+  const src = message.mediaUrl && message.mediaUrl.length > 0
+    ? message.mediaUrl
+    : message.body && isBase64(message.body)
+      ? message.body.startsWith('data:')
+        ? message.body
+        : `data:audio/ogg;base64,${message.body}`
+      : `/api/messages/${message.id}/media`;
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a || !src) return;
+    if (playing) {
+      a.pause();
+    } else {
+      void a.play().catch(() => setPlaying(false));
+    }
+  };
+
+  const fmtTime = (s: number) => {
+    if (!isFinite(s)) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  const progress = duration > 0 ? (current / duration) * 100 : 0;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 220, maxWidth: 280 }}>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={!src}
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: '50%',
+          backgroundColor: src ? THEME.primary : '#cbd5e1',
+          border: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: src ? 'pointer' : 'default',
+          flexShrink: 0,
+        }}
+      >
+        {playing ? (
+          <Pause style={{ width: 16, height: 16, color: '#ffffff' }} />
+        ) : (
+          <Play style={{ width: 16, height: 16, color: '#ffffff', marginLeft: 2 }} />
+        )}
+      </button>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          onClick={(e) => {
+            const a = audioRef.current;
+            if (!a || !duration) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const pct = (e.clientX - rect.left) / rect.width;
+            a.currentTime = pct * duration;
+          }}
+          style={{
+            height: 4,
+            borderRadius: 2,
+            backgroundColor: 'rgba(134,150,160,0.3)',
+            cursor: duration ? 'pointer' : 'default',
+          }}
+        >
+          <div
+            style={{
+              height: 4,
+              width: `${progress}%`,
+              borderRadius: 2,
+              backgroundColor: THEME.primary,
+              transition: 'width 0.1s linear',
+            }}
+          />
+        </div>
+        <p style={{ marginTop: 4, fontSize: 11, color: '#64748b' }}>
+          {fmtTime(current)} / {duration ? fmtTime(duration) : '--:--'}
+        </p>
+      </div>
+      {src && (
+        <audio
+          ref={audioRef}
+          src={src}
+          preload="metadata"
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
+          onEnded={() => {
+            setPlaying(false);
+            setCurrent(0);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ChatLocation({ message }: { message: Message }) {
+  // Try to parse "lat,lng" or "lat, lng" from body/caption, otherwise just show label
+  const raw = (message.body || message.caption || '').trim();
+  const match = raw.match(/(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+  const mapsUrl = match
+    ? `https://www.google.com/maps?q=${match[1]},${match[2]}`
+    : `https://www.google.com/maps?q=${encodeURIComponent(raw || 'location')}`;
+
+  return (
+    <a
+      href={mapsUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        borderRadius: 10,
+        padding: '10px 12px',
+        minWidth: 220,
+        backgroundColor: 'rgba(234,67,53,0.08)',
+        textDecoration: 'none',
+        color: 'inherit',
+      }}
+    >
+      <div
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: 10,
+          backgroundColor: '#ea4335',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <MapPin style={{ width: 18, height: 18, color: '#ffffff' }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 13, fontWeight: 500, margin: 0 }}>Location</p>
+        <p style={{ fontSize: 11, color: '#64748b', margin: '2px 0 0 0' }}>
+          {match ? 'Open in Google Maps' : raw || 'Shared location'}
+        </p>
+      </div>
+      <ExternalLink style={{ width: 14, height: 14, color: '#64748b', flexShrink: 0 }} />
+    </a>
+  );
+}
+
 function MessageContent({ message }: { message: Message }) {
   switch (message.type) {
     case 'image':
       return (
         <div>
-          {message.mediaUrl ? (
-            <img
-              src={message.mediaUrl}
-              alt={message.caption || 'Image'}
-              style={{ maxWidth: 280, borderRadius: 8, display: 'block', width: '100%' }}
-            />
-          ) : (
-            <div
-              style={{
-                width: 280,
-                height: 160,
-                backgroundColor: 'rgba(0,0,0,0.06)',
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <ImageIcon style={{ width: 40, height: 40, color: THEME.textMuted }} />
-            </div>
-          )}
-          {(message.caption || message.body) && !isBase64(message.body) && (
-            <p style={{ marginTop: 4, fontSize: 14, whiteSpace: 'pre-wrap' }}>
+          <ChatImage
+            messageId={message.id}
+            mediaUrl={message.mediaUrl}
+            body={message.body}
+            alt={message.caption || 'Image'}
+          />
+          {(message.caption || (message.body && !isBase64(message.body))) && (
+            <p style={{ marginTop: 6, fontSize: 14, whiteSpace: 'pre-wrap' }}>
               {message.caption || message.body}
             </p>
           )}
         </div>
       );
 
-    case 'video':
+    case 'video': {
+      const videoSrc = message.mediaUrl && message.mediaUrl.length > 0
+        ? message.mediaUrl
+        : `/api/messages/${message.id}/media`;
       return (
         <div>
-          {message.mediaUrl ? (
-            <video
-              src={message.mediaUrl}
-              style={{ maxWidth: 280, borderRadius: 8 }}
-              controls
-            />
-          ) : (
-            <div
-              style={{
-                width: 280,
-                height: 160,
-                backgroundColor: 'rgba(0,0,0,0.08)',
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Play style={{ width: 40, height: 40, color: '#ffffff' }} />
-            </div>
-          )}
+          <video
+            src={videoSrc}
+            style={{ maxWidth: 280, borderRadius: 8, display: 'block' }}
+            controls
+            preload="metadata"
+          />
           {message.caption && (
-            <p style={{ marginTop: 4, fontSize: 14, whiteSpace: 'pre-wrap' }}>
+            <p style={{ marginTop: 6, fontSize: 14, whiteSpace: 'pre-wrap' }}>
               {message.caption}
             </p>
           )}
         </div>
       );
+    }
 
     case 'audio':
     case 'ptt':
-      return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 200 }}>
-          <button
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: '50%',
-              backgroundColor: THEME.primary,
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            <Play style={{ width: 16, height: 16, color: '#ffffff' }} />
-          </button>
-          <div style={{ flex: 1 }}>
-            <div style={{ height: 4, borderRadius: 2, backgroundColor: 'rgba(134,150,160,0.3)' }}>
-              <div style={{ height: 4, width: '33%', borderRadius: 2, backgroundColor: THEME.primary }} />
-            </div>
-            <p style={{ marginTop: 4, fontSize: 12, color: THEME.textMuted }}>0:00</p>
-          </div>
-        </div>
-      );
+      return <ChatAudio message={message} />;
 
     case 'document':
-      return (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            borderRadius: 8,
-            padding: 12,
-            minWidth: 200,
-            backgroundColor: 'rgba(0,0,0,0.04)',
-          }}
-        >
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 8,
-              backgroundColor: '#ff5252',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <File style={{ width: 20, height: 20, color: '#ffffff' }} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 14, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {message.body || 'Document'}
-            </p>
-            <p style={{ fontSize: 12, color: THEME.textMuted }}>{message.mediaType || 'File'}</p>
-          </div>
-        </div>
-      );
+      return <ChatDocument message={message} />;
 
     case 'location':
-      return (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            borderRadius: 8,
-            padding: 12,
-            minWidth: 200,
-            backgroundColor: 'rgba(0,0,0,0.04)',
-          }}
-        >
-          <MapPin style={{ width: 24, height: 24, flexShrink: 0, color: '#ea4335' }} />
-          <div>
-            <p style={{ fontSize: 14, fontWeight: 500 }}>Location</p>
-            <p style={{ fontSize: 12, color: THEME.textMuted }}>{message.body || 'Shared location'}</p>
-          </div>
-        </div>
-      );
+      return <ChatLocation message={message} />;
 
     case 'contact':
       return (
@@ -399,21 +769,51 @@ function MessageContent({ message }: { message: Message }) {
         </div>
       );
 
-    case 'sticker':
+    case 'sticker': {
+      const stickerSrc = message.mediaUrl && message.mediaUrl.length > 0
+        ? message.mediaUrl
+        : message.body && isBase64(message.body)
+          ? message.body.startsWith('data:')
+            ? message.body
+            : `data:image/webp;base64,${message.body}`
+          : `/api/messages/${message.id}/media`;
       return (
         <div style={{ width: 120, height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {message.mediaUrl ? (
-            <img src={message.mediaUrl} alt="Sticker" style={{ maxWidth: 120, maxHeight: 120 }} />
-          ) : (
-            <Smile style={{ width: 64, height: 64, color: THEME.textMuted }} />
-          )}
+          <img
+            src={stickerSrc}
+            alt="Sticker"
+            style={{ maxWidth: 120, maxHeight: 120, objectFit: 'contain' }}
+            onError={(e) => {
+              const el = e.currentTarget as HTMLImageElement;
+              el.style.display = 'none';
+              const sibling = el.nextElementSibling as HTMLElement | null;
+              if (sibling) sibling.style.display = '';
+            }}
+          />
+          <Smile
+            style={{ width: 64, height: 64, color: THEME.textMuted, display: 'none' }}
+          />
         </div>
       );
+    }
 
     default: {
       const body = message.body || '';
       if (isBase64(body)) return <p style={{ fontSize: 14, fontStyle: 'italic', color: THEME.textMuted }}>Media</p>;
-      return <p style={{ fontSize: 14, whiteSpace: 'pre-wrap', overflowWrap: 'break-word', margin: 0 }}>{body}</p>;
+      return (
+        <p
+          style={{
+            fontSize: 14,
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
+            wordBreak: 'break-word',
+            margin: 0,
+            lineHeight: 1.45,
+          }}
+        >
+          {renderTextWithLinks(body)}
+        </p>
+      );
     }
   }
 }
@@ -451,10 +851,15 @@ function MessageBubble({
         style={{
           position: 'relative',
           maxWidth: isMobile ? '85%' : '60%',
+          minWidth: 0,
           backgroundColor: isSent ? THEME.sent : THEME.received,
           borderRadius: isSent ? '10px 0px 10px 10px' : '0px 10px 10px 10px',
           padding: hasMedia ? '4px 4px 6px 4px' : '7px 10px 6px 10px',
           boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+          // Long URLs or unbreakable strings (Google Forms links etc.) must
+          // wrap within the bubble instead of blowing up its width.
+          overflowWrap: 'anywhere',
+          wordBreak: 'break-word',
         }}
       >
         {/* Bubble tail */}
@@ -603,7 +1008,17 @@ function ChatListItem({
         if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
       }}
     >
-      <InlineAvatar name={chat.name} src={chat.profilePicUrl} size={46} />
+      <InlineAvatar
+        name={displayChatName(chat.name)}
+        src={
+          // Use our stable local avatar proxy when we have a phone (non-group chats),
+          // otherwise fall back to whatever URL came from the backend.
+          !chat.isGroup && chat.wppId && /@c\.us$/i.test(chat.wppId)
+            ? `/api/contacts/avatar/${chat.wppId.replace('@c.us', '')}`
+            : chat.profilePicUrl
+        }
+        size={46}
+      />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <p
@@ -617,7 +1032,7 @@ function ChatListItem({
               margin: 0,
             }}
           >
-            {chat.name}
+            {displayChatName(chat.name, chat.wppId)}
           </p>
           <span
             style={{
@@ -799,11 +1214,22 @@ export default function ConversationsPage() {
       if (!activeSessionId) return;
       try {
         if (!opts?.silent) setMessagesLoading(true);
-        const res = await fetch(`/api/messages?sessionId=${activeSessionId}&chatId=${chat.id}`);
+        const res = await fetch(
+          `/api/messages?sessionId=${activeSessionId}&chatId=${chat.id}&limit=1000`
+        );
         if (res.ok) {
           const data: ApiResponse<Message[]> = await res.json();
           if (data.success && data.data) {
-            setMessages([...data.data].reverse());
+            // Dedup by (wppId OR id) in case the API ever returns duplicate rows.
+            const seen = new Set<string>();
+            const unique: Message[] = [];
+            for (const m of data.data) {
+              const key = (m as unknown as { wppId?: string }).wppId || m.id;
+              if (key && seen.has(key)) continue;
+              if (key) seen.add(key);
+              unique.push(m);
+            }
+            setMessages(unique.reverse());
           }
         }
       } catch {
@@ -872,11 +1298,57 @@ export default function ConversationsPage() {
     };
   }, [selectedChat, activeSessionId]);
 
+  // Tracks the last chat id we scrolled-to-bottom for. Used to scroll only
+  // when the conversation changes, not on every poll refresh that replaces
+  // the messages array.
+  const lastScrolledChatRef = useRef<string | null>(null);
+  // Count of messages the last time we auto-scrolled — used to detect a new
+  // incoming message rather than a full re-fetch of the same set.
+  const lastMessageCountRef = useRef(0);
+
+  // Reset tracking refs whenever a different chat is opened. This fires
+  // synchronously so that the following effect sees a stale chat id and
+  // treats the first render as `isNewChat`, even before messages arrive.
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (!selectedChat) {
+      lastScrolledChatRef.current = null;
+      lastMessageCountRef.current = 0;
     }
-  }, [messages]);
+  }, [selectedChat]);
+
+  // Auto-scroll runs every time `messages` changes — i.e. AFTER the new chat's
+  // messages have actually been rendered. Two cases:
+  //   1. New chat just opened → force-jump to the bottom.
+  //   2. A new message arrived in the current chat AND the user is already
+  //      near the bottom → smooth scroll. Otherwise leave their position.
+  useEffect(() => {
+    if (!selectedChat) return;
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const isNewChat = lastScrolledChatRef.current !== selectedChat.id;
+    const hasNewMessage = messages.length > lastMessageCountRef.current;
+
+    if (isNewChat) {
+      // Wait two frames so the DOM has painted with the new message list.
+      // `scrollHeight` is only meaningful after the children are laid out.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const c = messagesContainerRef.current;
+          if (c) c.scrollTop = c.scrollHeight;
+        });
+      });
+      lastScrolledChatRef.current = selectedChat.id;
+    } else if (hasNewMessage) {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (distanceFromBottom < 120) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+
+    lastMessageCountRef.current = messages.length;
+  }, [messages, selectedChat]);
 
   // ---------------------------------------------------------------------------
   // Send message
@@ -1416,84 +1888,90 @@ export default function ConversationsPage() {
         </div>
       )}
 
-      {/* Message count + search */}
-      <div style={{ padding: '12px 16px 0 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <p style={{ fontSize: 16, fontWeight: 700, color: THEME.textPrimary, margin: 0 }}>
-              Chat ({chats.length})
-            </p>
-          </div>
-          <IconBtn
-            onClick={() => {
-              setSearchOpen(!searchOpen);
-              if (!searchOpen) setTimeout(() => searchInputRef.current?.focus(), 100);
-              else setSearchQuery('');
-            }}
-          >
-            <Search style={{ width: 18, height: 18 }} />
-          </IconBtn>
+      {/* Compact title + always-visible search + segmented filter */}
+      <div style={{ padding: '10px 14px 8px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: THEME.textPrimary, margin: 0 }}>
+            Chats
+          </p>
+          <span style={{ fontSize: 12, fontFamily: 'ui-monospace, monospace', color: THEME.textMuted }}>
+            {chats.length}
+          </span>
         </div>
 
-        {/* Search input */}
-        {(searchOpen || searchQuery) && (
-          <div style={{ position: 'relative', marginBottom: 10 }}>
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 12,
-                bottom: 0,
-                display: 'flex',
-                alignItems: 'center',
-                pointerEvents: 'none',
-                color: THEME.textMuted,
-              }}
-            >
-              <Search style={{ width: 16, height: 16 }} />
-            </div>
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search conversations..."
-              style={{
-                width: '100%',
-                height: 36,
-                borderRadius: 18,
-                border: 'none',
-                backgroundColor: THEME.inputBg,
-                paddingLeft: 36,
-                paddingRight: 12,
-                fontSize: 14,
-                color: THEME.textPrimary,
-                outline: 'none',
-              }}
-            />
+        {/* Always-visible search */}
+        <div style={{ position: 'relative', marginBottom: 8 }}>
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 10,
+              bottom: 0,
+              display: 'flex',
+              alignItems: 'center',
+              pointerEvents: 'none',
+              color: THEME.textMuted,
+            }}
+          >
+            <Search style={{ width: 14, height: 14 }} />
           </div>
-        )}
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search chats…"
+            style={{
+              width: '100%',
+              height: 34,
+              borderRadius: 8,
+              border: `1px solid ${THEME.border}`,
+              backgroundColor: '#ffffff',
+              paddingLeft: 30,
+              paddingRight: 10,
+              fontSize: 13,
+              color: THEME.textPrimary,
+              outline: 'none',
+              transition: 'border-color 0.15s',
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = THEME.primary;
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = THEME.border;
+            }}
+          />
+        </div>
 
-        {/* Filters: All / Direct / Group */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        {/* Segmented filter (sober, no pill border, single active state) */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 2,
+            backgroundColor: THEME.inputBg,
+            padding: 2,
+            borderRadius: 8,
+          }}
+        >
           {(['all', 'direct', 'group'] as const).map((filter) => {
             const isActive = contactFilter === filter;
-            const label = filter === 'all' ? 'All' : filter === 'direct' ? 'Direct' : 'Group';
+            const label = filter === 'all' ? 'All' : filter === 'direct' ? 'Direct' : 'Groups';
             return (
               <button
                 key={filter}
                 onClick={() => setContactFilter(filter)}
                 style={{
                   flex: 1,
-                  height: 30,
-                  borderRadius: 15,
-                  border: isActive ? 'none' : `1px solid ${THEME.border}`,
+                  height: 26,
+                  borderRadius: 6,
+                  border: 'none',
                   cursor: 'pointer',
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: 500,
                   transition: 'all 0.15s ease',
-                  backgroundColor: isActive ? THEME.primary : 'transparent',
-                  color: isActive ? '#ffffff' : THEME.textSecondary,
+                  backgroundColor: isActive ? '#ffffff' : 'transparent',
+                  color: isActive ? THEME.textPrimary : THEME.textSecondary,
+                  boxShadow: isActive ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
                 }}
               >
                 {label}
@@ -1595,8 +2073,12 @@ export default function ConversationsPage() {
                 </IconBtn>
               )}
               <InlineAvatar
-                name={selectedChat.name}
-                src={selectedChat.profilePicUrl}
+                name={displayChatName(selectedChat.name)}
+                src={
+                  !selectedChat.isGroup && selectedChat.wppId && /@c\.us$/i.test(selectedChat.wppId)
+                    ? `/api/contacts/avatar/${selectedChat.wppId.replace('@c.us', '')}`
+                    : selectedChat.profilePicUrl
+                }
                 size={42}
                 online={!selectedChat.isGroup && chatPresence.isOnline}
               />
@@ -1612,16 +2094,16 @@ export default function ConversationsPage() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {selectedChat.name}
+                  {displayChatName(selectedChat.name, selectedChat.wppId)}
                 </p>
                 <p style={{ fontSize: 12, color: chatPresence.isOnline ? '#25D366' : THEME.textMuted, margin: 0 }}>
                   {selectedChat.isGroup
                     ? 'Group'
                     : chatPresence.isOnline
-                    ? 'Online'
-                    : chatPresence.lastSeen
-                    ? `Last seen ${new Date(chatPresence.lastSeen).toLocaleString()}`
-                    : `${messages.length} messages`}
+                      ? 'Online'
+                      : chatPresence.lastSeen
+                        ? `Last seen ${new Date(chatPresence.lastSeen).toLocaleString()}`
+                        : ''}
                 </p>
               </div>
             </div>

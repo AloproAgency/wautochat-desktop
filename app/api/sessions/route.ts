@@ -6,7 +6,25 @@ export async function GET() {
   try {
     // Trigger auto-reconnect on first access
     await manager.autoReconnect();
-    const sessions = manager.getAllSessions();
+    let sessions = manager.getAllSessions();
+
+    // Backfill the phone number for connected sessions where we never captured
+    // it (e.g. session predates the refresh logic, or initial fetch failed).
+    // We do this in parallel and with a short ceiling so the API stays snappy.
+    const missing = sessions.filter((s) => s.status === 'connected' && !s.phone);
+    if (missing.length > 0) {
+      await Promise.allSettled(
+        missing.map((s) =>
+          Promise.race([
+            manager.refreshHostPhone(s.id),
+            new Promise((resolve) => setTimeout(resolve, 3000)),
+          ])
+        )
+      );
+      // Re-read sessions after the DB updates land
+      sessions = manager.getAllSessions();
+    }
+
     return Response.json({ success: true, data: sessions });
   } catch (error) {
     return Response.json(
