@@ -17,6 +17,7 @@ import ReactFlow, {
   applyEdgeChanges,
   ReactFlowProvider,
   ConnectionMode,
+  SelectionMode,
   type Node,
   type Edge,
   type Connection,
@@ -25,6 +26,8 @@ import ReactFlow, {
   type ReactFlowInstance,
   MarkerType,
 } from 'reactflow';
+import { CanvasContextMenu, type ContextMenuTarget } from './canvas-context-menu';
+import { QuickAddNode } from './quick-add-node';
 import { Controls } from '@reactflow/controls';
 import { MiniMap } from '@reactflow/minimap';
 import { Background, BackgroundVariant } from '@reactflow/background';
@@ -156,6 +159,11 @@ function FlowCanvasInner({
   const [zoom, setZoom] = useState(1);
   const [logPanelVisible, setLogPanelVisible] = useState(false);
 
+  // Context menu, quick-add popup, clipboard
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; target: ContextMenuTarget } | null>(null);
+  const [quickAdd, setQuickAdd] = useState<{ screenX: number; screenY: number; flowX: number; flowY: number } | null>(null);
+  const [clipboard, setClipboard] = useState<Node<FlowNodeData>[]>([]);
+
   // Responsive state
   const [isMobile, setIsMobile] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
@@ -200,7 +208,7 @@ function FlowCanvasInner({
       sourceHandle: e.sourceHandle || undefined,
       label: e.label || undefined,
       animated: false,
-      type: 'smoothstep',
+      type: 'default',
       markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
       style: { stroke: '#94a3b8', strokeWidth: 2 },
     }))
@@ -291,7 +299,7 @@ function FlowCanvasInner({
           {
             ...connection,
             animated: false,
-            type: 'smoothstep',
+            type: 'default',
             markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
             style: { stroke: '#94a3b8', strokeWidth: 2 },
           },
@@ -325,6 +333,8 @@ function FlowCanvasInner({
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
+    setContextMenu(null);
+    setQuickAdd(null);
     if (isMobile) setShowMobileConfig(false);
   }, [isMobile]);
 
@@ -380,6 +390,31 @@ function FlowCanvasInner({
       setNodes((nds) => [...nds, newNode]);
     },
     [rfInstance, saveHistory]
+  );
+
+  // Add a node at a specific flow-coordinate position (used by quick-add and context menu)
+  const addNodeAtPosition = useCallback(
+    (type: string, nodeCategory: string, label: string, flowX: number, flowY: number, triggerCategory?: string) => {
+      saveHistory();
+      const triggerConfig: Record<string, unknown> = {};
+      if (type === 'trigger' && triggerCategory) {
+        triggerConfig.triggerType = triggerTypeMap[label] || type;
+        triggerConfig.triggerCategory = triggerCategory;
+      }
+      const newNode: Node<FlowNodeData> = {
+        id: `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        type: nodeTypeMap[nodeCategory] || 'logicNode',
+        position: { x: flowX, y: flowY },
+        data: {
+          label,
+          type: type as FlowNodeData['type'],
+          config: Object.keys(triggerConfig).length > 0 ? triggerConfig : {},
+          description: '',
+        },
+      };
+      setNodes((nds) => [...nds, newNode]);
+    },
+    [saveHistory]
   );
 
   // Add node from mobile palette overlay
@@ -464,17 +499,17 @@ function FlowCanvasInner({
     }
   }, [nodes, edges, redo]);
 
-  // Auto-layout (BFS)
+  // Auto-layout (BFS, horizontal left-to-right)
   const handleAutoLayout = useCallback(() => {
     saveHistory();
 
     const triggerNodes = nodes.filter((n) => n.data.type === 'trigger');
     const otherNodes = nodes.filter((n) => n.data.type !== 'trigger');
 
-    const ySpacing = 120;
-    const xSpacing = 260;
-    const startX = 300;
-    const startY = 50;
+    const xSpacing = 220;   // node width (160) + 60px gap
+    const ySpacing = 90;    // vertical gap between branches
+    const startX = 60;
+    const startY = 200;
 
     const children: Record<string, string[]> = {};
     for (const edge of edges) {
@@ -488,8 +523,8 @@ function FlowCanvasInner({
     let queue: { id: string; x: number; y: number }[] = triggerNodes.map(
       (n, i) => ({
         id: n.id,
-        x: startX + i * xSpacing,
-        y: startY,
+        x: startX,
+        y: startY + i * ySpacing,
       })
     );
 
@@ -503,11 +538,11 @@ function FlowCanvasInner({
         const kids = children[item.id] || [];
         kids.forEach((kidId, idx) => {
           if (!positioned.has(kidId)) {
-            const offsetX = (idx - (kids.length - 1) / 2) * xSpacing;
+            const offsetY = (idx - (kids.length - 1) / 2) * ySpacing;
             next.push({
               id: kidId,
-              x: item.x + offsetX,
-              y: item.y + ySpacing,
+              x: item.x + xSpacing,
+              y: item.y + offsetY,
             });
           }
         });
@@ -518,7 +553,7 @@ function FlowCanvasInner({
     let orphanY = startY;
     for (const n of otherNodes) {
       if (!positioned.has(n.id)) {
-        newPositions[n.id] = { x: startX + 500, y: orphanY };
+        newPositions[n.id] = { x: startX + 600, y: orphanY };
         orphanY += ySpacing;
       }
     }
@@ -528,7 +563,136 @@ function FlowCanvasInner({
         newPositions[n.id] ? { ...n, position: newPositions[n.id] } : n
       )
     );
-  }, [nodes, edges, saveHistory]);
+
+    // Fit view after repositioning so the whole flow is visible
+    setTimeout(() => rfInstance?.fitView({ padding: 0.15, duration: 400 }), 50);
+  }, [nodes, edges, saveHistory, rfInstance]);
+
+  // ---- Right-click context menu handlers ----
+  const onPaneContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      if (!rfInstance || !reactFlowWrapper.current) return;
+      const bounds = reactFlowWrapper.current.getBoundingClientRect();
+      const flowPos = rfInstance.screenToFlowPosition({
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      });
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        target: { kind: 'pane', flowX: flowPos.x, flowY: flowPos.y },
+      });
+    },
+    [rfInstance]
+  );
+
+  const onNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node<FlowNodeData>) => {
+      event.preventDefault();
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        target: { kind: 'node', nodeId: node.id, nodeLabel: node.data.label },
+      });
+    },
+    []
+  );
+
+  const onEdgeContextMenu = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      event.preventDefault();
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        target: { kind: 'edge', edgeId: edge.id },
+      });
+    },
+    []
+  );
+
+  // ---- Double-click on canvas to quick-add ----
+  const onPaneDoubleClick = useCallback(
+    (event: React.MouseEvent) => {
+      if (!rfInstance || !reactFlowWrapper.current) return;
+      const bounds = reactFlowWrapper.current.getBoundingClientRect();
+      const flowPos = rfInstance.screenToFlowPosition({
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      });
+      setQuickAdd({ screenX: event.clientX, screenY: event.clientY, flowX: flowPos.x, flowY: flowPos.y });
+    },
+    [rfInstance]
+  );
+
+  // ---- Copy / Paste / Duplicate / Select-all ----
+  const handleCopySelected = useCallback(() => {
+    const selected = nodes.filter((n) => n.selected);
+    if (selected.length > 0) setClipboard(selected);
+  }, [nodes]);
+
+  const handlePaste = useCallback(() => {
+    if (clipboard.length === 0) return;
+    saveHistory();
+    const offset = { x: 40, y: 40 };
+    const newNodes = clipboard.map((n) => ({
+      ...n,
+      id: `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      position: { x: n.position.x + offset.x, y: n.position.y + offset.y },
+      selected: true,
+    }));
+    setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), ...newNodes]);
+  }, [clipboard, saveHistory]);
+
+  const handleDuplicateSelected = useCallback(() => {
+    const selected = nodes.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    saveHistory();
+    const newNodes = selected.map((n) => ({
+      ...n,
+      id: `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      position: { x: n.position.x + 40, y: n.position.y + 40 },
+      selected: true,
+    }));
+    setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), ...newNodes]);
+  }, [nodes, saveHistory]);
+
+  const handleDeleteSelected = useCallback(() => {
+    const selectedIds = new Set(nodes.filter((n) => n.selected).map((n) => n.id));
+    if (selectedIds.size === 0) return;
+    saveHistory();
+    setNodes((nds) => nds.filter((n) => !selectedIds.has(n.id)));
+    setEdges((eds) => eds.filter((e) => !selectedIds.has(e.source) && !selectedIds.has(e.target)));
+    setSelectedNode(null);
+  }, [nodes, saveHistory]);
+
+  const handleSelectAll = useCallback(() => {
+    setNodes((nds) => nds.map((n) => ({ ...n, selected: true })));
+  }, []);
+
+  const handleDisconnectNode = useCallback(
+    (nodeId: string) => {
+      saveHistory();
+      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    },
+    [saveHistory]
+  );
+
+  const handleDuplicateNode = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      saveHistory();
+      const newNode = {
+        ...node,
+        id: `node_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        position: { x: node.position.x + 40, y: node.position.y + 40 },
+        selected: true,
+      };
+      setNodes((nds) => [...nds.map((n) => ({ ...n, selected: false })), newNode]);
+    },
+    [nodes, saveHistory]
+  );
 
   // Save flow
   const handleSave = useCallback(async () => {
@@ -583,8 +747,34 @@ function FlowCanvasInner({
         e.preventDefault();
         handleSave();
       }
+      // Ctrl+C — copy selected nodes
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        e.preventDefault();
+        handleCopySelected();
+      }
+      // Ctrl+V — paste clipboard
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        handlePaste();
+      }
+      // Ctrl+D — duplicate selected
+      if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        e.preventDefault();
+        handleDuplicateSelected();
+      }
+      // Ctrl+A — select all
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        e.preventDefault();
+        handleSelectAll();
+      }
+      // Escape — close menus
+      if (e.key === 'Escape') {
+        setContextMenu(null);
+        setQuickAdd(null);
+        setSelectedNode(null);
+      }
     },
-    [handleUndo, handleRedo, handleSave]
+    [handleUndo, handleRedo, handleSave, handleCopySelected, handlePaste, handleDuplicateSelected, handleSelectAll]
   );
 
   // Track zoom
@@ -597,7 +787,7 @@ function FlowCanvasInner({
   const isEmpty = nodes.length === 0;
 
   // Palette width for tablet / desktop
-  const paletteWidth = isTablet ? 240 : 300;
+  const paletteWidth = isTablet ? 200 : 240;
 
   return (
     <div className="flex w-full" style={{ height: '100%' }} onKeyDown={onKeyDown} tabIndex={0}>
@@ -609,76 +799,69 @@ function FlowCanvasInner({
       )}
 
       {/* Canvas */}
-      <div className="flex-1 relative" ref={reactFlowWrapper} style={{ minHeight: 0 }}>
-        {/* Floating Toolbar - Top Center */}
-        <div
-          className="absolute top-3 md:top-4 left-1/2 z-10 flex items-center gap-0.5 md:gap-1 bg-white rounded-full border border-gray-200 px-1.5 md:px-2 py-1 md:py-1.5"
-          style={{
-            transform: 'translateX(-50%)',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-            height: isMobile ? 38 : 44,
-          }}
-        >
+      <div className="flex-1 relative" ref={reactFlowWrapper} style={{ minHeight: 0 }} onDoubleClick={onPaneDoubleClick}>
+        {/* Floating toolbar */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-sm border border-slate-200 rounded-full px-2 py-1.5 shadow-lg shadow-slate-200/60">
+          {/* Undo */}
           <button
             onClick={handleUndo}
             disabled={!canUndo()}
-            className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Undo (Ctrl+Z)"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-medium"
           >
-            <Undo2 className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-600" />
+            <Undo2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Undo</span>
           </button>
+          {/* Redo */}
           <button
             onClick={handleRedo}
             disabled={!canRedo()}
-            className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Redo (Ctrl+Shift+Z)"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-medium"
           >
-            <Redo2 className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-600" />
+            <Redo2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Redo</span>
           </button>
 
-          <div className="w-px h-4 md:h-5 bg-gray-200 mx-0.5 md:mx-1" />
+          {/* Divider */}
+          <div className="w-px h-4 bg-slate-200 mx-1" />
 
+          {/* Auto layout */}
           <button
             onClick={handleAutoLayout}
-            className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
             title="Auto Layout"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-slate-600 hover:bg-slate-100 transition-colors text-xs font-medium"
           >
-            <LayoutGrid className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-600" />
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Layout</span>
           </button>
 
-          {/* Hide zoom text on mobile */}
-          {!isMobile && (
-            <>
-              <div className="w-px h-5 bg-gray-200 mx-1" />
-              <span
-                className="text-xs font-medium text-gray-500 px-2 select-none"
-                style={{ minWidth: 42, textAlign: 'center' }}
-              >
-                {zoomPercent}%
-              </span>
-            </>
-          )}
+          {/* Divider */}
+          <div className="w-px h-4 bg-slate-200 mx-1" />
 
-          <div className="w-px h-4 md:h-5 bg-gray-200 mx-0.5 md:mx-1" />
+          {/* Zoom display */}
+          <span className="px-2 text-xs text-slate-500 font-mono tabular-nums w-12 text-center">
+            {Math.round(zoom * 100)}%
+          </span>
 
+          {/* Divider */}
+          <div className="w-px h-4 bg-slate-200 mx-1" />
+
+          {/* Save button */}
           <button
             onClick={handleSave}
             disabled={saving}
-            style={{ backgroundColor: saving ? '#6b7280' : '#25D366' }}
-            className="flex items-center gap-1 md:gap-1.5 px-3 md:px-4 py-1 md:py-1.5 rounded-full text-white text-xs font-semibold disabled:opacity-60 transition-colors"
+            title="Save (Ctrl+S)"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors disabled:opacity-60 shadow-sm"
           >
-            {saving ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Save className="w-3.5 h-3.5" />
-            )}
-            <span className="hidden md:inline">Save</span>
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            <span>{saving ? 'Saving…' : 'Save'}</span>
           </button>
 
           {/* Live indicator */}
           {activeExecutionId && (
             <>
-              <div className="w-px h-4 md:h-5 bg-gray-200 mx-0.5 md:mx-1" />
+              <div className="w-px h-4 bg-slate-200 mx-1" />
               <div className="flex items-center gap-1.5 px-1 md:px-2">
                 <span
                   style={{
@@ -724,23 +907,13 @@ function FlowCanvasInner({
 
         {/* Empty State */}
         {isEmpty && (
-          <div
-            className="absolute inset-0 z-5 flex items-center justify-center pointer-events-none"
-          >
-            <div className="flex flex-col items-center text-center px-4">
-              <div
-                className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4"
-              >
-                <Workflow className="w-8 h-8 text-gray-400" />
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="text-center">
+              <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
+                <Workflow className="w-8 h-8 text-slate-400" />
               </div>
-              <h3 className="text-lg font-semibold text-gray-500 mb-1">
-                Start building your flow
-              </h3>
-              <p className="text-sm text-gray-400 max-w-xs">
-                {isMobile
-                  ? 'Tap the + button to add nodes'
-                  : 'Drag nodes from the panel on the left to get started'}
-              </p>
+              <p className="text-sm font-medium text-slate-600">Drag a node from the left panel</p>
+              <p className="text-xs text-slate-400 mt-1">or click a node to add it to the canvas</p>
             </div>
           </div>
         )}
@@ -761,6 +934,14 @@ function FlowCanvasInner({
           onMoveEnd={onMoveEnd}
           isValidConnection={isValidConnection}
           nodeTypes={nodeTypes}
+          onPaneContextMenu={onPaneContextMenu}
+          onNodeContextMenu={onNodeContextMenu}
+          onEdgeContextMenu={onEdgeContextMenu}
+          selectionMode={SelectionMode.Partial}
+          selectionOnDrag={false}
+          panOnDrag={true}
+          multiSelectionKeyCode="Shift"
+          selectionKeyCode="Shift"
           fitView
           fitViewOptions={{ padding: 0.2 }}
           deleteKeyCode={['Backspace', 'Delete']}
@@ -769,50 +950,113 @@ function FlowCanvasInner({
           minZoom={0.2}
           maxZoom={3}
           connectionMode={ConnectionMode.Loose}
-          connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 2 }}
+          connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 2, strokeDasharray: '6 3' }}
           defaultEdgeOptions={{
             animated: false,
-            type: 'smoothstep',
+            type: 'default',
             markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' },
             style: { stroke: '#94a3b8', strokeWidth: 2 },
           }}
           proOptions={{ hideAttribution: true }}
         >
-          <Controls position="bottom-left" />
+          <Controls position="bottom-left" className="shadow-lg border border-slate-200 rounded-xl overflow-hidden" />
           {!isMobile && (
             <MiniMap
               position="bottom-right"
-              nodeColor={(node) => {
-                const cat = getNodeCategory(node.data?.type || '');
-                switch (cat) {
-                  case 'trigger': return '#22c55e';
-                  case 'message': return '#075E54';
-                  case 'action': return '#6366f1';
-                  case 'condition': return '#f59e0b';
-                  case 'delay': return '#8b5cf6';
-                  case 'logic': return '#8b5cf6';
-                  default: return '#94a3b8';
-                }
+              nodeColor={(n) => {
+                const cat = n.type?.replace('Node', '');
+                const colors: Record<string, string> = {
+                  trigger: '#16a34a',
+                  message: '#0d9488',
+                  action: '#4f46e5',
+                  condition: '#d97706',
+                  delay: '#0284c7',
+                  logic: '#7c3aed',
+                };
+                return colors[cat || ''] || '#94a3b8';
               }}
-              maskColor="rgba(0, 0, 0, 0.06)"
+              className="border border-slate-200 rounded-xl overflow-hidden shadow-lg"
+              maskColor="rgba(248, 250, 252, 0.7)"
             />
           )}
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#d1d5db" />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={1.5}
+            color="#cbd5e1"
+          />
         </ReactFlow>
         </ExecutionContext.Provider>
+
+        {/* Context menu */}
+        {contextMenu && (
+          <CanvasContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            target={contextMenu.target}
+            canPaste={clipboard.length > 0}
+            onClose={() => setContextMenu(null)}
+            actions={{
+              // pane actions
+              onAddNodeHere: contextMenu.target.kind === 'pane'
+                ? () => setQuickAdd({
+                    screenX: contextMenu.x,
+                    screenY: contextMenu.y,
+                    flowX: (contextMenu.target as { flowX: number; flowY: number }).flowX,
+                    flowY: (contextMenu.target as { flowX: number; flowY: number }).flowY,
+                  })
+                : undefined,
+              onPaste: handlePaste,
+              onSelectAll: handleSelectAll,
+              onAutoLayout: handleAutoLayout,
+              onFitView: () => rfInstance?.fitView({ padding: 0.15, duration: 400 }),
+              // node actions
+              onDuplicate: contextMenu.target.kind === 'node'
+                ? () => handleDuplicateNode((contextMenu.target as { nodeId: string }).nodeId)
+                : undefined,
+              onCopyNode: () => handleCopySelected(),
+              onDeleteNode: contextMenu.target.kind === 'node'
+                ? () => {
+                    const nodeId = (contextMenu.target as { nodeId: string }).nodeId;
+                    saveHistory();
+                    setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+                    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+                    if (selectedNode?.id === nodeId) setSelectedNode(null);
+                  }
+                : undefined,
+              onDisconnect: contextMenu.target.kind === 'node'
+                ? () => handleDisconnectNode((contextMenu.target as { nodeId: string }).nodeId)
+                : undefined,
+              // edge actions
+              onDeleteEdge: contextMenu.target.kind === 'edge'
+                ? () => {
+                    const edgeId = (contextMenu.target as { edgeId: string }).edgeId;
+                    saveHistory();
+                    setEdges((eds) => eds.filter((e) => e.id !== edgeId));
+                  }
+                : undefined,
+            }}
+          />
+        )}
+
+        {/* Quick-add popup (double-click on canvas) */}
+        {quickAdd && (
+          <QuickAddNode
+            x={quickAdd.screenX}
+            y={quickAdd.screenY}
+            onSelect={(item) => {
+              addNodeAtPosition(item.type, item.nodeCategory, item.label, quickAdd.flowX, quickAdd.flowY, item.triggerCategory);
+              setQuickAdd(null);
+            }}
+            onClose={() => setQuickAdd(null)}
+          />
+        )}
 
         {/* Mobile floating "+" button to open palette */}
         {isMobile && (
           <button
             onClick={() => setShowMobilePalette(true)}
-            className="absolute z-10 flex items-center justify-center rounded-full text-white shadow-lg"
-            style={{
-              bottom: 24,
-              right: 24,
-              width: 56,
-              height: 56,
-              backgroundColor: '#25D366',
-            }}
+            className="fixed bottom-6 right-6 z-20 w-14 h-14 rounded-full bg-emerald-500 text-white shadow-xl shadow-emerald-200 flex items-center justify-center hover:bg-emerald-600 active:scale-95 transition-all"
           >
             <Plus className="w-6 h-6" />
           </button>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import NextImage from 'next/image';
 import type { Node } from 'reactflow';
 import type { FlowNodeData, FlowNodeType } from '@/lib/types';
@@ -14,38 +14,38 @@ import {
   Users as UsersIcon, User as UserIcon, Radio,
 } from 'lucide-react';
 
-// Node type to icon/color mapping for the header
-const nodeIconConfig: Record<string, { icon: React.ElementType; bg: string }> = {
-  'trigger': { icon: MessageSquare, bg: '#22c55e' },
-  'send-message': { icon: Type, bg: '#075E54' },
-  'send-image': { icon: ImageIcon, bg: '#075E54' },
-  'send-file': { icon: FileText, bg: '#075E54' },
-  'send-audio': { icon: Headphones, bg: '#075E54' },
-  'send-video': { icon: Video, bg: '#075E54' },
-  'send-location': { icon: MapPin, bg: '#075E54' },
-  'send-contact': { icon: Contact, bg: '#075E54' },
-  'send-sticker': { icon: Smile, bg: '#075E54' },
-  'send-list': { icon: List, bg: '#075E54' },
-  'send-poll': { icon: BarChart3, bg: '#075E54' },
-  'send-buttons': { icon: LayoutGrid, bg: '#075E54' },
-  'send-reaction': { icon: SmilePlus, bg: '#6366f1' },
-  'forward-message': { icon: Forward, bg: '#6366f1' },
-  'mark-as-read': { icon: CheckCheck, bg: '#6366f1' },
-  'typing-indicator': { icon: Keyboard, bg: '#6366f1' },
-  'assign-label': { icon: Tag, bg: '#6366f1' },
-  'remove-label': { icon: TagsIcon, bg: '#6366f1' },
-  'add-to-group': { icon: UserPlus, bg: '#6366f1' },
-  'remove-from-group': { icon: UserMinus, bg: '#6366f1' },
-  'block-contact': { icon: Ban, bg: '#6366f1' },
-  'unblock-contact': { icon: ShieldCheck, bg: '#6366f1' },
-  'condition': { icon: GitBranch, bg: '#f59e0b' },
-  'delay': { icon: Timer, bg: '#8b5cf6' },
-  'set-variable': { icon: Variable, bg: '#8b5cf6' },
-  'http-request': { icon: Globe, bg: '#8b5cf6' },
-  'ai-response': { icon: BrainCircuit, bg: '#8b5cf6' },
-  'go-to-flow': { icon: ExternalLink, bg: '#8b5cf6' },
-  'end': { icon: CircleStop, bg: '#8b5cf6' },
-  'wait-for-reply': { icon: Clock, bg: '#8b5cf6' },
+// Node type to icon/color/gradient mapping for the header
+const nodeIconConfig: Record<string, { icon: React.ElementType; bg: string; gradientFrom: string; gradientTo: string; category: string }> = {
+  'trigger':          { icon: MessageSquare, bg: '#15803d', gradientFrom: '#15803d', gradientTo: '#22c55e', category: 'Trigger' },
+  'send-message':     { icon: Type,          bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-image':       { icon: ImageIcon,     bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-file':        { icon: FileText,      bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-audio':       { icon: Headphones,    bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-video':       { icon: Video,         bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-location':    { icon: MapPin,        bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-contact':     { icon: Contact,       bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-sticker':     { icon: Smile,         bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-list':        { icon: List,          bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-poll':        { icon: BarChart3,     bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-buttons':     { icon: LayoutGrid,    bg: '#09090b', gradientFrom: '#09090b', gradientTo: '#3f3f46', category: 'Message' },
+  'send-reaction':    { icon: SmilePlus,     bg: '#5b21b6', gradientFrom: '#5b21b6', gradientTo: '#7c3aed', category: 'Action' },
+  'forward-message':  { icon: Forward,       bg: '#5b21b6', gradientFrom: '#5b21b6', gradientTo: '#7c3aed', category: 'Action' },
+  'mark-as-read':     { icon: CheckCheck,    bg: '#5b21b6', gradientFrom: '#5b21b6', gradientTo: '#7c3aed', category: 'Action' },
+  'typing-indicator': { icon: Keyboard,      bg: '#5b21b6', gradientFrom: '#5b21b6', gradientTo: '#7c3aed', category: 'Action' },
+  'assign-label':     { icon: Tag,           bg: '#5b21b6', gradientFrom: '#5b21b6', gradientTo: '#7c3aed', category: 'Action' },
+  'remove-label':     { icon: TagsIcon,      bg: '#5b21b6', gradientFrom: '#5b21b6', gradientTo: '#7c3aed', category: 'Action' },
+  'add-to-group':     { icon: UserPlus,      bg: '#5b21b6', gradientFrom: '#5b21b6', gradientTo: '#7c3aed', category: 'Action' },
+  'remove-from-group':{ icon: UserMinus,     bg: '#5b21b6', gradientFrom: '#5b21b6', gradientTo: '#7c3aed', category: 'Action' },
+  'block-contact':    { icon: Ban,           bg: '#5b21b6', gradientFrom: '#5b21b6', gradientTo: '#7c3aed', category: 'Action' },
+  'unblock-contact':  { icon: ShieldCheck,   bg: '#5b21b6', gradientFrom: '#5b21b6', gradientTo: '#7c3aed', category: 'Action' },
+  'condition':        { icon: GitBranch,     bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
+  'delay':            { icon: Timer,         bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
+  'set-variable':     { icon: Variable,      bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
+  'http-request':     { icon: Globe,         bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
+  'ai-response':      { icon: BrainCircuit,  bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
+  'go-to-flow':       { icon: ExternalLink,  bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
+  'wait-for-reply':   { icon: Clock,         bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
+  'end':              { icon: CircleStop,    bg: '#18181b', gradientFrom: '#18181b', gradientTo: '#3f3f46', category: 'End' },
 };
 
 interface NodeConfigPanelProps {
@@ -92,107 +92,99 @@ export default function NodeConfigPanel({
   if (!node) return null;
 
   const nodeType = node.data.type;
-  const iconCfg = nodeIconConfig[nodeType] || { icon: CircleStop, bg: '#6b7280' };
+  const iconCfg = nodeIconConfig[nodeType] || { icon: CircleStop, bg: '#6b7280', gradientFrom: '#4b5563', gradientTo: '#6b7280', category: 'Node' };
   const HeaderIcon = iconCfg.icon;
+  const nodeTypeName = nodeType.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
-    <div
-      className="bg-white border-l border-gray-200 flex flex-col h-full shrink-0"
-      style={{
-        width: 380,
-        animation: 'slideInFromRight 0.2s ease-out',
-        boxShadow: '-4px 0 16px rgba(0,0,0,0.06)',
-      }}
-    >
+    <div className="h-full flex flex-col bg-white border-l border-slate-200 shadow-xl" style={{ width: 320 }}>
       {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/50">
-        <div
-          style={{ backgroundColor: iconCfg.bg }}
-          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 shadow-sm"
-        >
-          <HeaderIcon className="w-4 h-4 text-white" />
+      <div
+        className="px-4 py-3.5 border-b border-slate-100 flex items-center gap-3"
+        style={{ background: `linear-gradient(135deg, ${iconCfg.gradientFrom}, ${iconCfg.gradientTo})` }}
+      >
+        <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+          <HeaderIcon className="w-5 h-5 text-white" />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-gray-900 truncate">
-            Configure: {node.data.label}
-          </h3>
-          <p className="text-xs text-gray-500 truncate capitalize">
-            {nodeType.replace(/-/g, ' ')}
-          </p>
+          <div className="text-xs text-white/70 font-medium">{iconCfg.category}</div>
+          <div className="text-sm font-bold text-white truncate">{label || nodeTypeName}</div>
         </div>
         <button
           onClick={onClose}
-          className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-200 transition-colors"
+          className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors"
         >
-          <X className="w-4 h-4 text-gray-400" />
+          <X className="w-4 h-4 text-white" />
         </button>
       </div>
 
+      {/* Node Label Input */}
+      <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
+        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Node Label</label>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="Enter node name..."
+          className="w-full px-3 py-2 text-sm font-medium text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-300"
+        />
+      </div>
+
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
-        {/* Label */}
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-1.5">
-            Node Label
-          </label>
-          <input
-            type="text"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 transition-all"
-          />
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 space-y-4">
+          {/* Type-specific config */}
+          {renderConfigForm(nodeType, config, updateConfig, sessionId)}
         </div>
-
-        <div className="w-full h-px bg-gray-100" />
-
-        {/* Type-specific config */}
-        {renderConfigForm(nodeType, config, updateConfig, sessionId)}
       </div>
 
       {/* Footer */}
-      <div className="p-4 border-t border-gray-100 flex items-center gap-2">
-        {/* Delete on left */}
-        {showDeleteConfirm ? (
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={handleDelete}
-              className="px-3 py-2 text-xs font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
-            >
-              Confirm
-            </button>
-            <button
-              onClick={() => setShowDeleteConfirm(false)}
-              className="px-3 py-2 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              No
-            </button>
+      {showDeleteConfirm ? (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-500" />
+            </div>
+            <h3 className="text-base font-bold text-slate-800 text-center mb-2">Delete Node?</h3>
+            <p className="text-sm text-slate-500 text-center mb-6">This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors shadow-sm"
+              >
+                Delete
+              </button>
+            </div>
           </div>
-        ) : (
-          <button
-            onClick={() => setShowDeleteConfirm(true)}
-            className="px-3 py-2 text-xs font-medium rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors flex items-center gap-1.5"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Delete
-          </button>
-        )}
-
-        {/* Cancel + Save on right */}
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 text-xs font-medium rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 transition-colors flex items-center gap-1.5 shadow-sm"
-          >
-            <Save className="w-3.5 h-3.5" />
-            Save
-          </button>
         </div>
+      ) : null}
+      <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center gap-2">
+        <button
+          onClick={() => setShowDeleteConfirm(true)}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+          title="Delete node"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+        <div className="flex-1" />
+        <button
+          onClick={onClose}
+          className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          className="px-4 py-1.5 text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors shadow-sm"
+        >
+          Save
+        </button>
       </div>
     </div>
   );
@@ -271,9 +263,9 @@ function renderConfigForm(
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-gray-700 mb-1.5">{label}</label>
+      <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">{label}</label>
       {children}
-      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+      {hint && <p className="text-[10px] text-slate-400 mt-1 leading-snug">{hint}</p>}
     </div>
   );
 }
@@ -296,7 +288,7 @@ function TextInput({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       style={large ? { fontSize: 18, textAlign: 'center', padding: '12px 16px' } : undefined}
-      className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 transition-all"
+      className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 transition-all"
     />
   );
 }
@@ -319,7 +311,7 @@ function TextArea({
       placeholder={placeholder}
       rows={rows}
       style={{ minHeight: 100 }}
-      className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 resize-none transition-all"
+      className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 resize-none transition-all"
     />
   );
 }
@@ -337,7 +329,7 @@ function SelectInput({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 transition-all"
+      className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all"
     >
       {options.map((opt) => (
         <option key={opt.value} value={opt.value}>
@@ -372,7 +364,7 @@ function NumberInput({
       min={min}
       max={max}
       style={large ? { fontSize: 24, textAlign: 'center', padding: '12px 16px' } : undefined}
-      className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 transition-all"
+      className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 transition-all"
     />
   );
 }
@@ -451,17 +443,18 @@ function SliderInput({
 
 function InfoText({ text }: { text: string }) {
   return (
-    <div className="p-4 bg-gray-50 rounded-lg border border-gray-100 flex items-start gap-2.5">
-      <Info className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
-      <p className="text-xs text-gray-500 leading-relaxed">{text}</p>
+    <div className="flex gap-2 p-2.5 bg-blue-50 border border-blue-100 rounded-lg">
+      <Info className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
+      <p className="text-[11px] text-blue-700 leading-snug">{text}</p>
     </div>
   );
 }
 
 function HintBox({ text }: { text: string }) {
   return (
-    <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
-      <p className="text-xs text-blue-600 leading-relaxed">{text}</p>
+    <div className="flex gap-2 p-2.5 bg-blue-50 border border-blue-100 rounded-lg">
+      <Info className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
+      <p className="text-[11px] text-blue-700 leading-snug">{text}</p>
     </div>
   );
 }
@@ -492,7 +485,7 @@ function VariableToolbar({ onInsert }: { onInsert: (v: string) => void }) {
           value={customVar}
           onChange={(e) => setCustomVar(e.target.value)}
           placeholder="custom"
-          className="px-2 py-1 text-xs rounded-md border border-gray-200 bg-white text-gray-900 w-20 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          className="px-2 py-1 text-xs rounded-md border border-slate-200 bg-white text-slate-800 w-20 focus:outline-none focus:ring-1 focus:ring-emerald-400"
         />
         <button
           type="button"
@@ -672,7 +665,7 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
               placeholder={"hello\nhi\nhey\nwelcome"}
               rows={4}
               style={{ minHeight: 80 }}
-              className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 resize-none transition-all font-mono"
+              className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 resize-none transition-all font-mono"
             />
           </Field>
         </>
@@ -1174,7 +1167,7 @@ function RegexTester({ pattern }: { pattern: string }) {
         value={testInput}
         onChange={(e) => setTestInput(e.target.value)}
         placeholder="Type text to test..."
-        className="w-full px-3 py-2.5 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 transition-all"
+        className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 transition-all"
       />
       {testInput && match !== null && (
         <div
@@ -1595,7 +1588,7 @@ function SendListConfig({ config, updateConfig }: ConfigProps) {
                 value={section.title}
                 onChange={(e) => updateSectionTitle(sIdx, e.target.value)}
                 placeholder={`Section ${sIdx + 1} title`}
-                className="flex-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="flex-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
               />
               {sections.length > 1 && (
                 <button
@@ -1609,14 +1602,14 @@ function SendListConfig({ config, updateConfig }: ConfigProps) {
             </div>
 
             {section.rows.map((row, rIdx) => (
-              <div key={rIdx} className="ml-3 border-l-2 border-gray-200 pl-3 space-y-1">
+              <div key={rIdx} className="ml-3 border-l-2 border-slate-200 pl-3 space-y-1">
                 <div className="flex items-center gap-1.5">
                   <input
                     type="text"
                     value={row.title}
                     onChange={(e) => updateRow(sIdx, rIdx, 'title', e.target.value)}
                     placeholder="Row title"
-                    className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
                   />
                   {section.rows.length > 1 && (
                     <button
@@ -1633,14 +1626,14 @@ function SendListConfig({ config, updateConfig }: ConfigProps) {
                   value={row.description}
                   onChange={(e) => updateRow(sIdx, rIdx, 'description', e.target.value)}
                   placeholder="Row description"
-                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
                 />
                 <input
                   type="text"
                   value={row.id}
                   onChange={(e) => updateRow(sIdx, rIdx, 'id', e.target.value)}
                   placeholder="Row ID"
-                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono"
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono"
                 />
               </div>
             ))}
@@ -1707,7 +1700,7 @@ function SendPollConfig({ config, updateConfig }: ConfigProps) {
                 updateChoices(updated);
               }}
               placeholder={`Choice ${idx + 1}`}
-              className="flex-1 px-2.5 py-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="flex-1 px-2.5 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
             />
             {choices.length > 2 && (
               <button
@@ -1792,7 +1785,7 @@ function SendButtonsConfig({ config, updateConfig }: ConfigProps) {
                   updateButtons(updated);
                 }}
                 placeholder={`Button ${idx + 1} ID`}
-                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono"
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono"
               />
               <input
                 type="text"
@@ -1803,7 +1796,7 @@ function SendButtonsConfig({ config, updateConfig }: ConfigProps) {
                   updateButtons(updated);
                 }}
                 placeholder={`Button ${idx + 1} text`}
-                className="w-full px-2.5 py-2 text-sm rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="w-full px-2.5 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
               />
             </div>
             {buttons.length > 1 && (
@@ -2008,7 +2001,7 @@ function HttpRequestConfig({ config, updateConfig }: ConfigProps) {
                 updateConfig('headers', updated);
               }}
               placeholder="Key"
-              className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
             />
             <input
               type="text"
@@ -2019,7 +2012,7 @@ function HttpRequestConfig({ config, updateConfig }: ConfigProps) {
                 updateConfig('headers', updated);
               }}
               placeholder="Value"
-              className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
             />
             <button
               type="button"
@@ -2436,7 +2429,7 @@ function ReactionConfig({ config, updateConfig }: ConfigProps) {
             placeholder="🚀"
             maxLength={4}
             style={{ fontSize: 24, textAlign: 'center', padding: '8px 12px', width: 80 }}
-            className="rounded-lg border border-gray-200 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400/30 focus:border-blue-400 transition-all"
+            className="rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all"
           />
           {selectedEmoji && (
             <div className="flex items-center gap-2 text-xs text-gray-500">

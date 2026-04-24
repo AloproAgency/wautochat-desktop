@@ -111,6 +111,7 @@ interface PausedConversation {
 class WppConnectManager {
   private sessions: Map<string, ActiveSession> = new Map();
   private qrCodes: Map<string, string> = new Map();
+  private pairCodes: Map<string, string> = new Map();
   private pausedConversations: Map<string, PausedConversation> = new Map();
   private autoReconnectDone = false;
   private reconnectPromises: Map<string, Promise<void>> = new Map();
@@ -148,7 +149,8 @@ class WppConnectManager {
   async createSession(
     sessionId: string,
     name: string,
-    deviceName?: string
+    deviceName?: string,
+    phoneNumber?: string
   ): Promise<string> {
     const db = getDb();
 
@@ -162,7 +164,7 @@ class WppConnectManager {
 
     // Start client initialization in the background (don't await)
     // The QR code will be available via polling /api/sessions/[id]/qr
-    this.initClient(sessionId, deviceName).catch((error) => {
+    this.initClient(sessionId, deviceName, phoneNumber).catch((error) => {
       console.error(`[${sessionId}] Failed to initialize client:`, error);
       this.updateSessionStatus(sessionId, 'failed');
     });
@@ -172,7 +174,8 @@ class WppConnectManager {
 
   private async initClient(
     sessionId: string,
-    deviceName?: string
+    deviceName?: string,
+    phoneNumber?: string
   ): Promise<void> {
     const db = getDb();
     const userDataDir = browserDataDirFor(sessionId);
@@ -189,11 +192,32 @@ class WppConnectManager {
             reject(new Error(`WPPConnect create() timed out after ${timeoutMs / 1000}s`));
           }, timeoutMs);
 
+          // Capture manager instance — needed inside regular-function callbacks
+          // where arrow functions can't be used (we rely on `.call(this,...)` binding).
+          const managerRef = this;
+
+          // When pair code mode is requested we do NOT pass phoneNumber to create().
+          // Instead we intercept catchQR (fires once WhatsApp has rendered the canvas
+          // and has a valid QR URL) and call this.loginByCode() from there, using the
+          // HostLayer `this` that wppconnect passes via .call(this, ...).
+          const catchQRCallback = phoneNumber
+            ? function (this: { loginByCode: (p: string) => Promise<void> }) {
+                console.log(`[${sessionId}] QR canvas ready — requesting pair code for ${phoneNumber}`);
+                this.loginByCode(phoneNumber).catch((err: Error) => {
+                  console.error(`[${sessionId}] loginByCode failed:`, err);
+                });
+              }
+            : (base64Qr: string, _asciiQR: string, attempts: number) => {
+                console.log(`[${sessionId}] QR code generated (attempt ${attempts})`);
+                managerRef.qrCodes.set(sessionId, base64Qr);
+                managerRef.updateSessionStatus(sessionId, 'qr_ready');
+              };
+
           create({
             session: sessionId,
             headless: true,
             useChrome: false,
-            autoClose: 120000,
+            autoClose: 300000,
             deviceName: deviceName || 'WAutoChat',
             logQR: false,
             disableWelcome: true,
@@ -210,14 +234,11 @@ class WppConnectManager {
               '--no-first-run',
               '--disable-extensions',
             ],
-            catchQR: (
-              base64Qr: string,
-              _asciiQR: string,
-              attempts: number
-            ) => {
-              console.log(`[${sessionId}] QR code generated (attempt ${attempts})`);
-              this.qrCodes.set(sessionId, base64Qr);
-              this.updateSessionStatus(sessionId, 'qr_ready');
+            catchQR: catchQRCallback as (base64Qr: string, asciiQR: string, attempts: number, urlCode?: string) => void,
+            catchLinkCode: (code: string) => {
+              console.log(`[${sessionId}] Pair code generated: ${code}`);
+              managerRef.pairCodes.set(sessionId, code);
+              managerRef.updateSessionStatus(sessionId, 'qr_ready');
             },
             statusFind: (statusSession: string) => {
               console.log(`[${sessionId}] Status: ${statusSession}`);
@@ -227,10 +248,11 @@ class WppConnectManager {
               ) {
                 this.updateSessionStatus(sessionId, 'connected');
                 this.qrCodes.delete(sessionId);
+                this.pairCodes.delete(sessionId);
               } else if (statusSession === 'inChat') {
                 // "inChat" can also appear before a QR is shown on unpaired sessions.
-                // Only treat it as connected when no QR is pending for this session.
-                if (!this.qrCodes.has(sessionId)) {
+                // Only treat it as connected when no QR/pair code is pending for this session.
+                if (!this.qrCodes.has(sessionId) && !this.pairCodes.has(sessionId)) {
                   this.updateSessionStatus(sessionId, 'connected');
                 }
               } else if (statusSession === 'notLogged') {
@@ -240,7 +262,7 @@ class WppConnectManager {
                 if (!currentSession || currentSession.status !== 'connected') {
                   this.updateSessionStatus(
                     sessionId,
-                    this.qrCodes.has(sessionId) ? 'qr_ready' : 'connecting'
+                    (this.qrCodes.has(sessionId) || this.pairCodes.has(sessionId)) ? 'qr_ready' : 'connecting'
                   );
                 }
               } else if (
@@ -250,6 +272,8 @@ class WppConnectManager {
                 statusSession === 'deleteToken'
               ) {
                 this.updateSessionStatus(sessionId, 'disconnected');
+                this.qrCodes.delete(sessionId);
+                this.pairCodes.delete(sessionId);
                 // Block this session from being auto-reconnected again
                 this.blockedSessions.add(sessionId);
                 // Session was logged out from the phone - stop auto-reconnect loop
@@ -268,7 +292,7 @@ class WppConnectManager {
         });
       };
 
-      const client = await createWithTimeout(120000); // 2 min timeout
+      const client = await createWithTimeout(300000); // 5 min timeout
 
       console.log(`[${sessionId}] Browser started successfully.`);
 
@@ -1357,7 +1381,7 @@ class WppConnectManager {
     }
   }
 
-  async connectSession(sessionId: string): Promise<void> {
+  async connectSession(sessionId: string, phoneNumber?: string): Promise<void> {
     const db = getDb();
     const session = db.prepare(`SELECT * FROM sessions WHERE id = ?`).get(sessionId) as Record<string, unknown> | undefined;
 
@@ -1365,26 +1389,35 @@ class WppConnectManager {
       throw new Error('Session not found');
     }
 
-    void this.reconnectSession(sessionId).catch((error) => {
+    // User explicitly requested reconnect — unblock and force a fresh start.
+    // Removing from reconnectPromises ensures the new call doesn't wait for
+    // a stale in-flight promise (e.g. a previous 120 s timeout still running).
+    this.blockedSessions.delete(sessionId);
+    this.reconnectPromises.delete(sessionId);
+
+    // Kill any in-memory browser handle left from a previous attempt so
+    // performReconnectSession can start cleanly without conflict.
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      try { await existing.client.close(); } catch { /* ignore */ }
+      this.sessions.delete(sessionId);
+      clearLock(sessionId);
+    }
+
+    void this.reconnectSession(sessionId, phoneNumber).catch((error) => {
       console.error(`[${sessionId}] Failed to reconnect client:`, error);
       this.updateSessionStatus(sessionId, 'failed');
     });
   }
 
-  async reconnectSession(sessionId: string): Promise<void> {
-    // Skip if this session is blocked (phone unpaired it)
-    if (this.blockedSessions.has(sessionId)) {
-      console.log(`[${sessionId}] Session is unpaired - skipping reconnect. Delete and recreate session to use again.`);
-      return;
-    }
-
+  async reconnectSession(sessionId: string, phoneNumber?: string): Promise<void> {
     const inFlight = this.reconnectPromises.get(sessionId);
     if (inFlight) {
       await inFlight;
       return;
     }
 
-    const reconnectPromise = this.performReconnectSession(sessionId);
+    const reconnectPromise = this.performReconnectSession(sessionId, phoneNumber);
     this.reconnectPromises.set(sessionId, reconnectPromise);
 
     try {
@@ -1394,7 +1427,7 @@ class WppConnectManager {
     }
   }
 
-  private async performReconnectSession(sessionId: string): Promise<void> {
+  private async performReconnectSession(sessionId: string, phoneNumber?: string): Promise<void> {
     const existing = this.sessions.get(sessionId);
     if (existing) {
       try {
@@ -1438,7 +1471,7 @@ class WppConnectManager {
     this.updateSessionStatus(sessionId, 'connecting');
 
     try {
-      await this.initClient(sessionId, row.device_name as string);
+      await this.initClient(sessionId, row.device_name as string, phoneNumber);
       console.log(`[${sessionId}] Reconnected successfully.`);
     } catch (err) {
       console.error(`[${sessionId}] Reconnect failed:`, err);
@@ -1514,6 +1547,10 @@ class WppConnectManager {
 
   getQrCode(sessionId: string): string | null {
     return this.qrCodes.get(sessionId) || null;
+  }
+
+  getPairCode(sessionId: string): string | null {
+    return this.pairCodes.get(sessionId) || null;
   }
 
   private updateSessionStatus(sessionId: string, status: SessionStatus): void {

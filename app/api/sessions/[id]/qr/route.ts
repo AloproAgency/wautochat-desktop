@@ -17,12 +17,14 @@ export async function GET(
     }
 
     const qrCode = manager.getQrCode(id);
+    const pairCode = manager.getPairCode(id);
 
-    if (!qrCode) {
+    if (!qrCode && !pairCode) {
       return Response.json({
         success: true,
         data: {
           qrCode: null,
+          pairCode: null,
           status: session.status,
           message:
             session.status === 'connected'
@@ -36,6 +38,7 @@ export async function GET(
       success: true,
       data: {
         qrCode,
+        pairCode,
         status: session.status,
       },
     });

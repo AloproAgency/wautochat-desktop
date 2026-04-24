@@ -19,7 +19,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, deviceName } = body;
+    const { name, deviceName, phoneNumber } = body;
 
     if (!name) {
       return Response.json(
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     const sessionId = uuidv4();
-    await manager.createSession(sessionId, name, deviceName);
+    await manager.createSession(sessionId, name, deviceName, phoneNumber);
 
     const session = manager.getSession(sessionId);
     return Response.json({ success: true, data: session }, { status: 201 });

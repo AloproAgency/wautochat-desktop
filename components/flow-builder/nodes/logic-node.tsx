@@ -14,8 +14,13 @@ import {
   Cog,
 } from 'lucide-react';
 
-const COLOR_PURPLE = '#8b5cf6';
-const COLOR_RED = '#ef4444';
+const LOGIC_FROM = '#c2410c';
+const LOGIC_TO = '#ea580c';
+const LOGIC_COLOR = '#c2410c';
+
+const END_FROM = '#18181b';
+const END_TO = '#52525b';
+const END_COLOR = '#18181b';
 
 const logicIcons: Record<string, React.ElementType> = {
   'set-variable': Variable,
@@ -40,62 +45,56 @@ function LogicNode({ id, data, selected }: NodeProps<FlowNodeData>) {
   const Icon = logicIcons[nodeType] || Cog;
   const label = data.label || logicLabels[nodeType] || 'Logic';
   const isEnd = nodeType === 'end';
-  const color = isEnd ? COLOR_RED : COLOR_PURPLE;
-  const summary = getLogicSummary(nodeType, data.config);
+  const fromColor = isEnd ? END_FROM : LOGIC_FROM;
+  const toColor = isEnd ? END_TO : LOGIC_TO;
+  const nodeColor = isEnd ? END_COLOR : LOGIC_COLOR;
+  const preview = getLogicSummary(nodeType, data.config);
 
   return (
     <NodeExecutionOverlay nodeId={id}>
-    <div
-      style={{ width: 260, borderLeftColor: color }}
-      className={`flex items-center gap-3 rounded-xl bg-white border border-gray-200 border-l-4 px-3.5 py-3 transition-all hover:shadow-lg ${
-        selected ? 'ring-2 ring-blue-400 shadow-lg' : 'shadow-md'
-      }`}
-    >
-      <Handle
-        type="target"
-        position={Position.Top}
-        style={{
-          width: 14,
-          height: 14,
-          background: color,
-          border: '2.5px solid white',
-
-        }}
-      />
       <div
-        style={{ backgroundColor: color, width: 44, height: 44 }}
-        className="rounded-full flex items-center justify-center shrink-0 shadow-sm"
+        style={{
+          width: 160,
+          ...(selected
+            ? { boxShadow: `0 0 0 2.5px ${nodeColor}` }
+            : { boxShadow: '0 2px 8px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)' }),
+        }}
+        className="rounded-xl relative"
       >
-        <Icon style={{ width: 22, height: 22 }} className="text-white" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div
-          style={{ fontSize: 14 }}
-          className="font-bold text-gray-900 truncate leading-tight"
-        >
-          {label}
-        </div>
-        <div
-          style={{ fontSize: 12 }}
-          className="text-gray-500 truncate mt-0.5 leading-tight"
-        >
-          {summary || 'Not configured'}
-        </div>
-      </div>
-      {!isEnd && (
+        {/* Target handle */}
         <Handle
-          type="source"
-          position={Position.Bottom}
-          style={{
-            width: 14,
-            height: 14,
-            background: color,
-            border: '2.5px solid white',
-
-          }}
+          type="target"
+          position={Position.Left}
+          style={{ width: 12, height: 12, background: 'white', border: `2.5px solid ${nodeColor}` }}
         />
-      )}
-    </div>
+
+        {/* Full gradient card */}
+        <div
+          style={{ background: `linear-gradient(135deg, ${fromColor}, ${toColor})` }}
+          className="rounded-xl px-2.5 py-2 flex items-center gap-2"
+        >
+          {/* Icon badge: white bg, colored icon */}
+          <div className="w-7 h-7 rounded-lg bg-white/90 shadow-sm flex items-center justify-center shrink-0">
+            <Icon className="w-[15px] h-[15px]" style={{ color: fromColor }} />
+          </div>
+          {/* Text */}
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] font-semibold text-white truncate leading-tight">{label}</div>
+            <div className="text-[9px] text-white/70 truncate leading-tight mt-0.5">
+              {preview || <span className="italic opacity-60">Not set</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* Source handle — hidden for End nodes */}
+        {!isEnd && (
+          <Handle
+            type="source"
+            position={Position.Right}
+            style={{ width: 12, height: 12, background: 'white', border: `2.5px solid ${nodeColor}` }}
+          />
+        )}
+      </div>
     </NodeExecutionOverlay>
   );
 }

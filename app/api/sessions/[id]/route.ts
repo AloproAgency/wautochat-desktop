@@ -42,12 +42,13 @@ export async function PUT(
 
     const body = await request.json().catch(() => ({}));
     const action = (body as Record<string, unknown>).action as string;
+    const phoneNumber = (body as Record<string, unknown>).phoneNumber as string | undefined;
 
     if (action === 'disconnect') {
       await manager.disconnectSession(id);
     } else {
       // Default action: connect (non-blocking, starts in background)
-      await manager.connectSession(id);
+      await manager.connectSession(id, phoneNumber);
     }
 
     const updated = manager.getSession(id);

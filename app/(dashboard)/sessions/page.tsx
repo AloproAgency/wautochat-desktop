@@ -12,6 +12,7 @@ import {
   Monitor,
   Calendar,
   Phone,
+  Hash,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody } from '@/components/ui/card';
@@ -41,10 +42,17 @@ export default function SessionsPage() {
   const [loading, setLoading] = useState(true);
   const [showNewModal, setShowNewModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
+  const [showConnectMethodModal, setShowConnectMethodModal] = useState<string | null>(null);
   const [showQrModal, setShowQrModal] = useState<string | null>(null);
+  const [qrModalMode, setQrModalMode] = useState<'qr' | 'paircode'>('qr');
   const [qrImage, setQrImage] = useState<string | null>(null);
+  const [pairCode, setPairCode] = useState<string | null>(null);
   const [newSessionName, setNewSessionName] = useState('');
   const [newDeviceName, setNewDeviceName] = useState('');
+  const [connectionMode, setConnectionMode] = useState<'qr' | 'paircode'>('qr');
+  const [newPhoneNumber, setNewPhoneNumber] = useState('');
+  const [connectMode, setConnectMode] = useState<'qr' | 'paircode'>('qr');
+  const [connectPhoneNumber, setConnectPhoneNumber] = useState('');
   const [creating, setCreating] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const qrIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -71,7 +79,7 @@ export default function SessionsPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  // QR Polling
+  // QR / Pair Code Polling
   const [qrStatus, setQrStatus] = useState<string>('');
   const qrPollCountRef = useRef(0);
 
@@ -85,18 +93,27 @@ export default function SessionsPage() {
         try {
           const res = await fetch(`/api/sessions/${showQrModal}/qr`);
           if (res.ok) {
-            const data: ApiResponse<{ qrCode: string; status: string; message?: string }> = await res.json();
+            const data: ApiResponse<{ qrCode: string | null; pairCode: string | null; status: string; message?: string }> = await res.json();
             if (data.success && data.data) {
               if (data.data.status === 'connected') {
                 setShowQrModal(null);
                 setQrImage(null);
+                setPairCode(null);
                 setQrStatus('');
                 updateSession(showQrModal, { status: 'connected' });
                 toast({ title: 'Session connected!', variant: 'success' });
                 return;
               }
+              if (data.data.pairCode) {
+                setPairCode(data.data.pairCode);
+                setQrImage(null);
+                setQrStatus('Enter this code in WhatsApp on your phone');
+                updateSession(showQrModal, { status: 'qr_ready' });
+                return;
+              }
               if (data.data.qrCode) {
                 setQrImage(data.data.qrCode);
+                setPairCode(null);
                 setQrStatus('Scan the QR code with WhatsApp');
                 updateSession(showQrModal, { status: 'qr_ready' });
                 return;
@@ -104,6 +121,7 @@ export default function SessionsPage() {
               if (data.data.status === 'failed') {
                 if (qrIntervalRef.current) clearInterval(qrIntervalRef.current);
                 setQrImage(null);
+                setPairCode(null);
                 setQrStatus(data.data.message || 'Unable to start this WhatsApp session.');
                 updateSession(showQrModal, { status: data.data.status as Session['status'] });
                 toast({ title: data.data.message || 'Session connection failed', variant: 'error' });
@@ -111,16 +129,17 @@ export default function SessionsPage() {
               }
               if (data.data.status === 'disconnected') {
                 setQrImage(null);
+                setPairCode(null);
                 setQrStatus(data.data.message || 'Waiting for WhatsApp to prepare a new QR code...');
                 updateSession(showQrModal, { status: 'disconnected' });
               } else {
-                // No QR yet — update status based on poll count
+                // Nothing ready yet — update status based on poll count
                 if (qrPollCountRef.current < 5) {
                   setQrStatus('Initializing browser...');
                 } else if (qrPollCountRef.current < 15) {
                   setQrStatus('Loading WhatsApp Web...');
                 } else {
-                  setQrStatus('Generating QR code, please wait...');
+                  setQrStatus(qrModalMode === 'paircode' ? 'Generating pair code, please wait...' : 'Generating QR code, please wait...');
                 }
               }
             }
@@ -140,10 +159,11 @@ export default function SessionsPage() {
       if (qrIntervalRef.current) clearInterval(qrIntervalRef.current);
       setQrStatus('');
     }
-  }, [showQrModal, updateSession, toast]);
+  }, [showQrModal, qrModalMode, updateSession, toast]);
 
   const handleCreateSession = async () => {
     if (!newSessionName.trim()) return;
+    if (connectionMode === 'paircode' && !newPhoneNumber.trim()) return;
     try {
       setCreating(true);
       const res = await fetch('/api/sessions', {
@@ -152,6 +172,7 @@ export default function SessionsPage() {
         body: JSON.stringify({
           name: newSessionName.trim(),
           deviceName: newDeviceName.trim() || undefined,
+          phoneNumber: connectionMode === 'paircode' ? newPhoneNumber.trim() : undefined,
         }),
       });
       if (res.ok) {
@@ -162,7 +183,12 @@ export default function SessionsPage() {
           setShowNewModal(false);
           setNewSessionName('');
           setNewDeviceName('');
-          // Always open QR modal for new sessions - it will poll until QR is ready
+          setNewPhoneNumber('');
+          setQrImage(null);
+          setPairCode(null);
+          setQrModalMode(connectionMode);
+          setConnectionMode('qr');
+          // Open connection modal — polls until QR or pair code is ready
           setShowQrModal(data.data.id);
         }
       } else {
@@ -176,19 +202,34 @@ export default function SessionsPage() {
     }
   };
 
-  const handleConnect = async (id: string) => {
+  const handleConnect = (id: string) => {
+    setConnectMode('qr');
+    setConnectPhoneNumber('');
+    setShowConnectMethodModal(id);
+  };
+
+  const handleConfirmConnect = async () => {
+    const id = showConnectMethodModal;
+    if (!id) return;
+    if (connectMode === 'paircode' && !connectPhoneNumber.trim()) return;
     try {
       setActionLoading(id);
+      setShowConnectMethodModal(null);
       const res = await fetch(`/api/sessions/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'connect' }),
+        body: JSON.stringify({
+          action: 'connect',
+          phoneNumber: connectMode === 'paircode' ? connectPhoneNumber.trim() : undefined,
+        }),
       });
       if (res.ok) {
         const data: ApiResponse<Session> = await res.json();
         if (data.success && data.data) {
           updateSession(id, data.data);
-          // Open QR modal - will poll until QR code appears
+          setQrImage(null);
+          setPairCode(null);
+          setQrModalMode(connectMode);
           setShowQrModal(id);
           toast({ title: 'Connecting...', variant: 'info' });
         }
@@ -358,21 +399,89 @@ export default function SessionsPage() {
         </div>
       )}
 
+      {/* Connect Method Modal */}
+      <Modal
+        open={!!showConnectMethodModal}
+        onClose={() => { setShowConnectMethodModal(null); setConnectMode('qr'); setConnectPhoneNumber(''); }}
+        title="Connect Session"
+        description="Choose how you want to connect this WhatsApp session."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => { setShowConnectMethodModal(null); setConnectMode('qr'); setConnectPhoneNumber(''); }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmConnect}
+              disabled={connectMode === 'paircode' && !connectPhoneNumber.trim()}
+            >
+              Connect
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setConnectMode('qr')}
+              className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                connectMode === 'qr'
+                  ? 'border-wa-teal bg-wa-teal/10 text-wa-teal'
+                  : 'border-wa-border text-wa-text-secondary hover:border-wa-teal/50 hover:text-wa-text'
+              }`}
+            >
+              <QrCode className="h-4 w-4" />
+              QR Code
+            </button>
+            <button
+              type="button"
+              onClick={() => setConnectMode('paircode')}
+              className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                connectMode === 'paircode'
+                  ? 'border-wa-teal bg-wa-teal/10 text-wa-teal'
+                  : 'border-wa-border text-wa-text-secondary hover:border-wa-teal/50 hover:text-wa-text'
+              }`}
+            >
+              <Hash className="h-4 w-4" />
+              Pair Code
+            </button>
+          </div>
+
+          {connectMode === 'paircode' && (
+            <div className="space-y-2">
+              <Input
+                label="Phone Number"
+                placeholder="e.g., +33612345678"
+                value={connectPhoneNumber}
+                onChange={(e) => setConnectPhoneNumber(e.target.value)}
+              />
+              <p className="text-xs text-wa-text-secondary">
+                Enter the number linked to your WhatsApp account with country code. A 8-digit code will appear to link without scanning a QR.
+              </p>
+            </div>
+          )}
+        </div>
+      </Modal>
+
       {/* New Session Modal */}
       <Modal
         open={showNewModal}
-        onClose={() => setShowNewModal(false)}
+        onClose={() => {
+          setShowNewModal(false);
+          setConnectionMode('qr');
+          setNewPhoneNumber('');
+        }}
         title="New Session"
         description="Create a new WhatsApp session to connect your device."
         footer={
           <>
-            <Button variant="secondary" onClick={() => setShowNewModal(false)}>
+            <Button variant="secondary" onClick={() => { setShowNewModal(false); setConnectionMode('qr'); setNewPhoneNumber(''); }}>
               Cancel
             </Button>
             <Button
               onClick={handleCreateSession}
               loading={creating}
-              disabled={!newSessionName.trim()}
+              disabled={!newSessionName.trim() || (connectionMode === 'paircode' && !newPhoneNumber.trim())}
             >
               Create
             </Button>
@@ -392,21 +501,90 @@ export default function SessionsPage() {
             value={newDeviceName}
             onChange={(e) => setNewDeviceName(e.target.value)}
           />
+
+          {/* Connection mode toggle */}
+          <div>
+            <p className="mb-2 text-sm font-medium text-wa-text">Connection Method</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setConnectionMode('qr')}
+                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                  connectionMode === 'qr'
+                    ? 'border-wa-teal bg-wa-teal/10 text-wa-teal'
+                    : 'border-wa-border text-wa-text-secondary hover:border-wa-teal/50 hover:text-wa-text'
+                }`}
+              >
+                <QrCode className="h-4 w-4" />
+                QR Code
+              </button>
+              <button
+                type="button"
+                onClick={() => setConnectionMode('paircode')}
+                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                  connectionMode === 'paircode'
+                    ? 'border-wa-teal bg-wa-teal/10 text-wa-teal'
+                    : 'border-wa-border text-wa-text-secondary hover:border-wa-teal/50 hover:text-wa-text'
+                }`}
+              >
+                <Hash className="h-4 w-4" />
+                Pair Code
+              </button>
+            </div>
+          </div>
+
+          {connectionMode === 'paircode' && (
+            <div className="space-y-2">
+              <Input
+                label="Phone Number"
+                placeholder="e.g., +33612345678"
+                value={newPhoneNumber}
+                onChange={(e) => setNewPhoneNumber(e.target.value)}
+              />
+              <p className="text-xs text-wa-text-secondary">
+                Enter the number linked to your WhatsApp account including country code. A 8-digit code will be generated to link without scanning a QR.
+              </p>
+            </div>
+          )}
         </div>
       </Modal>
 
-      {/* QR Code Modal */}
+      {/* QR Code / Pair Code Modal */}
       <Modal
         open={!!showQrModal}
         onClose={() => {
           setShowQrModal(null);
           setQrImage(null);
+          setPairCode(null);
         }}
-        title="Scan QR Code"
-        description="Open WhatsApp on your phone and scan the QR code to connect."
+        title={qrModalMode === 'paircode' ? 'Enter Pair Code' : 'Scan QR Code'}
+        description={
+          qrModalMode === 'paircode'
+            ? 'Open WhatsApp > Settings > Linked Devices > Link a Device > Link with phone number instead.'
+            : 'Open WhatsApp on your phone and scan the QR code to connect.'
+        }
       >
         <div className="flex flex-col items-center py-4">
-          {qrImage ? (
+          {pairCode ? (
+            <div className="flex flex-col items-center gap-4">
+              <div className="rounded-xl border border-wa-border bg-wa-teal/5 px-8 py-6">
+                <div className="flex items-center gap-3">
+                  {pairCode.match(/.{1,4}/g)?.map((chunk, i) => (
+                    <span key={i} className="font-mono text-3xl font-bold tracking-widest text-wa-teal">
+                      {chunk}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <ol className="space-y-1.5 text-sm text-wa-text-secondary list-decimal list-inside">
+                <li>Open WhatsApp on your phone</li>
+                <li>Go to Settings → Linked Devices</li>
+                <li>Tap <strong>Link a Device</strong></li>
+                <li>Tap <strong>Link with phone number instead</strong></li>
+                <li>Enter the code above</li>
+              </ol>
+            </div>
+          ) : qrImage ? (
             <div className="rounded-xl border border-wa-border bg-white p-4">
               <Image
                 src={qrImage.startsWith('data:') ? qrImage : `data:image/png;base64,${qrImage}`}
@@ -420,12 +598,20 @@ export default function SessionsPage() {
           ) : (
             <div className="flex h-64 w-64 flex-col items-center justify-center gap-3 rounded-xl border border-wa-border bg-gray-50">
               <Spinner size="lg" />
-              <p className="text-xs text-wa-text-secondary px-4 text-center">{qrStatus || 'Initializing...'}</p>
+              <p className="text-xs text-wa-text-secondary px-4 text-center">
+                {qrStatus || (qrModalMode === 'paircode' ? 'Generating pair code...' : 'Initializing...')}
+              </p>
             </div>
           )}
           <div className="mt-4 flex items-center gap-2 text-sm text-wa-text-secondary">
             <Spinner size="sm" />
-            <span>{qrImage ? 'Waiting for scan...' : qrStatus || 'Initializing...'}</span>
+            <span>
+              {pairCode
+                ? 'Waiting for phone confirmation...'
+                : qrImage
+                ? 'Waiting for scan...'
+                : qrStatus || 'Initializing...'}
+            </span>
           </div>
         </div>
       </Modal>
