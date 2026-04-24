@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '@/lib/db';
 import flowExecutionBus from '@/lib/flow-execution-bus';
 import { humanizeError } from '@/lib/flow-engine';
+import { applyTriggerFilters } from '@/lib/trigger-filters';
 import type {
   Flow,
   FlowNodeSerialized,
@@ -804,119 +805,180 @@ async function walkFlow(
   return 'done';
 }
 
-// Check if trigger matches the message
-interface TriggerMatchResult {
+// Check if trigger matches the simulated message.
+// Returns { matched, reason? }: reason is populated when matched=false so the
+// test chat can show the user a helpful explanation of what went wrong.
+export interface TriggerMatchResult {
   matched: boolean;
-  reason?: string; // Only filled when matched = false
+  reason?: string;
+}
+
+export interface SimOptions {
+  msgType?: string;   // 'text'|'image'|'video'|'audio'|'document'|'sticker'|'location'|'contact'|'poll'
+  isGroup?: boolean;
+  sender?: string;    // phone number like "2299xxxxxxx" or full JID
 }
 
 function checkTriggerMatch(
   trigger: Flow['trigger'],
   triggerConfig: Record<string, unknown>,
-  message: string
+  message: string,
+  sim: SimOptions = {}
 ): TriggerMatchResult {
   const triggerType = trigger?.type || (triggerConfig.triggerType as string) || 'message_received';
+  const msgType = sim.msgType || 'text';
+  const isGroup = sim.isGroup ?? false;
+  const rawSender = sim.sender || 'test-user';
+  const sender = rawSender.includes('@') ? rawSender : `${rawSender}@c.us`;
+  const chatId = isGroup ? 'test-group@g.us' : sender;
 
-  switch (triggerType) {
-    case 'message_received':
-      return { matched: true };
+  // Helper: apply the advanced filters (messageType, chatType, sender, etc.)
+  // from `config.filters` against the simulated message context.
+  function applyFilters(): boolean {
+    return applyTriggerFilters(triggerConfig, {
+      body: message,
+      caption: '',
+      msgType,
+      isGroup,
+      isBroadcast: false,
+      sender,
+      chatId,
+      fromMe: false,
+      mentionedJidList: [],
+      isForwarded: false,
+      quotedMsgId: '',
+      quotedFromMe: false,
+    });
+  }
 
-    case 'keyword': {
-      const rawKeywords = triggerConfig.keywords || triggerConfig.keyword || '';
-      const keywords = (typeof rawKeywords === 'string'
-        ? rawKeywords.split(/[,\n]/).map((k: string) => k.trim()).filter(Boolean)
-        : Array.isArray(rawKeywords) ? rawKeywords : []) as string[];
-      if (keywords.length === 0) return { matched: true };
+  // Keyword and regex share the same pattern: first match on body, then filters.
+  if (triggerType === 'keyword') {
+    const rawKeywords = triggerConfig.keywords || triggerConfig.keyword || '';
+    const keywords = (typeof rawKeywords === 'string'
+      ? rawKeywords.split(/[,\n]/).map((k: string) => k.trim()).filter(Boolean)
+      : Array.isArray(rawKeywords) ? rawKeywords : []) as string[];
+    if (keywords.length > 0) {
       const matchMode = (triggerConfig.matchMode as string) || 'contains';
       const lowerMsg = message.toLowerCase();
-
-      const matched = keywords.some((kw: string) => {
+      const kwMatched = keywords.some((kw: string) => {
         const lowerKw = kw.toLowerCase();
-        switch (matchMode) {
-          case 'exact': return lowerMsg === lowerKw;
-          case 'startsWith': return lowerMsg.startsWith(lowerKw);
-          case 'contains': return lowerMsg.includes(lowerKw);
-          default: return lowerMsg.includes(lowerKw);
-        }
+        if (matchMode === 'exact') return lowerMsg === lowerKw;
+        if (matchMode === 'startsWith') return lowerMsg.startsWith(lowerKw);
+        return lowerMsg.includes(lowerKw);
       });
-      return {
-        matched,
-        reason: matched ? undefined : `Aucun des mots-clés [${keywords.join(', ')}] n'a été trouvé dans ton message (mode : ${matchMode}).`,
-      };
-    }
-
-    case 'regex': {
-      const pattern = (triggerConfig.pattern as string) || (triggerConfig.regex as string) || '';
-      if (!pattern) return { matched: true };
-      try {
-        const matched = new RegExp(pattern, 'i').test(message);
+      if (!kwMatched) {
         return {
-          matched,
-          reason: matched ? undefined : `Ton message ne correspond pas au pattern regex "${pattern}".`,
+          matched: false,
+          reason: `Aucun des mots-clés [${keywords.join(', ')}] n'a été trouvé dans ton message (mode : ${matchMode}).`,
         };
+      }
+    }
+    return applyFilters()
+      ? { matched: true }
+      : { matched: false, reason: 'Les filtres avancés du trigger excluent ce message (type, chat, expéditeur…).' };
+  }
+
+  if (triggerType === 'regex') {
+    const pattern = (triggerConfig.pattern as string) || (triggerConfig.regex as string) || '';
+    if (pattern) {
+      try {
+        if (!new RegExp(pattern, 'i').test(message)) {
+          return {
+            matched: false,
+            reason: `Ton message ne correspond pas au pattern regex "${pattern}".`,
+          };
+        }
       } catch {
         return { matched: false, reason: `Pattern regex invalide : "${pattern}".` };
       }
     }
-
-    // These triggers need real WhatsApp context that the simulator cannot provide.
-    // We refuse to match and explain why in the chat, so the user isn't confused.
-    case 'media_received':
-      return {
-        matched: false,
-        reason:
-          '📷 *Trigger "Media Received"* — ce simulateur envoie uniquement du texte. Pour tester, envoie une vraie image/vidéo/audio depuis WhatsApp vers ta session.',
-      };
-
-    case 'contact_message':
-      return {
-        matched: false,
-        reason:
-          '👤 *Trigger "Contact Message"* — nécessite un message d\'un contact spécifique. Teste en envoyant un vrai message depuis le contact configuré.',
-      };
-
-    case 'group_message':
-      return {
-        matched: false,
-        reason:
-          '👥 *Trigger "Group Message"* — nécessite un message provenant d\'un groupe WhatsApp. Le simulateur envoie en conversation privée. Teste depuis un vrai groupe.',
-      };
-
-    case 'new_contact':
-      return {
-        matched: false,
-        reason:
-          '🆕 *Trigger "New Contact"* — se déclenche uniquement pour un contact jamais vu auparavant. Impossible à simuler car le contact "Test User" est toujours le même.',
-      };
-
-    case 'added_to_group':
-      return {
-        matched: false,
-        reason:
-          '➕ *Trigger "Added to Group"* — se déclenche quand ta session WhatsApp est ajoutée à un groupe. Impossible à simuler depuis le chat de test.',
-      };
-
-    case 'webhook':
-      return {
-        matched: false,
-        reason:
-          '🔗 *Trigger "Webhook"* — se déclenche par un appel HTTP externe vers `/api/webhooks`, pas par un message. Teste avec curl ou Postman.',
-      };
-
-    case 'schedule':
-      return {
-        matched: false,
-        reason:
-          '⏰ *Trigger "Schedule"* — se déclenche à des heures précises (cron). Pas déclenchable depuis un message de test.',
-      };
-
-    default:
-      // Unknown trigger type — fail safe (don't silently match)
-      return {
-        matched: false,
-        reason: `⚠️ Type de trigger inconnu : "${triggerType}". Le simulateur ne sait pas comment le tester. Vérifie ta configuration.`,
-      };
+    return applyFilters()
+      ? { matched: true }
+      : { matched: false, reason: 'Les filtres avancés du trigger excluent ce message.' };
   }
+
+  // Context-dependent triggers — give the user a pedagogical explanation
+  // when sim options don't match.
+  if (triggerType === 'media_received') {
+    if (msgType === 'text') {
+      return {
+        matched: false,
+        reason:
+          '📷 *Trigger "Media Received"* — active l\'option Simuler en haut du chat et choisis un type de média (image/vidéo/audio), ou envoie un vrai média depuis WhatsApp.',
+      };
+    }
+    return applyFilters()
+      ? { matched: true }
+      : { matched: false, reason: 'Les filtres du trigger excluent ce type de média.' };
+  }
+
+  if (triggerType === 'group_message') {
+    if (!isGroup) {
+      return {
+        matched: false,
+        reason:
+          '👥 *Trigger "Group Message"* — active l\'option Groupe dans le simulateur, ou teste depuis un vrai groupe WhatsApp.',
+      };
+    }
+    return applyFilters()
+      ? { matched: true }
+      : { matched: false, reason: 'Les filtres avancés du trigger excluent ce groupe.' };
+  }
+
+  if (triggerType === 'contact_message') {
+    return applyFilters()
+      ? { matched: true }
+      : {
+          matched: false,
+          reason:
+            '👤 *Trigger "Contact Message"* — configure l\'expéditeur dans le simulateur ou teste depuis le contact ciblé.',
+        };
+  }
+
+  if (triggerType === 'new_contact') {
+    return {
+      matched: false,
+      reason:
+        '🆕 *Trigger "New Contact"* — se déclenche uniquement pour un contact jamais vu. Impossible à simuler car le contact de test est toujours le même.',
+    };
+  }
+
+  if (triggerType === 'added_to_group') {
+    return {
+      matched: false,
+      reason:
+        '➕ *Trigger "Added to Group"* — se déclenche quand ta session est ajoutée à un groupe. Impossible à simuler depuis le chat de test.',
+    };
+  }
+
+  if (triggerType === 'webhook') {
+    return {
+      matched: false,
+      reason:
+        '🔗 *Trigger "Webhook"* — se déclenche par un appel HTTP externe vers `/api/webhooks`, pas par un message. Teste avec curl ou Postman.',
+    };
+  }
+
+  if (triggerType === 'schedule') {
+    return {
+      matched: false,
+      reason:
+        '⏰ *Trigger "Schedule"* — se déclenche à des heures précises (cron). Pas déclenchable depuis un message de test.',
+    };
+  }
+
+  // message_received and anything else falls through to filter-based matching.
+  if (triggerType === 'message_received') {
+    return applyFilters()
+      ? { matched: true }
+      : { matched: false, reason: 'Les filtres avancés du trigger excluent ce message.' };
+  }
+
+  // Unknown trigger type — fail safe (don't silently match).
+  return {
+    matched: false,
+    reason: `⚠️ Type de trigger inconnu : "${triggerType}". Le simulateur ne sait pas comment le tester.`,
+  };
 }
 
 // --- Route handler ---
@@ -927,7 +989,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const { message, sessionId } = await request.json();
+    const { message, sessionId, simOptions } = await request.json();
 
     if (!message || typeof message !== 'string') {
       return Response.json(

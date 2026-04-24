@@ -50,13 +50,25 @@ function LogicNode({ id, data, selected }: NodeProps<FlowNodeData>) {
   const nodeColor = isEnd ? END_COLOR : LOGIC_COLOR;
   const preview = getLogicSummary(nodeType, data.config);
 
+  const needsConfig = nodeType !== 'end' && nodeType !== 'wait-for-reply';
+  const hasConfig = (() => {
+    if (!data.config) return false;
+    switch (nodeType) {
+      case 'set-variable': return !!data.config.variableName;
+      case 'http-request': return !!data.config.url;
+      case 'ai-response': return !!data.config.prompt;
+      case 'go-to-flow': return !!data.config.flowName;
+      default: return true;
+    }
+  })();
+
   return (
-    <NodeExecutionOverlay nodeId={id}>
+    <NodeExecutionOverlay nodeId={id} warning={needsConfig && !hasConfig}>
       <div
         style={{
           width: 160,
           ...(selected
-            ? { boxShadow: `0 0 0 2.5px ${nodeColor}` }
+            ? { boxShadow: '0 0 0 2.5px white, 0 0 0 4.5px rgba(0,0,0,0.25)' }
             : { boxShadow: '0 2px 8px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)' }),
         }}
         className="rounded-xl relative"

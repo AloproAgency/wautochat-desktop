@@ -12,6 +12,8 @@ import {
   Variable, Globe, BrainCircuit, ExternalLink, CircleStop, Clock,
   Inbox, Reply, AtSign, Heart, Edit, FileX, Eye, Link as LinkIcon, Vote,
   Users as UsersIcon, User as UserIcon, Radio,
+  Bot, Tags, Layers, FileSearch, ThumbsUp, Languages,
+  Sparkles, CircleDot, Cpu, Server, Code2, Search as SearchIcon, Wrench, Database, Zap,
 } from 'lucide-react';
 
 // Node type to icon/color/gradient mapping for the header
@@ -42,7 +44,26 @@ const nodeIconConfig: Record<string, { icon: React.ElementType; bg: string; grad
   'delay':            { icon: Timer,         bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
   'set-variable':     { icon: Variable,      bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
   'http-request':     { icon: Globe,         bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
-  'ai-response':      { icon: BrainCircuit,  bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
+  'ai-response':      { icon: BrainCircuit,  bg: '#0c4a6e', gradientFrom: '#0c4a6e', gradientTo: '#0284c7', category: 'AI' },
+  'ai-agent':         { icon: Bot,           bg: '#0c4a6e', gradientFrom: '#0c4a6e', gradientTo: '#0284c7', category: 'AI' },
+  'ai-classifier':    { icon: Tags,          bg: '#0c4a6e', gradientFrom: '#0c4a6e', gradientTo: '#0284c7', category: 'AI' },
+  'ai-extractor':     { icon: Layers,        bg: '#0c4a6e', gradientFrom: '#0c4a6e', gradientTo: '#0284c7', category: 'AI' },
+  'ai-summarizer':    { icon: FileSearch,    bg: '#0c4a6e', gradientFrom: '#0c4a6e', gradientTo: '#0284c7', category: 'AI' },
+  'ai-sentiment':     { icon: ThumbsUp,      bg: '#0c4a6e', gradientFrom: '#0c4a6e', gradientTo: '#0284c7', category: 'AI' },
+  'ai-translator':    { icon: Languages,     bg: '#0c4a6e', gradientFrom: '#0c4a6e', gradientTo: '#0284c7', category: 'AI' },
+  'ai-vision':        { icon: Eye,           bg: '#0c4a6e', gradientFrom: '#0c4a6e', gradientTo: '#0284c7', category: 'AI' },
+  'llm-claude':       { icon: Sparkles,      bg: '#312e81', gradientFrom: '#312e81', gradientTo: '#6366f1', category: 'AI Model' },
+  'llm-openai':       { icon: CircleDot,     bg: '#312e81', gradientFrom: '#312e81', gradientTo: '#6366f1', category: 'AI Model' },
+  'llm-gemini':       { icon: Cpu,           bg: '#312e81', gradientFrom: '#312e81', gradientTo: '#6366f1', category: 'AI Model' },
+  'llm-ollama':       { icon: Server,        bg: '#312e81', gradientFrom: '#312e81', gradientTo: '#6366f1', category: 'AI Model' },
+  'memory-buffer':    { icon: Database,      bg: '#0f766e', gradientFrom: '#0f766e', gradientTo: '#0d9488', category: 'Memory' },
+  'memory-vector':    { icon: Layers,        bg: '#0f766e', gradientFrom: '#0f766e', gradientTo: '#0d9488', category: 'Memory' },
+  'memory-window':    { icon: FileSearch,    bg: '#0f766e', gradientFrom: '#0f766e', gradientTo: '#0d9488', category: 'Memory' },
+  'tool-code':        { icon: Code2,      bg: '#92400e', gradientFrom: '#92400e', gradientTo: '#d97706', category: 'Tool' },
+  'tool-http':        { icon: Globe,      bg: '#92400e', gradientFrom: '#92400e', gradientTo: '#d97706', category: 'Tool' },
+  'tool-search':      { icon: SearchIcon, bg: '#92400e', gradientFrom: '#92400e', gradientTo: '#d97706', category: 'Tool' },
+  'tool-mcp':         { icon: Wrench,     bg: '#92400e', gradientFrom: '#92400e', gradientTo: '#d97706', category: 'Tool' },
+  'wppconnect-all':   { icon: Zap,        bg: '#064e3b', gradientFrom: '#064e3b', gradientTo: '#10b981', category: 'WPPConnect' },
   'go-to-flow':       { icon: ExternalLink,  bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
   'wait-for-reply':   { icon: Clock,         bg: '#c2410c', gradientFrom: '#c2410c', gradientTo: '#ea580c', category: 'Logic' },
   'end':              { icon: CircleStop,    bg: '#18181b', gradientFrom: '#18181b', gradientTo: '#3f3f46', category: 'End' },
@@ -232,6 +253,20 @@ function renderConfigForm(
       return <HttpRequestConfig config={config} updateConfig={updateConfig} />;
     case 'ai-response':
       return <AiResponseConfig config={config} updateConfig={updateConfig} />;
+    case 'ai-agent':
+      return <AiAgentConfig config={config} updateConfig={updateConfig} />;
+    case 'ai-classifier':
+      return <AiClassifierConfig config={config} updateConfig={updateConfig} />;
+    case 'ai-extractor':
+      return <AiExtractorConfig config={config} updateConfig={updateConfig} />;
+    case 'ai-summarizer':
+      return <AiSummarizerConfig config={config} updateConfig={updateConfig} />;
+    case 'ai-sentiment':
+      return <AiSentimentConfig config={config} updateConfig={updateConfig} />;
+    case 'ai-translator':
+      return <AiTranslatorConfig config={config} updateConfig={updateConfig} />;
+    case 'ai-vision':
+      return <AiVisionConfig config={config} updateConfig={updateConfig} />;
     case 'assign-label':
     case 'remove-label':
       return <LabelConfig config={config} updateConfig={updateConfig} />;
@@ -256,6 +291,27 @@ function renderConfigForm(
       return <InfoText text="This node ends the flow execution. No configuration needed." />;
     case 'wait-for-reply':
       return <WaitForReplyConfig config={config} updateConfig={updateConfig} />;
+    case 'llm-claude':
+    case 'llm-openai':
+    case 'llm-gemini':
+    case 'llm-ollama':
+      return <LlmConfig config={config} updateConfig={updateConfig} nodeType={nodeType} />;
+    case 'memory-buffer':
+      return <MemoryBufferConfig config={config} updateConfig={updateConfig} />;
+    case 'memory-vector':
+      return <MemoryVectorConfig config={config} updateConfig={updateConfig} />;
+    case 'memory-window':
+      return <MemoryWindowConfig config={config} updateConfig={updateConfig} />;
+    case 'tool-code':
+      return <ToolCodeConfig config={config} updateConfig={updateConfig} />;
+    case 'tool-http':
+      return <ToolHttpConfig config={config} updateConfig={updateConfig} />;
+    case 'tool-search':
+      return <ToolSearchConfig config={config} updateConfig={updateConfig} />;
+    case 'tool-mcp':
+      return <ToolMcpConfig config={config} updateConfig={updateConfig} />;
+    case 'wppconnect-all':
+      return <WppConnectAllConfig config={config} updateConfig={updateConfig} />;
     default:
       return <InfoText text="No configuration available for this node type." />;
   }
@@ -566,7 +622,7 @@ const triggerOptionsByCategory: Record<string, { value: string; label: string }[
 };
 
 const categoryLabels: Record<string, string> = {
-  message: 'Discussion',
+  message: 'Message event',
   presence: 'Status',
   group_event: 'Group Event',
   label: 'Labels',
@@ -615,22 +671,7 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
 
   return (
     <>
-      {/* Category badge */}
-      <div className="flex items-center gap-2 p-2.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg">
-        <CategoryIcon category={triggerCategory} />
-        <div className="flex-1">
-          <div className="text-sm font-semibold text-emerald-900">
-            {categoryLabels[triggerCategory] || 'Discussion'}
-          </div>
-          <div className="text-xs text-emerald-700">
-            {triggerCategory === 'message'
-              ? 'Configurez les filtres ci-dessous'
-              : `${availableOptions.length} événement${availableOptions.length > 1 ? 's' : ''}`}
-          </div>
-        </div>
-      </div>
-
-      {/* Trigger Type dropdown — only for non-Discussion categories */}
+      {/* Trigger Type dropdown — only for non-message categories */}
       {triggerCategory !== 'message' && (
         <Field label="Trigger Type" hint="Choose the specific event">
           <SelectInput
@@ -888,263 +929,255 @@ function FilterBlock({
 
 // ---- Filter Selector Component ----
 
+const CONTENT_TYPE_OPTIONS = [
+  { value: 'text',     label: 'Texte' },
+  { value: 'image',    label: 'Image' },
+  { value: 'video',    label: 'Vidéo' },
+  { value: 'audio',    label: 'Audio' },
+  { value: 'document', label: 'Document' },
+  { value: 'sticker',  label: 'Sticker' },
+  { value: 'location', label: 'Position' },
+  { value: 'contact',  label: 'Contact' },
+  { value: 'link',     label: 'Lien' },
+  { value: 'poll',     label: 'Sondage' },
+];
+
 function TriggerFilters({ config, updateConfig }: ConfigProps) {
   const filters = (config.filters as Record<string, unknown>) || {};
+  const [newContact, setNewContact] = useState('');
 
   const updateFilter = (key: string, value: unknown) => {
     updateConfig('filters', { ...filters, [key]: value });
   };
 
-  // ===== 4 FILTRES PRINCIPAUX =====
-  // 1. Type de message (Message Type)
-  // 2. Type de contenu (Content Type / Media Type)
-  // 3. Type de discussion (Chat Type)
-  // 4. Expéditeur (Sender)
+  // Sender filter
+  const senderMode = (filters.senderMode as string) || 'all';
+  const senderList = (filters.senderList as string[]) || [];
 
-  const messageTypeFilter = (filters.messageType as string) || 'any';
-  const contentTypeFilter = (filters.mediaType as string) || 'none';
-  const chatTypeFilter = (filters.chatType as string) || 'all';
-  const senderFilter = (filters.sender as string) || '';
+  const addContact = () => {
+    const cleaned = newContact.trim().replace(/\s/g, '');
+    if (!cleaned) return;
+    if (!senderList.includes(cleaned)) {
+      updateFilter('senderList', [...senderList, cleaned]);
+    }
+    setNewContact('');
+  };
 
-  const messageFilter = (filters.content as Record<string, unknown>) || {};
-  const keywordFilter = (filters.keyword as Record<string, unknown>) || {};
+  const removeContact = (i: number) => {
+    updateFilter('senderList', senderList.filter((_, idx) => idx !== i));
+  };
 
-  const messageTypeEnabled = messageTypeFilter !== 'any';
-  const contentTypeEnabled = contentTypeFilter !== 'none';
-  const chatTypeEnabled = chatTypeFilter !== 'all';
-  const senderEnabled = senderFilter.length > 0;
+  // Chat type — normalize legacy values not in new UI options
+  const VALID_CHAT_TYPES = ['all', 'private', 'group', 'broadcast'];
+  const rawChatType = (filters.chatType as string) || 'all';
+  const chatType = VALID_CHAT_TYPES.includes(rawChatType) ? rawChatType : 'all';
 
-  // Legacy hidden filters (kept for backward compat)
-  const keywordEnabled = keywordFilter.enabled === true;
-  const contentEnabled = messageFilter.enabled === true;
+  // Content types (multi-select)
+  const contentTypes = (filters.contentTypes as string[]) || [];
+  const toggleContentType = (type: string) => {
+    if (contentTypes.includes(type)) {
+      updateFilter('contentTypes', contentTypes.filter((t) => t !== type));
+    } else {
+      updateFilter('contentTypes', [...contentTypes, type]);
+    }
+  };
 
-  const activeFiltersCount =
-    (messageTypeEnabled ? 1 : 0) +
-    (contentTypeEnabled ? 1 : 0) +
-    (chatTypeEnabled ? 1 : 0) +
-    (senderEnabled ? 1 : 0) +
-    (keywordEnabled ? 1 : 0) +
+  // Message event type — normalize legacy values not in new UI options
+  const VALID_MESSAGE_TYPES = ['any', 'new', 'reply', 'mention', 'reaction', 'forwarded', 'quoted'];
+  const rawMessageType = (filters.messageType as string) || 'any';
+  const messageType = VALID_MESSAGE_TYPES.includes(rawMessageType) ? rawMessageType : 'any';
+
+  // Content condition
+  const contentFilter = (filters.content as Record<string, unknown>) || {};
+  const contentEnabled = contentFilter.enabled === true;
+
+  const activeCount =
+    (senderMode !== 'all' && senderList.length > 0 ? 1 : 0) +
+    (chatType !== 'all' ? 1 : 0) +
+    (contentTypes.length > 0 ? 1 : 0) +
+    (messageType !== 'any' ? 1 : 0) +
     (contentEnabled ? 1 : 0);
 
   return (
     <>
       <div className="w-full h-px bg-gray-100" />
 
-      <div className="flex items-center justify-between">
-        <div>
+      <div>
+        <div className="flex items-center gap-2">
           <div className="text-sm font-medium text-gray-900">Filtres</div>
-          <div className="text-xs text-gray-500 mt-0.5">Affiner quand ce trigger se déclenche</div>
+          {activeCount > 0 && (
+            <span className="px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 rounded-full">
+              {activeCount} actif{activeCount > 1 ? 's' : ''}
+            </span>
+          )}
         </div>
-        {activeFiltersCount > 0 && (
-          <span className="px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 rounded-full">
-            {activeFiltersCount} actif{activeFiltersCount > 1 ? 's' : ''}
-          </span>
-        )}
+        <div className="text-xs text-gray-500 mt-0.5">Définissez quels messages déclenchent ce flow</div>
       </div>
 
-      {/* 1. Type de message — WHAT EVENT happened */}
-      <FilterBlock icon={Inbox} title="Type de message" description="Quel genre d'événement message">
+      {/* 1. Expéditeur */}
+      <FilterBlock
+        icon={UserIcon}
+        title="Expéditeur"
+        description={senderMode === 'all' ? 'Tout le monde' : `${senderMode === 'include' ? 'Inclure' : 'Exclure'} — ${senderList.length} contact${senderList.length > 1 ? 's' : ''}`}
+      >
+        <div className="mb-2">
+          <SegmentedControl
+            value={senderMode}
+            onChange={(v) => updateFilter('senderMode', v)}
+            options={[
+              { value: 'all', label: 'Tous' },
+              { value: 'include', label: 'Inclure' },
+              { value: 'exclude', label: 'Exclure' },
+            ]}
+          />
+        </div>
+        {senderMode !== 'all' && (
+          <>
+            {senderList.length > 0 && (
+              <div className="flex flex-col gap-1 mb-2">
+                {senderList.map((contact, i) => (
+                  <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 rounded-md border border-gray-200">
+                    <span className="text-xs text-gray-700 font-mono flex-1 truncate">{contact}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeContact(i)}
+                      className="w-4 h-4 flex items-center justify-center text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                value={newContact}
+                onChange={(e) => setNewContact(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addContact()}
+                placeholder="22991234567 ou +229..."
+                className="flex-1 px-2.5 py-1.5 text-xs text-gray-800 bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 placeholder:text-gray-400 font-mono"
+              />
+              <button
+                type="button"
+                onClick={addContact}
+                disabled={!newContact.trim()}
+                className="px-3 py-1.5 text-xs font-medium bg-emerald-500 text-white rounded-md hover:bg-emerald-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Ajouter
+              </button>
+            </div>
+            {senderList.length === 0 && (
+              <p className="text-xs text-gray-400 mt-1.5 italic">Ajouter des contacts pour filtrer</p>
+            )}
+          </>
+        )}
+      </FilterBlock>
+
+      {/* 2. Type de discussion */}
+      <FilterBlock icon={MessageSquare} title="Type de discussion" description="Privé, groupe ou diffusion">
+        <SegmentedControl
+          value={chatType}
+          onChange={(v) => updateFilter('chatType', v)}
+          options={[
+            { value: 'all', label: 'Tout' },
+            { value: 'private', label: 'Privé' },
+            { value: 'group', label: 'Groupe' },
+            { value: 'broadcast', label: 'Diffusion' },
+          ]}
+        />
+        {chatType === 'group' && (
+          <div className="mt-2">
+            <TextInput
+              value={(filters.groupId as string) || ''}
+              onChange={(v) => updateFilter('groupId', v)}
+              placeholder="ID groupe spécifique (optionnel): 120363xxx@g.us"
+            />
+          </div>
+        )}
+      </FilterBlock>
+
+      {/* 3. Type de contenu (multi-select chips) */}
+      <FilterBlock
+        icon={FileText}
+        title="Type de contenu"
+        description={contentTypes.length === 0 ? 'Tous les types (aucun filtre)' : `${contentTypes.length} type${contentTypes.length > 1 ? 's' : ''} sélectionné${contentTypes.length > 1 ? 's' : ''}`}
+      >
+        <div className="flex flex-wrap gap-1.5">
+          {CONTENT_TYPE_OPTIONS.map((opt) => {
+            const selected = contentTypes.includes(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggleContentType(opt.value)}
+                style={selected ? { backgroundColor: '#15803d', color: '#fff', borderColor: '#15803d' } : undefined}
+                className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-all ${
+                  selected
+                    ? ''
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300 hover:text-emerald-700'
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        {contentTypes.length === 0 && (
+          <p className="text-xs text-gray-400 mt-1.5 italic">Aucun = tous les types acceptés</p>
+        )}
+      </FilterBlock>
+
+      {/* 4. Condition sur le contenu du message */}
+      <FilterBlock icon={GitBranch} title="Condition sur le contenu" description="Filtrer par le texte du message">
+        <label className="flex items-center gap-2 mb-2 text-xs font-medium text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={contentEnabled}
+            onChange={(e) => updateFilter('content', { ...contentFilter, enabled: e.target.checked })}
+            className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
+          />
+          Activer ce filtre
+        </label>
+        {contentEnabled && (
+          <div className="space-y-2">
+            <SelectInput
+              value={(contentFilter.operator as string) || 'contains'}
+              onChange={(v) => updateFilter('content', { ...contentFilter, operator: v })}
+              options={[
+                { value: 'contains', label: 'Contient' },
+                { value: 'equals', label: 'Égal à' },
+                { value: 'startsWith', label: 'Commence par' },
+                { value: 'endsWith', label: 'Finit par' },
+                { value: 'regex', label: 'Expression régulière (regex)' },
+              ]}
+            />
+            <TextInput
+              value={(contentFilter.value as string) || ''}
+              onChange={(v) => updateFilter('content', { ...contentFilter, value: v })}
+              placeholder="Valeur à comparer..."
+            />
+          </div>
+        )}
+      </FilterBlock>
+
+      {/* 5. Message event */}
+      <FilterBlock icon={Inbox} title="Message event" description="Nature du message reçu">
         <SelectInput
-          value={messageTypeFilter}
+          value={messageType}
           onChange={(v) => updateFilter('messageType', v)}
           options={[
-            { value: 'any', label: 'Tous les événements' },
-            { value: 'new', label: 'Nouveau message reçu' },
+            { value: 'any', label: 'Tous les messages' },
+            { value: 'new', label: 'Nouveau message' },
             { value: 'reply', label: 'Réponse à mon message' },
             { value: 'mention', label: 'Mention (@moi)' },
             { value: 'reaction', label: 'Réaction' },
             { value: 'forwarded', label: 'Message transféré' },
             { value: 'quoted', label: 'Message cité' },
-            { value: 'edited', label: 'Message modifié' },
-            { value: 'deleted', label: 'Message supprimé' },
-            { value: 'read', label: 'Message lu (coche bleue)' },
           ]}
         />
       </FilterBlock>
 
-      {/* 2. Type de contenu — WHAT's in the message */}
-      <FilterBlock icon={FileText} title="Type de contenu" description="Quel type de contenu est envoyé">
-        <SelectInput
-          value={contentTypeFilter}
-          onChange={(v) => updateFilter('mediaType', v)}
-          options={[
-            { value: 'none', label: 'Aucun filtre (tout type)' },
-            { value: 'text_only', label: 'Texte uniquement' },
-            { value: 'any_media', label: 'Tout média (image/vidéo/audio/doc)' },
-            { value: 'image', label: 'Images' },
-            { value: 'video', label: 'Vidéos' },
-            { value: 'audio', label: 'Audio / message vocal' },
-            { value: 'document', label: 'Documents (PDF, Word, etc.)' },
-            { value: 'location', label: 'Localisation' },
-            { value: 'contact', label: 'Carte de contact' },
-            { value: 'link', label: 'Lien / URL' },
-            { value: 'poll', label: 'Sondage' },
-          ]}
-        />
-      </FilterBlock>
-
-      {/* 3. Type de discussion — WHERE */}
-      <FilterBlock icon={MessageSquare} title="Type de discussion" description="Où ce trigger doit écouter">
-        <SelectInput
-          value={chatTypeFilter}
-          onChange={(v) => updateFilter('chatType', v)}
-          options={[
-            { value: 'all', label: 'Toutes les discussions' },
-            { value: 'private', label: 'Message privé uniquement' },
-            { value: 'group', label: 'Groupe uniquement' },
-            { value: 'broadcast', label: 'Liste de diffusion uniquement' },
-            { value: 'private_or_group', label: 'Privé + Groupes (exclure diffusions)' },
-          ]}
-        />
-        {chatTypeFilter === 'group' && (
-          <div className="mt-2">
-            <TextInput
-              value={(filters.groupId as string) || ''}
-              onChange={(v) => updateFilter('groupId', v)}
-              placeholder="Groupe spécifique (optionnel): 120363xxx@g.us"
-            />
-          </div>
-        )}
-      </FilterBlock>
-
-      {/* 4. Expéditeur — WHO */}
-      <FilterBlock icon={UserIcon} title="Expéditeur" description="Filtrer par numéro ou liste de contacts (vide = tous)">
-        <TextInput
-          value={senderFilter}
-          onChange={(v) => updateFilter('sender', v)}
-          placeholder="22991234567 (séparer par virgule pour plusieurs)"
-        />
-      </FilterBlock>
-
-      {/* 5. État du contact — WHO ELSE */}
-      <FilterBlock icon={UserPlus} title="État du contact" description="Distinguer nouveaux et anciens contacts">
-        <SelectInput
-          value={(filters.contactStatus as string) || 'all'}
-          onChange={(v) => updateFilter('contactStatus', v)}
-          options={[
-            { value: 'all', label: 'Tous les contacts' },
-            { value: 'new', label: 'Nouveau contact uniquement (1er message)' },
-            { value: 'existing', label: 'Contact existant uniquement' },
-            { value: 'saved', label: 'Contact enregistré dans le carnet' },
-            { value: 'unsaved', label: 'Contact non enregistré' },
-            { value: 'labeled', label: 'Contact avec label spécifique' },
-          ]}
-        />
-        {(filters.contactStatus as string) === 'labeled' && (
-          <div className="mt-2">
-            <TextInput
-              value={(filters.contactLabel as string) || ''}
-              onChange={(v) => updateFilter('contactLabel', v)}
-              placeholder="Nom du label (ex: VIP, Prospect)"
-            />
-          </div>
-        )}
-      </FilterBlock>
-
-      {/* BONUS: Keyword & content filters (collapsed by default) */}
-      <details className="rounded-lg border border-gray-200 overflow-hidden">
-        <summary className="p-3 cursor-pointer hover:bg-gray-50 text-sm font-medium text-gray-700 flex items-center gap-2">
-          <GitBranch className="w-4 h-4 text-gray-500" />
-          Filtres avancés (mots-clés, regex…)
-        </summary>
-        <div className="p-3 border-t border-gray-200 bg-gray-50 space-y-3">
-          {/* Keyword */}
-          <div>
-            <label className="flex items-center gap-2 mb-1.5 text-xs font-medium text-gray-700">
-              <input
-                type="checkbox"
-                checked={keywordEnabled}
-                onChange={(e) => updateFilter('keyword', { ...keywordFilter, enabled: e.target.checked })}
-                className="rounded border-gray-300 text-emerald-500"
-              />
-              <Keyboard className="w-3.5 h-3.5 text-gray-500" />
-              Mots-clés
-            </label>
-            {keywordEnabled && (
-              <>
-                <textarea
-                  value={(keywordFilter.words as string) || ''}
-                  onChange={(e) => updateFilter('keyword', { ...keywordFilter, words: e.target.value })}
-                  placeholder={"bonjour\ncommande\nprix"}
-                  rows={2}
-                  className="w-full px-2 py-1.5 text-xs rounded-md border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 resize-none font-mono"
-                />
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-xs text-gray-600">Mode:</span>
-                  <SegmentedControl
-                    value={(keywordFilter.mode as string) || 'contains'}
-                    onChange={(v) => updateFilter('keyword', { ...keywordFilter, mode: v })}
-                    options={[
-                      { value: 'contains', label: 'Contient' },
-                      { value: 'exact', label: 'Exact' },
-                      { value: 'startsWith', label: 'Commence par' },
-                    ]}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Content filter */}
-          <div>
-            <label className="flex items-center gap-2 mb-1.5 text-xs font-medium text-gray-700">
-              <input
-                type="checkbox"
-                checked={contentEnabled}
-                onChange={(e) => updateFilter('content', { ...messageFilter, enabled: e.target.checked })}
-                className="rounded border-gray-300 text-emerald-500"
-              />
-              <FileText className="w-3.5 h-3.5 text-gray-500" />
-              Contenu exact / regex
-            </label>
-            {contentEnabled && (
-              <div className="space-y-1.5">
-                <SelectInput
-                  value={(messageFilter.operator as string) || 'contains'}
-                  onChange={(v) => updateFilter('content', { ...messageFilter, operator: v })}
-                  options={[
-                    { value: 'contains', label: 'Contient' },
-                    { value: 'equals', label: 'Égal à' },
-                    { value: 'startsWith', label: 'Commence par' },
-                    { value: 'endsWith', label: 'Finit par' },
-                    { value: 'regex', label: 'Regex' },
-                    { value: 'minLength', label: 'Longueur min.' },
-                    { value: 'maxLength', label: 'Longueur max.' },
-                  ]}
-                />
-                <TextInput
-                  value={(messageFilter.value as string) || ''}
-                  onChange={(v) => updateFilter('content', { ...messageFilter, value: v })}
-                  placeholder="Valeur..."
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      </details>
-
-      {/* Advanced toggles (existing) */}
-      <div className="rounded-lg border border-gray-200 p-3 space-y-2">
-        <div className="text-sm font-medium text-gray-900">⚙️ Advanced options</div>
-        <label className="flex items-center gap-2.5 text-xs text-gray-700 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={(config.ignoreOwnMessages as boolean) !== false}
-            onChange={(e) => updateConfig('ignoreOwnMessages', e.target.checked)}
-            className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
-          />
-          Ignore messages I send myself
-        </label>
-        <label className="flex items-center gap-2.5 text-xs text-gray-700 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={(config.ignoreForwarded as boolean) || false}
-            onChange={(e) => updateConfig('ignoreForwarded', e.target.checked)}
-            className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
-          />
-          Ignore forwarded messages
-        </label>
-      </div>
     </>
   );
 }
@@ -2862,6 +2895,664 @@ function WaitForReplyConfig({ config, updateConfig }: ConfigProps) {
           placeholder="Sorry, I didn't get a response in time."
           rows={3}
         />
+      </Field>
+    </>
+  );
+}
+
+// ---- AI Model Selector (shared) ----
+
+const AI_MODELS = [
+  { value: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
+  { value: 'claude-3-haiku',    label: 'Claude 3 Haiku' },
+  { value: 'gpt-4o',           label: 'GPT-4o' },
+  { value: 'gpt-4o-mini',      label: 'GPT-4o Mini' },
+];
+
+// ---- AI Agent Config ----
+
+function AiAgentConfig({ config, updateConfig }: ConfigProps) {
+  const mcpTools = [
+    'web-search', 'read-file', 'write-file', 'execute-code',
+    'http-request', 'database', 'calendar', 'email', 'slack', 'github',
+  ];
+  const selectedTools: string[] = Array.isArray(config.mcpTools) ? (config.mcpTools as string[]) : [];
+
+  function toggleTool(tool: string) {
+    const next = selectedTools.includes(tool)
+      ? selectedTools.filter((t) => t !== tool)
+      : [...selectedTools, tool];
+    updateConfig('mcpTools', next);
+  }
+
+  return (
+    <>
+      <Field label="Model">
+        <SelectInput
+          value={(config.model as string) || 'claude-3-5-sonnet'}
+          onChange={(v) => updateConfig('model', v)}
+          options={AI_MODELS}
+        />
+      </Field>
+      <Field label="System Prompt" hint="Instructions that define the agent behavior">
+        <TextArea
+          value={(config.systemPrompt as string) || ''}
+          onChange={(v) => updateConfig('systemPrompt', v)}
+          placeholder="You are a helpful assistant that can browse the web and answer questions…"
+          rows={5}
+        />
+      </Field>
+      <Field label="MCP Tools" hint="Tools available to the autonomous agent">
+        <div className="flex flex-wrap gap-1.5">
+          {mcpTools.map((tool) => (
+            <button
+              key={tool}
+              type="button"
+              onClick={() => toggleTool(tool)}
+              className={`px-2 py-1 text-xs font-medium rounded-md border transition-colors ${
+                selectedTools.includes(tool)
+                  ? 'bg-sky-800 text-white border-sky-800'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-sky-400 hover:text-sky-700'
+              }`}
+            >
+              {tool}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Max Iterations" hint="Maximum number of tool calls per run">
+        <NumberInput
+          value={(config.maxIterations as number) || 10}
+          onChange={(v) => updateConfig('maxIterations', v)}
+          min={1}
+          max={50}
+          placeholder="10"
+        />
+      </Field>
+      <Field label="Output Variable" hint="Variable to store the agent's final answer">
+        <TextInput
+          value={(config.outputVariable as string) || ''}
+          onChange={(v) => updateConfig('outputVariable', v)}
+          placeholder="agentResult"
+        />
+      </Field>
+    </>
+  );
+}
+
+// ---- AI Classifier Config ----
+
+function AiClassifierConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Input Variable" hint="Variable containing the text to classify">
+        <TextInput
+          value={(config.inputVariable as string) || ''}
+          onChange={(v) => updateConfig('inputVariable', v)}
+          placeholder="{{message}}"
+        />
+      </Field>
+      <Field label="Categories" hint="Comma-separated list of categories">
+        <TextInput
+          value={(config.categories as string) || ''}
+          onChange={(v) => updateConfig('categories', v)}
+          placeholder="positive, negative, neutral"
+        />
+      </Field>
+      <Field label="Output Variable" hint="Variable to store the detected category">
+        <TextInput
+          value={(config.outputVariable as string) || ''}
+          onChange={(v) => updateConfig('outputVariable', v)}
+          placeholder="category"
+        />
+      </Field>
+      <Field label="Model">
+        <SelectInput
+          value={(config.model as string) || 'gpt-4o-mini'}
+          onChange={(v) => updateConfig('model', v)}
+          options={AI_MODELS}
+        />
+      </Field>
+    </>
+  );
+}
+
+// ---- AI Extractor Config ----
+
+function AiExtractorConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Input Variable" hint="Variable containing the text to extract from">
+        <TextInput
+          value={(config.inputVariable as string) || ''}
+          onChange={(v) => updateConfig('inputVariable', v)}
+          placeholder="{{message}}"
+        />
+      </Field>
+      <Field label="Fields to Extract" hint="One per line: fieldName: description">
+        <TextArea
+          value={(config.fields as string) || ''}
+          onChange={(v) => updateConfig('fields', v)}
+          placeholder={"name: Full name of the person\nemail: Email address\nphone: Phone number"}
+          rows={5}
+        />
+      </Field>
+      <Field label="Output Variable" hint="Variable to store the extracted data (JSON object)">
+        <TextInput
+          value={(config.outputVariable as string) || ''}
+          onChange={(v) => updateConfig('outputVariable', v)}
+          placeholder="extractedData"
+        />
+      </Field>
+      <Field label="Model">
+        <SelectInput
+          value={(config.model as string) || 'gpt-4o-mini'}
+          onChange={(v) => updateConfig('model', v)}
+          options={AI_MODELS}
+        />
+      </Field>
+    </>
+  );
+}
+
+// ---- AI Summarizer Config ----
+
+function AiSummarizerConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Input Variable" hint="Variable containing the text to summarize">
+        <TextInput
+          value={(config.inputVariable as string) || ''}
+          onChange={(v) => updateConfig('inputVariable', v)}
+          placeholder="{{message}}"
+        />
+      </Field>
+      <Field label="Max Length (words)" hint="Maximum number of words in the summary">
+        <NumberInput
+          value={(config.maxLength as number) || 100}
+          onChange={(v) => updateConfig('maxLength', v)}
+          min={10}
+          max={1000}
+          placeholder="100"
+        />
+      </Field>
+      <Field label="Output Variable" hint="Variable to store the summary">
+        <TextInput
+          value={(config.outputVariable as string) || ''}
+          onChange={(v) => updateConfig('outputVariable', v)}
+          placeholder="summary"
+        />
+      </Field>
+      <Field label="Model">
+        <SelectInput
+          value={(config.model as string) || 'gpt-4o-mini'}
+          onChange={(v) => updateConfig('model', v)}
+          options={AI_MODELS}
+        />
+      </Field>
+    </>
+  );
+}
+
+// ---- AI Sentiment Config ----
+
+function AiSentimentConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Input Variable" hint="Variable containing the text to analyze">
+        <TextInput
+          value={(config.inputVariable as string) || ''}
+          onChange={(v) => updateConfig('inputVariable', v)}
+          placeholder="{{message}}"
+        />
+      </Field>
+      <Field label="Output Variable" hint="Stores: positive/negative/neutral + confidence score">
+        <TextInput
+          value={(config.outputVariable as string) || ''}
+          onChange={(v) => updateConfig('outputVariable', v)}
+          placeholder="sentiment"
+        />
+      </Field>
+      <Field label="Model">
+        <SelectInput
+          value={(config.model as string) || 'gpt-4o-mini'}
+          onChange={(v) => updateConfig('model', v)}
+          options={AI_MODELS}
+        />
+      </Field>
+    </>
+  );
+}
+
+// ---- AI Translator Config ----
+
+function AiTranslatorConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Input Variable" hint="Variable containing the text to translate">
+        <TextInput
+          value={(config.inputVariable as string) || ''}
+          onChange={(v) => updateConfig('inputVariable', v)}
+          placeholder="{{message}}"
+        />
+      </Field>
+      <Field label="Target Language">
+        <SelectInput
+          value={(config.targetLanguage as string) || 'English'}
+          onChange={(v) => updateConfig('targetLanguage', v)}
+          options={[
+            { value: 'French',     label: 'French' },
+            { value: 'English',    label: 'English' },
+            { value: 'Spanish',    label: 'Spanish' },
+            { value: 'Portuguese', label: 'Portuguese' },
+            { value: 'Arabic',     label: 'Arabic' },
+            { value: 'Chinese',    label: 'Chinese' },
+            { value: 'German',     label: 'German' },
+            { value: 'Italian',    label: 'Italian' },
+            { value: 'Japanese',   label: 'Japanese' },
+            { value: 'Russian',    label: 'Russian' },
+          ]}
+        />
+      </Field>
+      <Field label="Output Variable" hint="Variable to store the translated text">
+        <TextInput
+          value={(config.outputVariable as string) || ''}
+          onChange={(v) => updateConfig('outputVariable', v)}
+          placeholder="translatedText"
+        />
+      </Field>
+      <Field label="Model">
+        <SelectInput
+          value={(config.model as string) || 'gpt-4o-mini'}
+          onChange={(v) => updateConfig('model', v)}
+          options={AI_MODELS}
+        />
+      </Field>
+    </>
+  );
+}
+
+// ---- AI Vision Config ----
+
+function AiVisionConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Input Variable" hint="Variable containing the image URL to analyze">
+        <TextInput
+          value={(config.inputVariable as string) || ''}
+          onChange={(v) => updateConfig('inputVariable', v)}
+          placeholder="{{mediaUrl}}"
+        />
+      </Field>
+      <Field label="Prompt / Question" hint="What do you want to know about the image?">
+        <TextArea
+          value={(config.prompt as string) || ''}
+          onChange={(v) => updateConfig('prompt', v)}
+          placeholder="Describe what you see in this image."
+          rows={4}
+        />
+      </Field>
+      <Field label="Output Variable" hint="Variable to store the AI vision response">
+        <TextInput
+          value={(config.outputVariable as string) || ''}
+          onChange={(v) => updateConfig('outputVariable', v)}
+          placeholder="visionResult"
+        />
+      </Field>
+      <Field label="Model">
+        <SelectInput
+          value={(config.model as string) || 'gpt-4o'}
+          onChange={(v) => updateConfig('model', v)}
+          options={AI_MODELS}
+        />
+      </Field>
+    </>
+  );
+}
+
+// ---- LLM Config ----
+
+const LLM_MODEL_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  'llm-claude': [
+    { value: 'claude-opus-4-5',       label: 'Claude Opus 4.5' },
+    { value: 'claude-sonnet-4-5',     label: 'Claude Sonnet 4.5' },
+    { value: 'claude-haiku-3-5',      label: 'Claude Haiku 3.5' },
+    { value: 'claude-3-5-sonnet',     label: 'Claude 3.5 Sonnet' },
+    { value: 'claude-3-haiku',        label: 'Claude 3 Haiku' },
+  ],
+  'llm-openai': [
+    { value: 'gpt-4o',           label: 'GPT-4o' },
+    { value: 'gpt-4o-mini',      label: 'GPT-4o Mini' },
+    { value: 'gpt-4-turbo',      label: 'GPT-4 Turbo' },
+    { value: 'gpt-3.5-turbo',    label: 'GPT-3.5 Turbo' },
+  ],
+  'llm-gemini': [
+    { value: 'gemini-1.5-pro',   label: 'Gemini 1.5 Pro' },
+    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+  ],
+  'llm-ollama': [
+    { value: 'llama3.2',         label: 'Llama 3.2' },
+    { value: 'llama3.1',         label: 'Llama 3.1' },
+    { value: 'mistral',          label: 'Mistral' },
+    { value: 'codellama',        label: 'Code Llama' },
+    { value: 'phi3',             label: 'Phi-3' },
+  ],
+};
+
+function LlmConfig({ config, updateConfig, nodeType }: ConfigProps & { nodeType: string }) {
+  const modelOptions = LLM_MODEL_OPTIONS[nodeType] || [];
+  const defaultModel = modelOptions[0]?.value || '';
+
+  return (
+    <>
+      <Field label="Model" hint="The specific model version to use">
+        <SelectInput
+          value={(config.model as string) || defaultModel}
+          onChange={(v) => updateConfig('model', v)}
+          options={modelOptions}
+        />
+      </Field>
+      <Field label="Temperature" hint="Controls randomness (0 = deterministic, 1 = creative)">
+        <NumberInput
+          value={(config.temperature as number) ?? 0.7}
+          onChange={(v) => updateConfig('temperature', v)}
+          min={0}
+          max={1}
+          placeholder="0.7"
+        />
+      </Field>
+      <Field label="Max Tokens" hint="Maximum tokens to generate in the response">
+        <NumberInput
+          value={(config.maxTokens as number) || 1024}
+          onChange={(v) => updateConfig('maxTokens', v)}
+          min={1}
+          max={8192}
+          placeholder="1024"
+        />
+      </Field>
+      {nodeType === 'llm-claude' && (
+        <Field label="API Key" hint="Your Anthropic API key (leave blank to use server default)">
+          <TextInput
+            value={(config.apiKey as string) || ''}
+            onChange={(v) => updateConfig('apiKey', v)}
+            placeholder="sk-ant-..."
+          />
+        </Field>
+      )}
+      {nodeType === 'llm-openai' && (
+        <Field label="API Key" hint="Your OpenAI API key (leave blank to use server default)">
+          <TextInput
+            value={(config.apiKey as string) || ''}
+            onChange={(v) => updateConfig('apiKey', v)}
+            placeholder="sk-..."
+          />
+        </Field>
+      )}
+      {nodeType === 'llm-gemini' && (
+        <Field label="API Key" hint="Your Google AI API key (leave blank to use server default)">
+          <TextInput
+            value={(config.apiKey as string) || ''}
+            onChange={(v) => updateConfig('apiKey', v)}
+            placeholder="AIza..."
+          />
+        </Field>
+      )}
+      {nodeType === 'llm-ollama' && (
+        <Field label="Base URL" hint="URL of your local Ollama instance">
+          <TextInput
+            value={(config.baseUrl as string) || 'http://localhost:11434'}
+            onChange={(v) => updateConfig('baseUrl', v)}
+            placeholder="http://localhost:11434"
+          />
+        </Field>
+      )}
+    </>
+  );
+}
+
+// ---- Memory Configs ----
+
+function MemoryBufferConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Buffer Size" hint="Number of recent messages to keep in memory">
+        <NumberInput
+          value={(config.bufferSize as number) || 20}
+          onChange={(v) => updateConfig('bufferSize', v)}
+          min={1}
+          max={200}
+          placeholder="20"
+        />
+      </Field>
+      <Field label="Memory Key" hint="Variable name used to store and retrieve memory">
+        <TextInput
+          value={(config.memoryKey as string) || 'chat_history'}
+          onChange={(v) => updateConfig('memoryKey', v)}
+          placeholder="chat_history"
+        />
+      </Field>
+    </>
+  );
+}
+
+function MemoryVectorConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Collection Name" hint="Name of the vector store collection">
+        <TextInput
+          value={(config.collection as string) || ''}
+          onChange={(v) => updateConfig('collection', v)}
+          placeholder="my_memory"
+        />
+      </Field>
+      <Field label="Top K Results" hint="Number of similar memories to retrieve">
+        <NumberInput
+          value={(config.topK as number) || 5}
+          onChange={(v) => updateConfig('topK', v)}
+          min={1}
+          max={50}
+          placeholder="5"
+        />
+      </Field>
+      <Field label="Embedding Model" hint="Model used to create embeddings">
+        <SelectInput
+          value={(config.embeddingModel as string) || 'text-embedding-3-small'}
+          onChange={(v) => updateConfig('embeddingModel', v)}
+          options={[
+            { value: 'text-embedding-3-small', label: 'OpenAI text-embedding-3-small' },
+            { value: 'text-embedding-3-large', label: 'OpenAI text-embedding-3-large' },
+            { value: 'text-embedding-ada-002',  label: 'OpenAI ada-002' },
+          ]}
+        />
+      </Field>
+    </>
+  );
+}
+
+function MemoryWindowConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Window Size" hint="Number of conversation turns to keep in the sliding window">
+        <NumberInput
+          value={(config.windowSize as number) || 10}
+          onChange={(v) => updateConfig('windowSize', v)}
+          min={1}
+          max={100}
+          placeholder="10"
+        />
+      </Field>
+      <Field label="Memory Key" hint="Variable name used to store and retrieve memory">
+        <TextInput
+          value={(config.memoryKey as string) || 'chat_history'}
+          onChange={(v) => updateConfig('memoryKey', v)}
+          placeholder="chat_history"
+        />
+      </Field>
+    </>
+  );
+}
+
+// ---- Tool Configs ----
+
+function ToolCodeConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Language" hint="Programming language to execute">
+        <SelectInput
+          value={(config.language as string) || 'javascript'}
+          onChange={(v) => updateConfig('language', v)}
+          options={[
+            { value: 'javascript', label: 'JavaScript' },
+            { value: 'python',     label: 'Python' },
+          ]}
+        />
+      </Field>
+      <Field label="Timeout (ms)" hint="Maximum execution time in milliseconds">
+        <NumberInput
+          value={(config.timeout as number) || 5000}
+          onChange={(v) => updateConfig('timeout', v)}
+          min={100}
+          max={30000}
+          placeholder="5000"
+        />
+      </Field>
+    </>
+  );
+}
+
+function ToolHttpConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Base URL" hint="Default base URL for API requests (optional)">
+        <TextInput
+          value={(config.url as string) || ''}
+          onChange={(v) => updateConfig('url', v)}
+          placeholder="https://api.example.com"
+        />
+      </Field>
+      <Field label="Auth Header" hint="Authorization header value (e.g. Bearer token)">
+        <TextInput
+          value={(config.authHeader as string) || ''}
+          onChange={(v) => updateConfig('authHeader', v)}
+          placeholder="Bearer your-token"
+        />
+      </Field>
+    </>
+  );
+}
+
+function ToolSearchConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Provider" hint="Search provider to use">
+        <SelectInput
+          value={(config.provider as string) || 'tavily'}
+          onChange={(v) => updateConfig('provider', v)}
+          options={[
+            { value: 'tavily',     label: 'Tavily' },
+            { value: 'serper',     label: 'Serper' },
+            { value: 'brave',      label: 'Brave Search' },
+          ]}
+        />
+      </Field>
+      <Field label="API Key" hint="API key for the search provider">
+        <TextInput
+          value={(config.apiKey as string) || ''}
+          onChange={(v) => updateConfig('apiKey', v)}
+          placeholder="tvly-..."
+        />
+      </Field>
+      <Field label="Max Results" hint="Maximum number of search results to return">
+        <NumberInput
+          value={(config.maxResults as number) || 5}
+          onChange={(v) => updateConfig('maxResults', v)}
+          min={1}
+          max={20}
+          placeholder="5"
+        />
+      </Field>
+    </>
+  );
+}
+
+function ToolMcpConfig({ config, updateConfig }: ConfigProps) {
+  return (
+    <>
+      <Field label="Server URL" hint="URL of the MCP server to connect to">
+        <TextInput
+          value={(config.serverUrl as string) || ''}
+          onChange={(v) => updateConfig('serverUrl', v)}
+          placeholder="http://localhost:3001"
+        />
+      </Field>
+      <Field label="Tool Name" hint="Specific tool name to expose (leave blank for all tools)">
+        <TextInput
+          value={(config.toolName as string) || ''}
+          onChange={(v) => updateConfig('toolName', v)}
+          placeholder="my_tool"
+        />
+      </Field>
+    </>
+  );
+}
+
+const WPP_CAPABILITIES = [
+  { key: 'messaging', label: 'Messaging',  description: 'Send & receive messages' },
+  { key: 'media',     label: 'Media',      description: 'Images, files, audio, video' },
+  { key: 'groups',    label: 'Groups',     description: 'Create & manage groups' },
+  { key: 'labels',    label: 'Labels',     description: 'Assign & manage labels' },
+  { key: 'contacts',  label: 'Contacts',   description: 'Access contact list' },
+  { key: 'status',    label: 'Status',     description: 'View & post status updates' },
+  { key: 'profile',   label: 'Profile',    description: 'Update profile info & picture' },
+];
+
+function WppConnectAllConfig({ config, updateConfig }: ConfigProps) {
+  const allEnabled = (config.allCapabilities as boolean) !== false;
+  const enabled = (config.capabilities as Record<string, boolean>) || {};
+
+  function toggleAll(v: boolean) {
+    updateConfig('allCapabilities', v);
+  }
+
+  function toggleCap(key: string, v: boolean) {
+    updateConfig('capabilities', { ...enabled, [key]: v });
+  }
+
+  return (
+    <>
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 mb-2">
+        <p className="text-[11px] text-emerald-800 leading-snug">
+          This node grants the AI Agent full access to all WPPConnect methods — acting like an MCP server for your WhatsApp account. The agent can send messages, manage groups, handle labels, and more.
+        </p>
+      </div>
+      <Field label="Capabilities">
+        <label className="flex items-center gap-2.5 py-2 cursor-pointer border-b border-slate-100 mb-2">
+          <input
+            type="checkbox"
+            checked={allEnabled}
+            onChange={(e) => toggleAll(e.target.checked)}
+            className="rounded border-slate-300 text-emerald-500 focus:ring-emerald-500"
+          />
+          <span className="text-sm font-semibold text-slate-800">All capabilities</span>
+        </label>
+        <div className="space-y-1">
+          {WPP_CAPABILITIES.map(({ key, label, description }) => (
+            <label key={key} className="flex items-start gap-2.5 py-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allEnabled || (enabled[key] !== false && enabled[key] !== undefined ? !!enabled[key] : false)}
+                disabled={allEnabled}
+                onChange={(e) => toggleCap(key, e.target.checked)}
+                className="mt-0.5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500 disabled:opacity-40"
+              />
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold text-slate-700">{label}</div>
+                <div className="text-[10px] text-slate-400 leading-tight">{description}</div>
+              </div>
+            </label>
+          ))}
+        </div>
       </Field>
     </>
   );

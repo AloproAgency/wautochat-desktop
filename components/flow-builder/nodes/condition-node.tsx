@@ -18,12 +18,12 @@ function ConditionNode({ id, data, selected }: NodeProps<FlowNodeData>) {
   const expression = `${leftOperand} ${operator} ${rightOperand}`;
 
   return (
-    <NodeExecutionOverlay nodeId={id}>
+    <NodeExecutionOverlay nodeId={id} warning={!leftOperand}>
       <div
         style={{
           width: 160,
           ...(selected
-            ? { boxShadow: `0 0 0 2.5px ${NODE_COLOR}` }
+            ? { boxShadow: '0 0 0 2.5px white, 0 0 0 4.5px rgba(0,0,0,0.25)' }
             : { boxShadow: '0 2px 8px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)' }),
         }}
         className="rounded-xl relative"

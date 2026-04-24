@@ -57,13 +57,15 @@ function MessageNode({ id, data, selected }: NodeProps<FlowNodeData>) {
   const label = data.label || messageLabels[nodeType] || 'Send Message';
   const preview = getPreview(nodeType, data.config);
 
+  const hasConfig = Object.keys(data.config || {}).length > 0;
+
   return (
-    <NodeExecutionOverlay nodeId={id}>
+    <NodeExecutionOverlay nodeId={id} warning={!hasConfig}>
       <div
         style={{
           width: 160,
           ...(selected
-            ? { boxShadow: `0 0 0 2.5px ${NODE_COLOR}` }
+            ? { boxShadow: '0 0 0 2.5px white, 0 0 0 4.5px rgba(0,0,0,0.25)' }
             : { boxShadow: '0 2px 8px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)' }),
         }}
         className="rounded-xl relative"
