@@ -18,7 +18,9 @@ import {
   Zap,
 } from 'lucide-react';
 
-const COLOR = '#6366f1';
+const FROM_COLOR = '#5b21b6';
+const TO_COLOR = '#7c3aed';
+const NODE_COLOR = '#5b21b6';
 
 const actionIcons: Record<string, React.ElementType> = {
   'send-reaction': SmilePlus,
@@ -50,59 +52,51 @@ function ActionNode({ id, data, selected }: NodeProps<FlowNodeData>) {
   const nodeType = data.type;
   const Icon = actionIcons[nodeType] || Zap;
   const label = data.label || actionLabels[nodeType] || 'Action';
-  const desc = getActionDescription(nodeType, data.config);
+  const preview = getActionDescription(nodeType, data.config);
 
   return (
     <NodeExecutionOverlay nodeId={id}>
-    <div
-      style={{ width: 260, borderLeftColor: COLOR }}
-      className={`flex items-center gap-3 rounded-xl bg-white border border-gray-200 border-l-4 px-3.5 py-3 transition-all hover:shadow-lg ${
-        selected ? 'ring-2 ring-blue-400 shadow-lg' : 'shadow-md'
-      }`}
-    >
-      <Handle
-        type="target"
-        position={Position.Top}
-        style={{
-          width: 14,
-          height: 14,
-          background: COLOR,
-          border: '2.5px solid white',
-
-        }}
-      />
       <div
-        style={{ backgroundColor: COLOR, width: 44, height: 44 }}
-        className="rounded-full flex items-center justify-center shrink-0 shadow-sm"
-      >
-        <Icon style={{ width: 22, height: 22 }} className="text-white" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div
-          style={{ fontSize: 14 }}
-          className="font-bold text-gray-900 truncate leading-tight"
-        >
-          {label}
-        </div>
-        <div
-          style={{ fontSize: 12 }}
-          className="text-gray-500 truncate mt-0.5 leading-tight"
-        >
-          {desc || 'Not configured'}
-        </div>
-      </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
         style={{
-          width: 14,
-          height: 14,
-          background: COLOR,
-          border: '2.5px solid white',
-
+          width: 160,
+          ...(selected
+            ? { boxShadow: `0 0 0 2.5px ${NODE_COLOR}` }
+            : { boxShadow: '0 2px 8px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)' }),
         }}
-      />
-    </div>
+        className="rounded-xl relative"
+      >
+        {/* Target handle */}
+        <Handle
+          type="target"
+          position={Position.Left}
+          style={{ width: 12, height: 12, background: 'white', border: `2.5px solid ${NODE_COLOR}` }}
+        />
+
+        {/* Full gradient card */}
+        <div
+          style={{ background: `linear-gradient(135deg, ${FROM_COLOR}, ${TO_COLOR})` }}
+          className="rounded-xl px-2.5 py-2 flex items-center gap-2"
+        >
+          {/* Icon badge: white bg, colored icon */}
+          <div className="w-7 h-7 rounded-lg bg-white/90 shadow-sm flex items-center justify-center shrink-0">
+            <Icon className="w-[15px] h-[15px]" style={{ color: FROM_COLOR }} />
+          </div>
+          {/* Text */}
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] font-semibold text-white truncate leading-tight">{label}</div>
+            <div className="text-[9px] text-white/70 truncate leading-tight mt-0.5">
+              {preview || <span className="italic opacity-60">Not set</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* Source handle */}
+        <Handle
+          type="source"
+          position={Position.Right}
+          style={{ width: 12, height: 12, background: 'white', border: `2.5px solid ${NODE_COLOR}` }}
+        />
+      </div>
     </NodeExecutionOverlay>
   );
 }

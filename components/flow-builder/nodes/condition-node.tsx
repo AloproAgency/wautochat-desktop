@@ -6,108 +6,76 @@ import type { FlowNodeData } from '@/lib/types';
 import NodeExecutionOverlay from '../node-execution-overlay';
 import { GitBranch } from 'lucide-react';
 
-const COLOR = '#f59e0b';
-const GREEN = '#22c55e';
-const RED = '#ef4444';
+const FROM_COLOR = '#c2410c';
+const TO_COLOR = '#ea580c';
+const NODE_COLOR = '#c2410c';
 
 function ConditionNode({ id, data, selected }: NodeProps<FlowNodeData>) {
   const label = data.label || 'Condition';
   const leftOperand = (data.config?.leftOperand as string) || '';
   const operator = (data.config?.operator as string) || 'equals';
   const rightOperand = (data.config?.rightOperand as string) || '';
-  const expression = leftOperand
-    ? `${leftOperand} ${operator} ${rightOperand}`
-    : 'No condition set';
+  const expression = `${leftOperand} ${operator} ${rightOperand}`;
 
   return (
     <NodeExecutionOverlay nodeId={id}>
-    <div style={{ width: 260 }} className="relative">
-      {/* Main card */}
       <div
-        style={{ borderLeftColor: COLOR }}
-        className={`rounded-xl bg-white border border-gray-200 border-l-4 px-3.5 py-3 transition-all hover:shadow-lg ${
-          selected ? 'ring-2 ring-blue-400 shadow-lg' : 'shadow-md'
-        }`}
+        style={{
+          width: 160,
+          ...(selected
+            ? { boxShadow: `0 0 0 2.5px ${NODE_COLOR}` }
+            : { boxShadow: '0 2px 8px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)' }),
+        }}
+        className="rounded-xl relative"
       >
+        {/* Target handle */}
         <Handle
           type="target"
-          position={Position.Top}
-          style={{
-            width: 14,
-            height: 14,
-            background: COLOR,
-            border: '2.5px solid white',
-  
-          }}
+          position={Position.Left}
+          style={{ width: 12, height: 12, background: 'white', border: `2.5px solid ${NODE_COLOR}` }}
         />
-        <div className="flex items-center gap-3">
-          <div
-            style={{ backgroundColor: COLOR, width: 44, height: 44 }}
-            className="rounded-full flex items-center justify-center shrink-0 shadow-sm"
-          >
-            <GitBranch style={{ width: 22, height: 22 }} className="text-white" />
+
+        {/* Full gradient card */}
+        <div
+          style={{ background: `linear-gradient(135deg, ${FROM_COLOR}, ${TO_COLOR})` }}
+          className="rounded-xl px-2.5 py-2"
+        >
+          {/* Main row — "Yes" label on right aligns with Yes handle at ~38% */}
+          <div className="flex items-center gap-1.5">
+            <div className="w-7 h-7 rounded-lg bg-white/90 shadow-sm flex items-center justify-center shrink-0">
+              <GitBranch className="w-[15px] h-[15px]" style={{ color: FROM_COLOR }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] font-semibold text-white truncate leading-tight">{label}</div>
+              <div className="text-[9px] text-white/70 truncate leading-tight mt-0.5">
+                {leftOperand ? expression : <span className="italic opacity-60">Not set</span>}
+              </div>
+            </div>
+            <span className="text-[9px] font-bold text-green-200 shrink-0 pl-1">Yes</span>
           </div>
-          <div className="flex-1 min-w-0">
-            <div
-              style={{ fontSize: 14 }}
-              className="font-bold text-gray-900 truncate leading-tight"
-            >
-              {label}
-            </div>
-            <div
-              style={{ fontSize: 12 }}
-              className="text-gray-500 truncate mt-0.5 leading-tight"
-            >
-              {expression}
-            </div>
+
+          {/* No row — "No" label on right aligns with No handle at ~80% */}
+          <div className="flex justify-end mt-1.5 pt-1.5 border-t border-white/20">
+            <span className="text-[9px] font-bold text-red-200">No</span>
           </div>
         </div>
+
+        {/* Yes handle — aligned with main content row (~38% from top) */}
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="yes"
+          style={{ top: '38%', width: 12, height: 12, background: 'white', border: '2.5px solid #16a34a' }}
+        />
+
+        {/* No handle — aligned with Yes/No label row (~80% from top) */}
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="no"
+          style={{ top: '80%', width: 12, height: 12, background: 'white', border: '2.5px solid #dc2626' }}
+        />
       </div>
-
-      {/* Yes/No labels below card */}
-      <div className="flex justify-between mt-1.5 px-6">
-        <span
-          style={{ fontSize: 11, color: GREEN }}
-          className="font-semibold bg-green-50 px-2 py-0.5 rounded-full"
-        >
-          Yes
-        </span>
-        <span
-          style={{ fontSize: 11, color: RED }}
-          className="font-semibold bg-red-50 px-2 py-0.5 rounded-full"
-        >
-          No
-        </span>
-      </div>
-
-      {/* Output handles */}
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="yes"
-        style={{
-          left: '30%',
-          width: 14,
-          height: 14,
-          background: GREEN,
-          border: '2.5px solid white',
-
-        }}
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="no"
-        style={{
-          left: '70%',
-          width: 14,
-          height: 14,
-          background: RED,
-          border: '2.5px solid white',
-
-        }}
-      />
-    </div>
     </NodeExecutionOverlay>
   );
 }
