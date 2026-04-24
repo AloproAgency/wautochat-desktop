@@ -162,6 +162,13 @@ function initializeDatabase(db: Database.Database) {
       FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
     );
 
+    -- Application-wide key/value settings (AI provider config, etc.)
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_contacts_session ON contacts(session_id);
     CREATE INDEX IF NOT EXISTS idx_chats_session ON chats(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id);

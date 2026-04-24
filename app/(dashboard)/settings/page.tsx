@@ -24,6 +24,10 @@ import {
   Activity,
   Send as SendIcon,
   Check,
+  BrainCircuit,
+  Eye,
+  EyeOff,
+  KeyRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -644,6 +648,9 @@ export default function SettingsPage() {
           </CardBody>
         </Card>
 
+        {/* AI Provider Settings */}
+        <AiProviderCard />
+
         {/* Danger Zone */}
         <Card className="border-wa-danger/30">
           <CardHeader>
@@ -742,5 +749,292 @@ function WebhookEventCheckbox({
         </div>
       </div>
     </label>
+  );
+}
+
+// ---- AI Provider Card ----
+
+type AiProvider = 'groq' | 'openai' | 'anthropic' | 'gemini';
+
+const AI_PROVIDERS: Array<{ value: AiProvider; label: string; docs: string }> = [
+  { value: 'groq', label: 'Groq (gratuit, très rapide)', docs: 'https://console.groq.com/keys' },
+  { value: 'gemini', label: 'Google Gemini (free tier généreux)', docs: 'https://aistudio.google.com/apikey' },
+  { value: 'openai', label: 'OpenAI (payant)', docs: 'https://platform.openai.com/api-keys' },
+  { value: 'anthropic', label: 'Anthropic Claude (payant)', docs: 'https://console.anthropic.com/settings/keys' },
+];
+
+const AI_MODELS: Record<AiProvider, { value: string; label: string }[]> = {
+  groq: [
+    { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (rapide, défaut)' },
+    { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B (ultra-rapide)' },
+    { value: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B' },
+    { value: 'gemma2-9b-it', label: 'Gemma 2 9B' },
+  ],
+  openai: [
+    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+    { value: 'gpt-4o', label: 'GPT-4o' },
+    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+  ],
+  anthropic: [
+    { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+    { value: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
+  ],
+  gemini: [
+    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+  ],
+};
+
+function AiProviderCard() {
+  const [loading, setLoading] = useState(true);
+  const [configured, setConfigured] = useState(false);
+  const [apiKeyMasked, setApiKeyMasked] = useState('');
+  const [provider, setProvider] = useState<AiProvider>('groq');
+  const [apiKey, setApiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [model, setModel] = useState<string>(AI_MODELS.groq[0].value);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Load current settings on mount
+  useEffect(() => {
+    fetch('/api/settings/ai')
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data) {
+          setConfigured(true);
+          setProvider(json.data.provider);
+          setModel(json.data.model);
+          setApiKeyMasked(json.data.apiKeyMasked);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // When provider changes, reset model to the first one for that provider
+  useEffect(() => {
+    if (!AI_MODELS[provider].some((m) => m.value === model)) {
+      setModel(AI_MODELS[provider][0].value);
+    }
+  }, [provider, model]);
+
+  async function handleSave() {
+    if (!apiKey.trim()) {
+      setTestResult({ ok: false, msg: 'Entre une clé API avant de sauvegarder.' });
+      return;
+    }
+    setSaving(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/settings/ai', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, apiKey: apiKey.trim(), model }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setTestResult({ ok: false, msg: json.error || 'Erreur à la sauvegarde' });
+        return;
+      }
+      setConfigured(true);
+      setApiKey('');
+      setTestResult({ ok: true, msg: 'Configuration sauvegardée !' });
+      // Refresh masked key preview
+      const gr = await fetch('/api/settings/ai').then((r) => r.json());
+      if (gr.success && gr.data) setApiKeyMasked(gr.data.apiKeyMasked);
+    } catch (err) {
+      setTestResult({ ok: false, msg: err instanceof Error ? err.message : 'Erreur réseau' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    if (!apiKey.trim()) {
+      setTestResult({ ok: false, msg: 'Entre une clé API à tester.' });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch('/api/settings/ai/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, apiKey: apiKey.trim(), model }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setTestResult({ ok: true, msg: `✅ Connexion OK. Réponse : ${json.data.sample}` });
+      } else {
+        setTestResult({ ok: false, msg: `❌ ${json.error}` });
+      }
+    } catch (err) {
+      setTestResult({ ok: false, msg: err instanceof Error ? err.message : 'Erreur réseau' });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handleClear() {
+    if (!confirm('Supprimer la configuration IA ? Les nodes AI Response ne fonctionneront plus.')) return;
+    try {
+      await fetch('/api/settings/ai', { method: 'DELETE' });
+      setConfigured(false);
+      setApiKeyMasked('');
+      setApiKey('');
+      setTestResult(null);
+    } catch {
+      // ignore
+    }
+  }
+
+  const providerMeta = AI_PROVIDERS.find((p) => p.value === provider);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <BrainCircuit className="h-5 w-5 text-wa-teal" />
+          <h2 className="text-lg font-semibold text-wa-text">AI Provider</h2>
+        </div>
+        <p className="mt-1 text-sm text-wa-text-secondary">
+          Configure un provider pour activer le nœud <span className="font-medium">AI Response</span> dans tes flows.
+        </p>
+      </CardHeader>
+      <CardBody className="space-y-4">
+        {loading ? (
+          <div className="flex justify-center py-4"><Spinner /></div>
+        ) : (
+          <>
+            {configured && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 flex items-center gap-2">
+                <Check className="h-4 w-4 text-emerald-600 shrink-0" />
+                <p className="text-xs text-emerald-700 flex-1">
+                  Provider configuré : <span className="font-semibold">{AI_PROVIDERS.find((p) => p.value === provider)?.label}</span>
+                  {' · clé '}<span className="font-mono">{apiKeyMasked}</span>
+                </p>
+                <button
+                  onClick={handleClear}
+                  className="text-xs text-red-600 hover:underline"
+                  type="button"
+                >
+                  Supprimer
+                </button>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-wa-text mb-1.5">Provider</label>
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {AI_PROVIDERS.map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setProvider(p.value)}
+                    className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                      provider === p.value
+                        ? 'border-wa-teal bg-wa-teal/5 text-wa-text ring-1 ring-wa-teal/30'
+                        : 'border-wa-border bg-white text-wa-text hover:bg-gray-50'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {providerMeta && (
+                <p className="mt-1.5 text-xs text-wa-text-muted">
+                  Obtenir une clé :{' '}
+                  <a
+                    href={providerMeta.docs}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-wa-teal hover:underline"
+                  >
+                    {providerMeta.docs.replace(/^https?:\/\//, '')}
+                  </a>
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-wa-text mb-1.5">API Key</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder={configured ? `Remplacer (actuel : ${apiKeyMasked})` : 'sk-... / gsk_... / ...'}
+                    className="w-full rounded-lg border border-wa-border bg-white px-3 py-2 pr-9 text-sm text-wa-text placeholder:text-wa-text-muted focus:border-wa-teal focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-wa-text-muted hover:text-wa-text"
+                  >
+                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+              <p className="mt-1 text-xs text-wa-text-muted flex items-center gap-1">
+                <KeyRound className="h-3 w-3" />
+                La clé est stockée localement dans la base SQLite, jamais envoyée au navigateur.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-wa-text mb-1.5">Modèle par défaut</label>
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full rounded-lg border border-wa-border bg-white px-3 py-2 text-sm text-wa-text focus:border-wa-teal focus:outline-none"
+              >
+                {AI_MODELS[provider].map((m) => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-wa-text-muted">
+                Tu pourras toujours override ce modèle dans chaque nœud AI Response.
+              </p>
+            </div>
+
+            {testResult && (
+              <div
+                className={`rounded-lg border px-3 py-2 text-xs ${
+                  testResult.ok
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-red-200 bg-red-50 text-red-700'
+                }`}
+              >
+                {testResult.msg}
+              </div>
+            )}
+          </>
+        )}
+      </CardBody>
+      <CardFooter className="flex justify-end gap-2">
+        <Button
+          variant="secondary"
+          onClick={handleTest}
+          loading={testing}
+          disabled={!apiKey.trim() || saving}
+          icon={<Zap className="h-4 w-4" />}
+        >
+          Tester la clé
+        </Button>
+        <Button
+          onClick={handleSave}
+          loading={saving}
+          disabled={!apiKey.trim() || testing}
+          icon={<Save className="h-4 w-4" />}
+        >
+          Sauvegarder
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }

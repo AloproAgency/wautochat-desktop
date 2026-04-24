@@ -77,6 +77,9 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  // True when the flow is paused at a Wait for Reply node, waiting for the
+  // user's next message to resume execution.
+  const [isPaused, setIsPaused] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -199,17 +202,8 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
           }
         }
 
-        // Show waiting indicator when flow is paused at wait-for-reply
-        if (json.data?.paused) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-          setMessages((prev) => [...prev, {
-            id: `wait_${Date.now()}`,
-            text: 'Waiting for your reply...',
-            fromMe: false,
-            timestamp: new Date(),
-            status: 'read' as const,
-          }]);
-        }
+        // Toggle the "flow paused" banner so the user sees exactly what to do next.
+        setIsPaused(Boolean(json.data?.paused));
       } else if (!json.success) {
         const errorMsg: ChatMessage = {
           id: `err_${Date.now()}`,
@@ -246,6 +240,7 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
   const handleClearChat = useCallback(() => {
     setMessages([]);
     setUnreadCount(0);
+    setIsPaused(false);
   }, []);
 
   return (
@@ -605,6 +600,22 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* "Flow paused" banner: appears when a Wait for Reply node is active.
+              Tells the user explicitly that they need to send another message
+              to resume execution (otherwise the flow stays paused forever). */}
+          {isPaused && (
+            <div
+              className="flex items-center gap-2 px-4 py-2 shrink-0 border-t"
+              style={{ backgroundColor: '#fef3c7', borderColor: '#fde68a' }}
+            >
+              <span className="text-base leading-none">⏳</span>
+              <p className="text-xs leading-snug" style={{ color: '#92400e' }}>
+                <span className="font-semibold">Flow en pause — </span>
+                envoie un message pour reprendre l&apos;exécution.
+              </p>
+            </div>
+          )}
+
           {/* Input area */}
           <div
             className="flex items-center shrink-0 px-2 gap-1"
@@ -633,7 +644,7 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Type a message"
+                placeholder={isPaused ? 'Tape ta réponse pour reprendre…' : 'Type a message'}
                 className="w-full border-none outline-none text-sm"
                 style={{
                   backgroundColor: '#ffffff',

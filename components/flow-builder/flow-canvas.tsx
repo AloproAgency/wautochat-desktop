@@ -834,6 +834,7 @@ function FlowCanvasInner({
               key={selectedNode.id}
               node={selectedNode}
               sessionId={sessionId}
+              currentFlowId={flowId}
               onClose={() => {
                 setSelectedNode(null);
                 setShowMobileConfig(false);
@@ -859,6 +860,7 @@ function FlowCanvasInner({
           key={selectedNode.id}
           node={selectedNode}
           sessionId={sessionId}
+          currentFlowId={flowId}
           onClose={() => setSelectedNode(null)}
           onUpdate={onUpdateNode}
           onDelete={onDeleteNode}

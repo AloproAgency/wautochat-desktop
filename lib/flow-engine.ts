@@ -16,6 +16,11 @@ interface FlowContext {
   session: Session;
   sender: string;
   chatId: string;
+  /**
+   * Chain of flow IDs already traversed via `go-to-flow`. Propagated through
+   * the context so nested sub-flows can detect loops.
+   */
+  flowStack?: Set<string>;
 }
 
 interface ExecutionLogEntry {
@@ -383,12 +388,30 @@ export async function resumeFlowAfterWait(
 export async function executeFlow(
   flow: Flow,
   message: Record<string, unknown>,
-  session: Session
+  session: Session,
+  /**
+   * Optional variables to seed the execution with. Used when a flow jumps
+   * into another flow via `go-to-flow`: the parent's runtime variables are
+   * passed through so the sub-flow can reuse them (e.g. values captured by
+   * Set Variable or HTTP Request in the parent).
+   */
+  initialVariables?: Record<string, string>,
+  /**
+   * Chain of flow IDs already traversed via `go-to-flow`. Used to detect
+   * infinite recursion (A → B → A) and prevent stack overflow.
+   */
+  flowStack?: Set<string>
 ): Promise<ExecutionLogEntry[]> {
   const executionId = randomUUID();
   const log: ExecutionLogEntry[] = [];
+
+  // Track this flow in the traversal chain so nested go-to-flow calls can detect loops.
+  const stack = new Set(flowStack || []);
+  stack.add(flow.id);
+
   const ctx: FlowContext = {
-    variables: { ...flow.variables },
+    // Flow-level defaults first, then parent's runtime vars last so they win.
+    variables: { ...flow.variables, ...(initialVariables || {}) },
     message,
     session,
     sender:
@@ -400,6 +423,7 @@ export async function executeFlow(
       (message.chatId as string) ||
       (message.from as string) ||
       '',
+    flowStack: stack,
   };
 
   flowExecutionBus.emit({
@@ -409,15 +433,59 @@ export async function executeFlow(
     timestamp: new Date().toISOString(),
   });
 
-  // Find trigger node
+  // Find trigger node (optional). If present, we emit a "pulse" and start
+  // from its downstream edges. If absent, we fall back to every root node
+  // (a node with no incoming edge) so sub-flows jumped into via `go-to-flow`
+  // still execute even when the author didn't add a trigger.
   const triggerNode = flow.nodes.find((n) => n.data.type === 'trigger');
-  if (!triggerNode) {
+  let startTargets: string[] = [];
+
+  if (triggerNode) {
+    flowExecutionBus.emit({
+      type: 'node:executing',
+      flowId: flow.id,
+      executionId,
+      nodeId: triggerNode.id,
+      nodeType: 'trigger',
+      nodeLabel: triggerNode.data.label,
+      timestamp: new Date().toISOString(),
+    });
+    await delay(300);
+    flowExecutionBus.emit({
+      type: 'node:completed',
+      flowId: flow.id,
+      executionId,
+      nodeId: triggerNode.id,
+      nodeType: 'trigger',
+      nodeLabel: triggerNode.data.label,
+      timestamp: new Date().toISOString(),
+      data: { status: 'success', durationMs: 0 },
+    });
+
+    startTargets = getNextNodes(triggerNode.id, flow.edges);
+
+    // If the trigger has no outgoing edges, fall back to root nodes.
+    if (startTargets.length === 0) {
+      const targets = new Set(flow.edges.map((e) => e.target));
+      startTargets = flow.nodes
+        .filter((n) => n.id !== triggerNode.id && !targets.has(n.id))
+        .map((n) => n.id);
+    }
+  } else {
+    // No trigger node at all — run every root node.
+    const targets = new Set(flow.edges.map((e) => e.target));
+    startTargets = flow.nodes
+      .filter((n) => !targets.has(n.id))
+      .map((n) => n.id);
+  }
+
+  if (startTargets.length === 0) {
     log.push({
       nodeId: 'none',
       nodeType: 'trigger',
-      label: 'Missing Trigger',
+      label: 'Empty flow',
       status: 'error',
-      error: 'No trigger node found in flow',
+      error: 'Flow has no executable nodes',
       timestamp: new Date().toISOString(),
     });
     flowExecutionBus.emit({
@@ -425,35 +493,10 @@ export async function executeFlow(
       flowId: flow.id,
       executionId,
       timestamp: new Date().toISOString(),
-      data: { status: 'error', error: 'No trigger node found in flow' },
+      data: { status: 'error', error: 'Flow has no executable nodes' },
     });
     return log;
   }
-
-  // Emit trigger node execution events (with small delay so UI can show the pulse)
-  flowExecutionBus.emit({
-    type: 'node:executing',
-    flowId: flow.id,
-    executionId,
-    nodeId: triggerNode.id,
-    nodeType: 'trigger',
-    nodeLabel: triggerNode.data.label,
-    timestamp: new Date().toISOString(),
-  });
-  await delay(300);
-  flowExecutionBus.emit({
-    type: 'node:completed',
-    flowId: flow.id,
-    executionId,
-    nodeId: triggerNode.id,
-    nodeType: 'trigger',
-    nodeLabel: triggerNode.data.label,
-    timestamp: new Date().toISOString(),
-    data: { status: 'success', durationMs: 0 },
-  });
-
-  // Start from trigger, get next nodes
-  const startTargets = getNextNodes(triggerNode.id, flow.edges);
 
   for (const targetId of startTargets) {
     await executeNode(targetId, flow.nodes, flow.edges, ctx, log, new Set(), flow.id, executionId);
@@ -965,12 +1008,28 @@ async function executeNode(
       }
 
       case 'ai-response': {
-        // AI response would require an AI provider integration
-        // Store the prompt and let the implementer handle it
         const prompt = interpolateVariables((config.prompt as string) || '', ctx);
         const aiVar = (config.responseVariable as string) || 'aiResponse';
-        ctx.variables[aiVar] = `[AI Response for: ${prompt}]`;
-        entry.result = { prompt, note: 'AI provider integration required' };
+        const model = (config.model as string) || undefined;
+        const maxTokens = (config.maxTokens as number) || undefined;
+        const temperature = (config.temperature as number) || undefined;
+
+        if (!prompt.trim()) {
+          throw new Error('AI prompt is empty — configure a prompt in the node settings');
+        }
+
+        // Dynamic import avoids loading the AI lib when unused
+        const { callAi } = await import('@/lib/ai-providers');
+        const aiResult = await callAi({ prompt, model, maxTokens, temperature });
+
+        ctx.variables[aiVar] = aiResult.text;
+        entry.result = {
+          provider: aiResult.provider,
+          model: aiResult.model,
+          tokensUsed: aiResult.tokensUsed,
+          preview: aiResult.text.slice(0, 120),
+          variable: aiVar,
+        };
         break;
       }
 
@@ -1305,6 +1364,16 @@ async function executeNode(
         if (targetFlowId === flowId) {
           throw new Error('Cannot jump to the same flow (infinite loop)');
         }
+        // Prevent indirect recursion A → B → A (and deeper cycles)
+        if (ctx.flowStack && ctx.flowStack.has(targetFlowId)) {
+          throw new Error(
+            `Cyclic Go to Flow detected: "${targetFlowId}" is already in the execution chain`
+          );
+        }
+        // Hard cap on depth to prevent runaway chains
+        if (ctx.flowStack && ctx.flowStack.size >= 10) {
+          throw new Error('Go to Flow depth limit (10) reached');
+        }
 
         const db = getDb();
         const flowRow = db.prepare(`SELECT * FROM flows WHERE id = ?`).get(targetFlowId) as Record<string, unknown> | undefined;
@@ -1325,7 +1394,13 @@ async function executeNode(
           createdAt: flowRow.created_at as string,
           updatedAt: flowRow.updated_at as string,
         };
-        const subLog = await executeFlow(targetFlow, ctx.message, ctx.session);
+        const subLog = await executeFlow(
+          targetFlow,
+          ctx.message,
+          ctx.session,
+          ctx.variables,
+          ctx.flowStack
+        );
         entry.result = {
           flowId: targetFlowId,
           flowName: targetFlow.name,
