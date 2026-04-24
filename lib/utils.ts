@@ -5,14 +5,47 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+import { parsePhoneNumberFromString, getCountryCallingCode, type CountryCode } from "libphonenumber-js";
+
+/** Group digits by 2 (e.g. "57222777" → "57 22 27 77") for readability. */
+function groupByPairs(digits: string): string {
+  return digits.replace(/(\d{2})(?=\d)/g, "$1 ");
+}
+
+/**
+ * Format a raw WhatsApp phone number into a human-readable international form:
+ *   22957222777  →  +229 57 22 27 77
+ *   33612345678  →  +33 6 12 34 56 78
+ *
+ * Uses libphonenumber-js to detect the country calling code (1–3 digits,
+ * not easy to guess manually). Some valid numbers from newer numbering plans
+ * (Benin 2021, etc.) are marked "invalid" by libphonenumber but the country
+ * detection still works — we fall back on isPossible() and manual grouping.
+ */
 export function formatPhoneNumber(phone: string): string {
-  const cleaned = phone.replace(/\D/g, "");
+  const cleaned = (phone || "").replace(/\D/g, "");
   if (!cleaned) return phone;
-  // WhatsApp IDs are always international numbers without "+"
-  // Simply format as +{code} XX XX XX XX...
-  const rest = cleaned;
-  const grouped = rest.replace(/(\d{2})(?=\d)/g, "$1 ");
-  return `+${grouped}`;
+
+  try {
+    const parsed = parsePhoneNumberFromString("+" + cleaned);
+    if (parsed && parsed.country) {
+      const cc = getCountryCallingCode(parsed.country as CountryCode);
+      const national = cleaned.slice(cc.length);
+      return `+${cc} ${groupByPairs(national)}`;
+    }
+    if (parsed && parsed.countryCallingCode) {
+      const cc = parsed.countryCallingCode;
+      const national = cleaned.slice(cc.length);
+      return `+${cc} ${groupByPairs(national)}`;
+    }
+  } catch {
+    // fall through
+  }
+
+  // Very short numbers (< 5 digits) — just prefix
+  if (cleaned.length < 5) return "+" + cleaned;
+  // Last resort: assume a 2-digit country code
+  return `+${cleaned.slice(0, 2)} ${groupByPairs(cleaned.slice(2))}`;
 }
 
 export function formatTimestamp(date: Date | string | number): string {

@@ -1,8 +1,26 @@
 import { NextRequest } from 'next/server';
+import { writeFile, mkdir } from 'fs/promises';
+import path from 'path';
 import { getDb } from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
 import manager from '@/lib/wppconnect-manager';
 import type { Contact } from '@/lib/types';
+
+const AVATAR_CACHE_DIR = path.join(process.cwd(), 'data', 'avatars');
+
+/** Download an image URL and write it to the on-disk avatar cache. */
+async function cacheAvatar(phone: string, url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return false;
+    const buf = Buffer.from(await res.arrayBuffer());
+    await mkdir(AVATAR_CACHE_DIR, { recursive: true });
+    await writeFile(path.join(AVATAR_CACHE_DIR, `${phone}.jpg`), buf);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,13 +38,24 @@ export async function GET(request: NextRequest) {
     const db = getDb();
     let rows: Record<string, unknown>[];
 
+    // Only show contacts the user actually saved in their phone (is_my_contact = 1),
+    // not all WhatsApp users discovered via groups or past messages.
     if (search) {
       rows = db.prepare(
-        `SELECT * FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@lid' AND (name LIKE ? OR push_name LIKE ? OR phone LIKE ?) ORDER BY created_at DESC`
+        `SELECT * FROM contacts
+         WHERE session_id = ?
+           AND is_my_contact = 1
+           AND wpp_id NOT LIKE '%@lid'
+           AND (name LIKE ? OR push_name LIKE ? OR phone LIKE ?)
+         ORDER BY name ASC`
       ).all(sessionId, `%${search}%`, `%${search}%`, `%${search}%`) as Record<string, unknown>[];
     } else {
       rows = db.prepare(
-        `SELECT * FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@lid' ORDER BY created_at DESC`
+        `SELECT * FROM contacts
+         WHERE session_id = ?
+           AND is_my_contact = 1
+           AND wpp_id NOT LIKE '%@lid'
+         ORDER BY name ASC`
       ).all(sessionId) as Record<string, unknown>[];
     }
 
@@ -139,16 +168,19 @@ export async function POST(request: NextRequest) {
 
     transaction();
 
-    // Fetch profile pictures in background by batches of 10
+    // Fetch profile pictures in background. We fetch for ALL @c.us contacts
+    // (not just the ones without a URL), because WhatsApp URLs expire within
+    // ~24h — downloading to local cache ensures they stay accessible forever.
     const contactRows = db.prepare(
-      `SELECT id, wpp_id FROM contacts WHERE session_id = ? AND (profile_pic_url IS NULL OR profile_pic_url = '') AND wpp_id LIKE '%@c.us'`
-    ).all(sessionId) as { id: string; wpp_id: string }[];
+      `SELECT id, wpp_id, phone FROM contacts WHERE session_id = ? AND wpp_id LIKE '%@c.us'`
+    ).all(sessionId) as { id: string; wpp_id: string; phone: string }[];
 
     if (contactRows.length > 0 && client) {
       const capturedClient = client;
       const capturedDb = db;
       (async () => {
         const BATCH_SIZE = 5;
+        let cached = 0;
         for (let i = 0; i < contactRows.length; i += BATCH_SIZE) {
           const batch = contactRows.slice(i, i + BATCH_SIZE);
           await Promise.allSettled(
@@ -162,10 +194,17 @@ export async function POST(request: NextRequest) {
                   const picObj = picAny as Record<string, unknown>;
                   picUrl = (picObj.eurl as string) || (picObj.imgFull as string) || '';
                 }
-                if (picUrl) {
-                  capturedDb.prepare(`UPDATE contacts SET profile_pic_url = ? WHERE id = ?`).run(picUrl, row.id);
-                  // Also update the chat if exists
-                  capturedDb.prepare(`UPDATE chats SET profile_pic_url = ? WHERE session_id = ? AND wpp_id = ? AND (profile_pic_url IS NULL OR profile_pic_url = '')`).run(picUrl, sessionId, row.wpp_id);
+                if (!picUrl) return;
+
+                // Store the fresh URL as fallback
+                capturedDb.prepare(`UPDATE contacts SET profile_pic_url = ? WHERE id = ?`).run(picUrl, row.id);
+                capturedDb.prepare(`UPDATE chats SET profile_pic_url = ? WHERE session_id = ? AND wpp_id = ? AND (profile_pic_url IS NULL OR profile_pic_url = '')`).run(picUrl, sessionId, row.wpp_id);
+
+                // Download and cache the actual image bytes so they stay
+                // available even after WhatsApp's URL token expires.
+                if (row.phone) {
+                  const ok = await cacheAvatar(row.phone, picUrl);
+                  if (ok) cached++;
                 }
               } catch {
                 // Contact may not have a profile pic or privacy setting blocks it
@@ -173,7 +212,7 @@ export async function POST(request: NextRequest) {
             })
           );
         }
-        console.log(`[contacts-sync] Profile pic fetch completed for ${contactRows.length} contacts`);
+        console.log(`[contacts-sync] Profile pic cached on disk for ${cached}/${contactRows.length} contacts`);
       })();
     }
 

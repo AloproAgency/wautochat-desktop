@@ -33,6 +33,11 @@ export default function DashboardLayout({
           <span className="text-base font-bold text-wa-teal">WAutoChat</span>
         </div>
 
+        {/* Pages render inside a padded container by default. Pages that want
+            an edge-to-edge layout (Contacts, Conversations…) use the
+            `page-full-bleed` class on their root element to compensate with
+            negative margins. Uniform markup here avoids SSR/CSR hydration
+            mismatches. */}
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto p-4 md:p-6 lg:max-w-7xl">{children}</div>
         </main>

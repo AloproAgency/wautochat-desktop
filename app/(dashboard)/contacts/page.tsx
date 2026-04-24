@@ -1,40 +1,33 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
-  Users,
   RefreshCw,
-  Check,
   X,
   Ban,
   MessageSquare,
-  Eye,
   Tag,
-  ChevronLeft,
-  ChevronRight,
   Shield,
+  Search,
+  Plus,
+  Check,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { Spinner } from '@/components/ui/spinner';
-import { SearchInput } from '@/components/ui/search-input';
-import { DataTable, type Column } from '@/components/ui/data-table';
 import { useToast } from '@/components/ui/toast';
 import { useContactStore } from '@/lib/store';
 import { useActiveSession } from '@/hooks/use-active-session';
 import { formatPhoneNumber, formatTimestamp } from '@/lib/utils';
 import type { Contact, ApiResponse } from '@/lib/types';
 
-const PAGE_SIZE = 20;
-
 const labelColors: Record<string, string> = {
-  VIP: 'bg-purple-100 text-purple-700 border-purple-200',
-  Customer: 'bg-blue-100 text-blue-700 border-blue-200',
-  Lead: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  Support: 'bg-green-100 text-green-700 border-green-200',
-  Blocked: 'bg-red-100 text-red-700 border-red-200',
+  VIP: 'bg-purple-50 text-purple-700 border-purple-200',
+  Customer: 'bg-blue-50 text-blue-700 border-blue-200',
+  Lead: 'bg-amber-50 text-amber-700 border-amber-200',
+  Support: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Blocked: 'bg-red-50 text-red-700 border-red-200',
 };
+
+type FilterKey = 'all' | 'whatsapp' | 'blocked' | 'labeled';
 
 export default function ContactsPage() {
   const activeSessionId = useActiveSession();
@@ -42,24 +35,50 @@ export default function ContactsPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<FilterKey>('all');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [showPanel, setShowPanel] = useState(false);
   const [editingLabels, setEditingLabels] = useState(false);
   const [labelInput, setLabelInput] = useState('');
-  const [availableLabels, setAvailableLabels] = useState<{ id: string; name: string; color: string }[]>([]);
+  const [availableLabels, setAvailableLabels] = useState<
+    { id: string; name: string; color: string }[]
+  >([]);
+  const [blockConfirm, setBlockConfirm] = useState<Contact | null>(null);
+  const [blocking, setBlocking] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  // Cmd/Ctrl+K focuses the search input, Esc closes modals/panel
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (e.key === 'Escape') {
+        if (blockConfirm) {
+          setBlockConfirm(null);
+        } else if (showPanel) {
+          setShowPanel(false);
+          setSelectedContact(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showPanel, blockConfirm]);
+
   const fetchContacts = useCallback(async () => {
-    if (!activeSessionId) { setLoading(false); return; }
+    if (!activeSessionId) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const res = await fetch(`/api/contacts?sessionId=${activeSessionId}`);
       if (res.ok) {
         const data: ApiResponse<Contact[]> = await res.json();
-        if (data.success && data.data) {
-          setContacts(data.data);
-        }
+        if (data.success && data.data) setContacts(data.data);
       }
     } catch {
       toast({ title: 'Failed to load contacts', variant: 'error' });
@@ -68,16 +87,15 @@ export default function ContactsPage() {
     }
   }, [activeSessionId, setContacts, toast]);
 
-  // Fetch available labels from DB
   const fetchLabels = useCallback(async () => {
     if (!activeSessionId) return;
     try {
       const res = await fetch(`/api/labels?sessionId=${activeSessionId}`);
       const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setAvailableLabels(data.data);
-      }
-    } catch { /* ignore */ }
+      if (data.success && Array.isArray(data.data)) setAvailableLabels(data.data);
+    } catch {
+      /* ignore */
+    }
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -110,6 +128,7 @@ export default function ContactsPage() {
 
   const handleBlock = async (contact: Contact) => {
     try {
+      setBlocking(true);
       const action = contact.isBlocked ? 'unblock' : 'block';
       const res = await fetch(`/api/contacts/${contact.id}`, {
         method: 'PUT',
@@ -128,6 +147,9 @@ export default function ContactsPage() {
       }
     } catch {
       toast({ title: 'Failed to update contact', variant: 'error' });
+    } finally {
+      setBlocking(false);
+      setBlockConfirm(null);
     }
   };
 
@@ -163,452 +185,836 @@ export default function ContactsPage() {
     handleUpdateLabels(contact, newLabels);
   };
 
-  const filteredContacts = useMemo(
-    () =>
-      contacts.filter(
-        (c) =>
-          c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  const filteredContacts = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return contacts.filter((c) => {
+      if (q) {
+        const matches =
+          c.name.toLowerCase().includes(q) ||
           c.phone.includes(searchQuery) ||
-          c.pushName?.toLowerCase().includes(searchQuery.toLowerCase())
-      ),
-    [contacts, searchQuery]
+          c.pushName?.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+      if (filter === 'whatsapp' && !c.isWAContact) return false;
+      if (filter === 'blocked' && !c.isBlocked) return false;
+      if (filter === 'labeled' && (!c.labels || c.labels.length === 0)) return false;
+      return true;
+    });
+  }, [contacts, searchQuery, filter]);
+
+  const groupedContacts = useMemo(() => {
+    const groups: Record<string, Contact[]> = {};
+    for (const c of filteredContacts) {
+      const letter = (c.name?.trim()?.[0] || '#').toUpperCase();
+      const key = /[A-Z]/.test(letter) ? letter : '#';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(c);
+    }
+    return Object.keys(groups)
+      .sort()
+      .map((k) => ({ letter: k, items: groups[k] }));
+  }, [filteredContacts]);
+
+  const counts = useMemo(
+    () => ({
+      all: contacts.length,
+      whatsapp: contacts.filter((c) => c.isWAContact).length,
+      blocked: contacts.filter((c) => c.isBlocked).length,
+      labeled: contacts.filter((c) => c.labels && c.labels.length > 0).length,
+    }),
+    [contacts]
   );
 
-  const totalPages = Math.ceil(filteredContacts.length / PAGE_SIZE);
-  const paginatedContacts = filteredContacts.slice(
-    (page - 1) * PAGE_SIZE,
-    page * PAGE_SIZE
-  );
+  const avatarUrl = (c: Contact) =>
+    c.phone
+      ? `/api/contacts/avatar/${c.phone}${
+          activeSessionId ? `?sessionId=${activeSessionId}` : ''
+        }`
+      : c.profilePicUrl;
 
-  const columns: Column<Contact>[] = useMemo(
-    () => [
-      {
-        key: 'avatar',
-        header: '',
-        className: 'w-12',
-        render: (row: Contact) => (
-          <Avatar size="sm" name={row.name} src={row.profilePicUrl} />
-        ),
-      },
-      {
-        key: 'name',
-        header: 'Name',
-        render: (row: Contact) => (
-          <div>
-            <p className="font-medium">{row.name}</p>
-            {row.pushName && row.pushName !== row.name && (
-              <p className="text-xs text-wa-text-muted">{row.pushName}</p>
-            )}
-          </div>
-        ),
-      },
-      {
-        key: 'phone',
-        header: 'Phone',
-        render: (row: Contact) => (
-          <span className="text-wa-text-secondary">{formatPhoneNumber(row.phone)}</span>
-        ),
-      },
-      {
-        key: 'labels',
-        header: 'Labels',
-        render: (row: Contact) => (
-          <div className="flex flex-wrap gap-1">
-            {row.labels.length > 0 ? (
-              row.labels.map((label) => (
-                <span
-                  key={label}
-                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
-                    labelColors[label] || 'bg-gray-100 text-gray-700 border-gray-200'
-                  }`}
-                >
-                  {label}
-                </span>
-              ))
-            ) : (
-              <span className="text-xs text-wa-text-muted">--</span>
-            )}
-          </div>
-        ),
-      },
-      {
-        key: 'isWAContact',
-        header: 'WhatsApp',
-        className: 'w-20 text-center',
-        render: (row: Contact) =>
-          row.isWAContact ? (
-            <Check className="mx-auto h-4 w-4 text-wa-success" />
-          ) : (
-            <X className="mx-auto h-4 w-4 text-wa-text-muted" />
-          ),
-      },
-      {
-        key: 'lastSeen',
-        header: 'Last Seen',
-        render: (row: Contact) => (
-          <span className="text-xs text-wa-text-muted">
-            {row.lastSeen ? formatTimestamp(row.lastSeen) : '--'}
-          </span>
-        ),
-      },
-      {
-        key: 'actions',
-        header: 'Actions',
-        className: 'w-36',
-        render: (row: Contact) => (
-          <div
-            className="flex items-center gap-1"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={() => {
-                // Use phone@c.us format for direct chats, fallback to wppId
-                const chatId = row.wppId.includes('@lid')
-                  ? `${row.phone}@c.us`
-                  : row.wppId;
-                window.location.href = `/conversations?chat=${chatId}`;
-              }}
-              className="rounded-lg p-2 text-wa-text-secondary hover:bg-wa-green/10 hover:text-wa-teal transition-colors"
-              title="View Chat"
-            >
-              <MessageSquare className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => handleBlock(row)}
-              className={`rounded-lg p-2 transition-colors ${
-                row.isBlocked
-                  ? 'text-wa-danger hover:bg-wa-danger/10'
-                  : 'text-wa-text-secondary hover:bg-wa-hover hover:text-wa-text'
-              }`}
-              title={row.isBlocked ? 'Unblock' : 'Block'}
-            >
-              {row.isBlocked ? <Shield className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-            </button>
-            <button
-              onClick={() => {
-                setSelectedContact(row);
-                setShowPanel(true);
-                setEditingLabels(true);
-              }}
-              className="rounded-lg p-2 text-wa-text-secondary hover:bg-wa-hover hover:text-wa-text transition-colors"
-              title="Edit Labels"
-            >
-              <Tag className="h-4 w-4" />
-            </button>
-          </div>
-        ),
-      },
-    ],
-    []
-  );
+  const filters: { key: FilterKey; label: string; count: number }[] = [
+    { key: 'all', label: 'All', count: counts.all },
+    { key: 'whatsapp', label: 'WhatsApp', count: counts.whatsapp },
+    { key: 'labeled', label: 'Labeled', count: counts.labeled },
+    { key: 'blocked', label: 'Blocked', count: counts.blocked },
+  ];
 
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner size="lg" />
-      </div>
-    );
+  function openContact(c: Contact, editLabels = false) {
+    setSelectedContact(c);
+    setShowPanel(true);
+    setEditingLabels(editLabels);
   }
 
   return (
-    <div className="flex h-full">
-      {/* Main Content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-6 space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-wa-text">Contacts</h1>
-              <p className="mt-1 text-sm text-wa-text-secondary">
-                Manage your WhatsApp contacts ({contacts.length} total)
-              </p>
-            </div>
-            <Button
-              icon={<RefreshCw className="h-4 w-4" />}
-              loading={syncing}
-              onClick={handleSync}
-            >
-              Sync Contacts
-            </Button>
-          </div>
-
-          {/* Search */}
-          <SearchInput
-            value={searchQuery}
-            onChange={(val) => {
-              setSearchQuery(val);
-              setPage(1);
-            }}
-            placeholder="Search by name, phone number, or push name..."
-            className="max-w-md"
-          />
-
-          {/* Table */}
-          <div className="rounded-lg border border-wa-border bg-wa-panel">
-            <DataTable<Contact>
-              columns={columns}
-              data={paginatedContacts}
-              onRowClick={(row) => {
-                setSelectedContact(row);
-                setShowPanel(true);
-                setEditingLabels(false);
-              }}
-              emptyMessage="No contacts found"
-            />
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-wa-border px-4 py-3">
-                <p className="text-sm text-wa-text-muted">
-                  Showing {(page - 1) * PAGE_SIZE + 1}–
-                  {Math.min(page * PAGE_SIZE, filteredContacts.length)} of{' '}
-                  {filteredContacts.length}
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setPage(Math.max(1, page - 1))}
-                    disabled={page === 1}
-                    className="rounded-lg p-1.5 text-wa-text-secondary hover:bg-wa-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronLeft className="h-5 w-5" />
-                  </button>
-                  <span className="text-sm text-wa-text">
-                    {page} / {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setPage(Math.min(totalPages, page + 1))}
-                    disabled={page === totalPages}
-                    className="rounded-lg p-1.5 text-wa-text-secondary hover:bg-wa-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronRight className="h-5 w-5" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Right Panel - Contact Detail */}
-      {showPanel && selectedContact && (
-        <div className="w-[380px] shrink-0 border-l border-wa-border bg-wa-panel overflow-y-auto">
-          {/* Panel Header */}
-          <div className="sticky top-0 z-10 flex items-center justify-between border-b border-wa-border bg-wa-header px-4 py-3">
-            <h3 className="text-sm font-semibold text-wa-text">Contact Info</h3>
-            <button
-              onClick={() => {
-                setShowPanel(false);
-                setSelectedContact(null);
-              }}
-              className="rounded-lg p-1.5 text-wa-text-muted hover:bg-wa-hover hover:text-wa-text transition-colors"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          {/* Profile Section */}
-          <div className="flex flex-col items-center py-8 px-6 border-b border-wa-border">
-            <Avatar
-              size="lg"
-              name={selectedContact.name}
-              src={selectedContact.profilePicUrl}
-              className="h-24 w-24 text-2xl"
-            />
-            <h2 className="mt-4 text-lg font-semibold text-wa-text">{selectedContact.name}</h2>
-            <p className="mt-1 text-sm text-wa-text-secondary">
-              {formatPhoneNumber(selectedContact.phone)}
-            </p>
-            {selectedContact.pushName && selectedContact.pushName !== selectedContact.name && (
-              <p className="mt-0.5 text-xs text-wa-text-muted">
-                Push name: {selectedContact.pushName}
-              </p>
-            )}
-            {selectedContact.isBlocked && (
-              <Badge variant="danger" className="mt-2">Blocked</Badge>
-            )}
-          </div>
-
-          {/* Labels Section */}
-          <div className="px-6 py-4 border-b border-wa-border">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-medium text-wa-text">Labels</h4>
-              <button
-                onClick={() => setEditingLabels(!editingLabels)}
-                className="text-xs text-wa-teal hover:underline"
-              >
-                {editingLabels ? 'Done' : 'Edit'}
-              </button>
-            </div>
-
-            {/* Current labels on this contact */}
-            <div className="flex flex-wrap gap-1.5">
-              {selectedContact.labels.map((label) => {
-                const labelData = availableLabels.find((l) => l.name === label);
-                return (
-                  <span
-                    key={label}
-                    className="inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium"
-                    style={{
-                      backgroundColor: labelData ? labelData.color + '20' : '#f3f4f6',
-                      color: labelData ? labelData.color : '#374151',
-                      borderColor: labelData ? labelData.color + '40' : '#e5e7eb',
-                    }}
-                  >
-                    {labelData && (
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: labelData.color }}
-                      />
-                    )}
-                    {label}
-                    {editingLabels && (
-                      <button
-                        onClick={() => handleRemoveLabel(selectedContact, label)}
-                        className="ml-0.5 hover:opacity-60"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    )}
-                  </span>
-                );
-              })}
-              {selectedContact.labels.length === 0 && !editingLabels && (
-                <span className="text-xs text-wa-text-muted">No labels</span>
+    // Negative margins compensate the parent layout's padding so this page is
+    // edge-to-edge. The `lg:max-w-none` overrides the parent's `max-w-7xl`.
+    <div className="flex -m-4 md:-m-6 lg:max-w-none bg-slate-50 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+      {/* ===== Main column ===== */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* --- Sticky header: single compact row, edge-to-edge --- */}
+        <header className="sticky top-0 z-20 bg-white border-b border-slate-200">
+          <div className="flex items-center gap-4 px-5 h-14">
+            {/* Title + count */}
+            <div className="flex items-baseline gap-2 shrink-0">
+              <h1 className="text-base font-semibold tracking-tight text-slate-900">
+                Contacts
+              </h1>
+              <span className="text-xs font-mono text-slate-400 tabular-nums">
+                {contacts.length}
+              </span>
+              {filteredContacts.length !== contacts.length && (
+                <span className="text-xs text-slate-400">
+                  · {filteredContacts.length} shown
+                </span>
               )}
             </div>
 
-            {editingLabels && (
-              <div className="mt-3 space-y-2">
-                {/* Available labels to add */}
-                {availableLabels.length > 0 && (
-                  <div>
-                    <p className="text-xs text-wa-text-muted mb-2">Select a label:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {availableLabels
-                        .filter((l) => !selectedContact.labels.includes(l.name))
-                        .map((label) => (
-                          <button
-                            key={label.id}
-                            onClick={() => {
-                              const newLabels = [...selectedContact.labels, label.name];
-                              handleUpdateLabels(selectedContact, newLabels);
+            <div className="h-5 w-px bg-slate-200" />
+
+            {/* Search */}
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search name, phone…"
+                className="w-full rounded-md border border-slate-200 bg-white pl-8 pr-14 h-8 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition"
+              />
+              <kbd className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
+                ⌘K
+              </kbd>
+            </div>
+
+            {/* Filter pills */}
+            <div className="hidden md:flex items-center gap-0.5">
+              {filters.map((f) => {
+                const active = filter === f.key;
+                return (
+                  <button
+                    key={f.key}
+                    onClick={() => setFilter(f.key)}
+                    className={`inline-flex items-center gap-1.5 rounded-md h-8 px-2.5 text-[13px] font-medium transition-colors ${
+                      active
+                        ? 'bg-slate-900 text-white'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {f.label}
+                    <span
+                      className={`rounded px-1 text-[10px] font-mono tabular-nums ${
+                        active ? 'bg-white/20 text-white' : 'text-slate-400'
+                      }`}
+                    >
+                      {f.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Sync — ml-auto to stick to the right edge */}
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white h-8 px-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{syncing ? 'Syncing…' : 'Sync'}</span>
+            </button>
+          </div>
+        </header>
+
+        {/* --- List --- */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <ContactListSkeleton />
+          ) : filteredContacts.length === 0 ? (
+            <EmptyState
+              hasQuery={searchQuery.length > 0 || filter !== 'all'}
+              onSync={handleSync}
+              syncing={syncing}
+            />
+          ) : (
+            <div className="px-3 py-3">
+              {groupedContacts.map((group) => (
+                <section key={group.letter} className="mb-4">
+                  <h2 className="sticky top-0 z-[5] px-3 py-1 text-[11px] font-semibold tracking-widest text-slate-400 uppercase bg-slate-50/95 backdrop-blur">
+                    {group.letter}
+                    <span className="ml-2 text-slate-300 font-normal">
+                      {group.items.length}
+                    </span>
+                  </h2>
+                  <ul className="space-y-0.5 mt-0.5">
+                    {group.items.map((c, idx) => {
+                      const isSelected = selectedContact?.id === c.id && showPanel;
+                      return (
+                        <li
+                          key={c.id}
+                          className="animate-in-row"
+                          style={{ animationDelay: `${Math.min(idx * 15, 300)}ms` }}
+                        >
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => openContact(c)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                openContact(c);
+                              }
                             }}
-                            className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors hover:opacity-80"
-                            style={{
-                              backgroundColor: label.color + '15',
-                              color: label.color,
-                              borderColor: label.color + '30',
-                            }}
+                            className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer hover:bg-white hover:shadow-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-slate-900/10 ${
+                              isSelected
+                                ? 'bg-white shadow-sm ring-1 ring-slate-900/5'
+                                : ''
+                            }`}
                           >
-                            <span
-                              className="h-2 w-2 rounded-full"
-                              style={{ backgroundColor: label.color }}
-                            />
-                            {label.name}
-                            <span className="text-[10px] opacity-60">+</span>
-                          </button>
-                        ))}
-                      {availableLabels.filter((l) => !selectedContact.labels.includes(l.name)).length === 0 && (
-                        <span className="text-xs text-wa-text-muted">All labels assigned</span>
-                      )}
-                    </div>
-                  </div>
+                            {/* Avatar */}
+                            <div className="relative shrink-0">
+                              <Avatar
+                                size="md"
+                                name={c.name}
+                                src={avatarUrl(c)}
+                                className="ring-1 ring-slate-200"
+                              />
+                              {c.isWAContact && (
+                                <span
+                                  className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500"
+                                  title="Active on WhatsApp"
+                                />
+                              )}
+                              {c.isBlocked && (
+                                <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white bg-red-500 text-white">
+                                  <Ban className="h-2 w-2" strokeWidth={3} />
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Name + push name */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <p className="truncate text-sm font-semibold text-slate-900">
+                                  {c.name}
+                                </p>
+                                {c.labels?.slice(0, 2).map((label) => (
+                                  <span
+                                    key={label}
+                                    className={`inline-flex items-center rounded-full border px-1.5 py-[1px] text-[10px] font-medium ${
+                                      labelColors[label] ||
+                                      'bg-slate-50 text-slate-600 border-slate-200'
+                                    }`}
+                                  >
+                                    {label}
+                                  </span>
+                                ))}
+                                {c.labels && c.labels.length > 2 && (
+                                  <span className="text-[10px] text-slate-400">
+                                    +{c.labels.length - 2}
+                                  </span>
+                                )}
+                              </div>
+                              {c.pushName && c.pushName !== c.name && (
+                                <p className="truncate text-xs text-slate-400">
+                                  {c.pushName}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Phone (mono) */}
+                            <p className="hidden md:block shrink-0 text-xs font-mono text-slate-500 tabular-nums">
+                              {formatPhoneNumber(c.phone)}
+                            </p>
+
+                            {/* Hover actions */}
+                            <div
+                              className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <IconBtn
+                                title="Open conversation"
+                                onClick={() => {
+                                  const chatId = c.wppId.includes('@lid')
+                                    ? `${c.phone}@c.us`
+                                    : c.wppId;
+                                  window.location.href = `/conversations?chat=${chatId}`;
+                                }}
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                              </IconBtn>
+                              <IconBtn
+                                title="Edit labels"
+                                onClick={() => openContact(c, true)}
+                              >
+                                <Tag className="h-3.5 w-3.5" />
+                              </IconBtn>
+                              <IconBtn
+                                title={c.isBlocked ? 'Unblock' : 'Block'}
+                                danger={c.isBlocked}
+                                onClick={() => setBlockConfirm(c)}
+                              >
+                                {c.isBlocked ? (
+                                  <Shield className="h-3.5 w-3.5" />
+                                ) : (
+                                  <Ban className="h-3.5 w-3.5" />
+                                )}
+                              </IconBtn>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ===== Side panel ===== */}
+      {showPanel && selectedContact && (
+        <>
+          {/* Backdrop for mobile */}
+          <div
+            className="lg:hidden fixed inset-0 z-30 bg-slate-900/20 animate-fade-in"
+            onClick={() => setShowPanel(false)}
+          />
+          <aside
+            className="fixed lg:static right-0 top-0 z-40 h-full w-full sm:w-[400px] shrink-0 border-l border-slate-200 bg-white overflow-y-auto animate-slide-in-right"
+            key={selectedContact.id}
+          >
+            {/* Sticky top bar */}
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3.5">
+              <h3 className="text-[11px] font-semibold tracking-widest text-slate-500 uppercase">
+                Contact
+              </h3>
+              <button
+                onClick={() => {
+                  setShowPanel(false);
+                  setSelectedContact(null);
+                }}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                aria-label="Close panel"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Identity block — clean, no gradient, strong hierarchy */}
+            <div className="px-6 pt-8 pb-6 flex flex-col items-center text-center border-b border-slate-100">
+              <div className="relative">
+                <Avatar
+                  size="lg"
+                  name={selectedContact.name}
+                  src={avatarUrl(selectedContact)}
+                  className="h-24 w-24 text-2xl ring-1 ring-slate-200"
+                />
+                {selectedContact.isWAContact && !selectedContact.isBlocked && (
+                  <span
+                    className="absolute bottom-0.5 right-0.5 h-4 w-4 rounded-full border-[3px] border-white bg-emerald-500"
+                    title="Active on WhatsApp"
+                  />
+                )}
+                {selectedContact.isBlocked && (
+                  <span className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-red-500 text-white">
+                    <Ban className="h-3 w-3" strokeWidth={3} />
+                  </span>
+                )}
+              </div>
+
+              <h2 className="mt-5 text-xl font-semibold text-slate-900">
+                {selectedContact.name}
+              </h2>
+              <p className="mt-1 text-sm font-mono text-slate-500 tabular-nums">
+                {formatPhoneNumber(selectedContact.phone)}
+              </p>
+              {selectedContact.pushName &&
+                selectedContact.pushName !== selectedContact.name && (
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    @{selectedContact.pushName}
+                  </p>
                 )}
 
-                {/* Create new label */}
-                <div className="pt-2 border-t border-wa-border">
-                  <p className="text-xs text-wa-text-muted mb-2">Or create a new label:</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={labelInput}
-                      onChange={(e) => setLabelInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleAddLabel(selectedContact);
-                          // Also create in labels table
-                          if (labelInput.trim() && activeSessionId) {
-                            fetch('/api/labels', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ sessionId: activeSessionId, name: labelInput.trim(), color: '#25D366' }),
-                            }).then(() => fetchLabels()).catch(() => {});
-                          }
-                        }
-                      }}
-                      placeholder="New label name..."
-                      className="h-8 flex-1 rounded-lg border border-wa-border bg-wa-input-bg px-3 text-xs text-wa-text placeholder:text-wa-text-muted focus:border-wa-green focus:outline-none focus:ring-1 focus:ring-wa-green/20"
-                    />
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        handleAddLabel(selectedContact);
-                        // Also create in labels table
-                        if (labelInput.trim() && activeSessionId) {
-                          fetch('/api/labels', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ sessionId: activeSessionId, name: labelInput.trim(), color: '#25D366' }),
-                          }).then(() => fetchLabels()).catch(() => {});
-                        }
-                      }}
-                      disabled={!labelInput.trim()}
-                      className="h-8"
-                    >
-                      Create
-                    </Button>
-                  </div>
-                </div>
+              {/* Status badges */}
+              <div className="mt-3 flex items-center gap-1.5">
+                {selectedContact.isBlocked ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                    <Ban className="h-3 w-3" />
+                    Blocked
+                  </span>
+                ) : selectedContact.isWAContact ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                    <Check className="h-3 w-3" />
+                    On WhatsApp
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                    Not on WhatsApp
+                  </span>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Info Section */}
-          <div className="px-6 py-4 border-b border-wa-border space-y-3">
-            <div>
-              <p className="text-xs text-wa-text-muted">WhatsApp User</p>
-              <p className="text-sm text-wa-text">
-                {selectedContact.isWAContact ? 'Yes' : 'No'}
-              </p>
+              {/* Primary actions — equal width, sober */}
+              <div className="mt-6 grid grid-cols-2 gap-2 w-full">
+                <button
+                  onClick={() => {
+                    const chatId = selectedContact.wppId.includes('@lid')
+                      ? `${selectedContact.phone}@c.us`
+                      : selectedContact.wppId;
+                    window.location.href = `/conversations?chat=${chatId}`;
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 active:scale-[0.98] transition"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  Message
+                </button>
+                <button
+                  onClick={() => setBlockConfirm(selectedContact)}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium border transition active:scale-[0.98] ${
+                    selectedContact.isBlocked
+                      ? 'border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {selectedContact.isBlocked ? (
+                    <>
+                      <Shield className="h-4 w-4" />
+                      Unblock
+                    </>
+                  ) : (
+                    <>
+                      <Ban className="h-4 w-4" />
+                      Block
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-wa-text-muted">Last Seen</p>
-              <p className="text-sm text-wa-text">
-                {selectedContact.lastSeen
-                  ? formatTimestamp(selectedContact.lastSeen)
-                  : 'Unknown'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-wa-text-muted">Added On</p>
-              <p className="text-sm text-wa-text">
-                {formatTimestamp(selectedContact.createdAt)}
-              </p>
-            </div>
-          </div>
 
-          {/* Action Buttons */}
-          <div className="px-6 py-4 space-y-2">
-            <Button
-              variant="secondary"
-              className="w-full"
-              icon={<MessageSquare className="h-4 w-4" />}
-              onClick={() => {
-                window.location.href = `/conversations?chat=${selectedContact.wppId}`;
-              }}
-            >
-              Send Message
-            </Button>
-            <Button
-              variant={selectedContact.isBlocked ? 'danger' : 'secondary'}
-              className="w-full"
-              icon={selectedContact.isBlocked ? <Shield className="h-4 w-4" /> : <Ban className="h-4 w-4" />}
-              onClick={() => handleBlock(selectedContact)}
-            >
-              {selectedContact.isBlocked ? 'Unblock Contact' : 'Block Contact'}
-            </Button>
+            {/* Labels — inline editor */}
+            <section className="px-6 py-5 border-b border-slate-100">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-[11px] font-semibold tracking-widest text-slate-500 uppercase">
+                  Labels
+                </h4>
+                <button
+                  onClick={() => setEditingLabels(!editingLabels)}
+                  className="text-xs font-medium text-slate-700 hover:text-slate-900 transition"
+                >
+                  {editingLabels ? 'Done' : selectedContact.labels.length ? 'Edit' : '+ Add'}
+                </button>
+              </div>
+              {selectedContact.labels.length === 0 && !editingLabels ? (
+                <p className="text-xs text-slate-400">No labels assigned.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedContact.labels.map((label) => (
+                    <span
+                      key={label}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-all ${
+                        labelColors[label] ||
+                        'bg-slate-50 text-slate-700 border-slate-200'
+                      }`}
+                    >
+                      {label}
+                      {editingLabels && (
+                        <button
+                          onClick={() => handleRemoveLabel(selectedContact, label)}
+                          className="hover:text-red-600 transition"
+                          aria-label={`Remove ${label}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {editingLabels && (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    type="text"
+                    value={labelInput}
+                    onChange={(e) => setLabelInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleAddLabel(selectedContact);
+                    }}
+                    placeholder="Label name…"
+                    list="label-suggestions"
+                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  />
+                  <datalist id="label-suggestions">
+                    {availableLabels.map((l) => (
+                      <option key={l.id} value={l.name} />
+                    ))}
+                  </datalist>
+                  <button
+                    onClick={() => handleAddLabel(selectedContact)}
+                    disabled={!labelInput.trim()}
+                    className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition active:scale-[0.98]"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* Details — clean two-column list */}
+            <section className="px-6 py-5 border-b border-slate-100">
+              <h4 className="text-[11px] font-semibold tracking-widest text-slate-500 uppercase mb-3">
+                Details
+              </h4>
+              <dl className="space-y-3 text-sm">
+                <InfoRow
+                  label="Phone"
+                  value={
+                    <span className="font-mono tabular-nums text-slate-700">
+                      {formatPhoneNumber(selectedContact.phone)}
+                    </span>
+                  }
+                />
+                <InfoRow
+                  label="Status"
+                  value={
+                    selectedContact.isWAContact ? (
+                      <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        Active
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">Inactive</span>
+                    )
+                  }
+                />
+                <InfoRow
+                  label="Last seen"
+                  value={
+                    selectedContact.lastSeen ? (
+                      <span className="text-slate-700">
+                        {formatTimestamp(selectedContact.lastSeen)}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">Unknown</span>
+                    )
+                  }
+                />
+                <InfoRow
+                  label="Added"
+                  value={
+                    <span className="text-slate-700">
+                      {formatTimestamp(selectedContact.createdAt)}
+                    </span>
+                  }
+                />
+              </dl>
+            </section>
+
+            {/* Technical footer — mono ID in a subtle box */}
+            <section className="px-6 py-5">
+              <h4 className="text-[11px] font-semibold tracking-widest text-slate-500 uppercase mb-2">
+                Technical
+              </h4>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <p className="text-[10px] text-slate-400 mb-0.5">Chat ID</p>
+                <p className="font-mono text-[11px] text-slate-700 break-all">
+                  {selectedContact.wppId}
+                </p>
+              </div>
+            </section>
+          </aside>
+        </>
+      )}
+
+      {/* ===== Block / Unblock confirmation dialog ===== */}
+      {blockConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="block-confirm-title"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-slate-900/40"
+            onClick={() => !blocking && setBlockConfirm(null)}
+          />
+
+          {/* Dialog */}
+          <div
+            className="relative w-full max-w-sm rounded-xl bg-white shadow-xl ring-1 ring-slate-900/5 animate-dialog-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header: avatar + name */}
+            <div className="flex items-center gap-3 px-5 pt-5 pb-4">
+              <div
+                className={`flex h-10 w-10 items-center justify-center rounded-full shrink-0 ${
+                  blockConfirm.isBlocked
+                    ? 'bg-emerald-50 text-emerald-600'
+                    : 'bg-red-50 text-red-600'
+                }`}
+              >
+                {blockConfirm.isBlocked ? (
+                  <Shield className="h-5 w-5" />
+                ) : (
+                  <Ban className="h-5 w-5" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3
+                  id="block-confirm-title"
+                  className="text-base font-semibold text-slate-900"
+                >
+                  {blockConfirm.isBlocked ? 'Unblock contact?' : 'Block contact?'}
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-500 truncate">
+                  {blockConfirm.name} · {formatPhoneNumber(blockConfirm.phone)}
+                </p>
+              </div>
+            </div>
+
+            {/* Body: explain what's going to happen */}
+            <div className="px-5 pb-5">
+              {blockConfirm.isBlocked ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 leading-relaxed">
+                  Ce contact sera de nouveau autorisé à t&apos;envoyer des messages WhatsApp, et tu pourras lui écrire normalement.
+                </div>
+              ) : (
+                <ul className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-sm text-slate-700 leading-relaxed">
+                  <li className="flex gap-2">
+                    <span className="text-slate-400">•</span>
+                    Ne pourra plus t&apos;envoyer de messages ni t&apos;appeler sur WhatsApp.
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-slate-400">•</span>
+                    Ne verra plus ton statut, ta photo de profil ni ta dernière connexion.
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-slate-400">•</span>
+                    Tu pourras le débloquer à tout moment.
+                  </li>
+                </ul>
+              )}
+            </div>
+
+            {/* Footer: cancel + primary */}
+            <div className="flex items-center justify-end gap-2 px-5 pb-5">
+              <button
+                onClick={() => setBlockConfirm(null)}
+                disabled={blocking}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 transition active:scale-[0.98]"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => handleBlock(blockConfirm)}
+                disabled={blocking}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed ${
+                  blockConfirm.isBlocked
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-red-600 hover:bg-red-700'
+                }`}
+              >
+                {blocking ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : blockConfirm.isBlocked ? (
+                  <Shield className="h-4 w-4" />
+                ) : (
+                  <Ban className="h-4 w-4" />
+                )}
+                {blocking
+                  ? 'En cours…'
+                  : blockConfirm.isBlocked
+                    ? 'Débloquer'
+                    : 'Bloquer'}
+              </button>
+            </div>
           </div>
         </div>
+      )}
+
+      {/* Animations (scoped via JSX style tag) */}
+      <style jsx global>{`
+        @keyframes row-in {
+          from {
+            opacity: 0;
+            transform: translateY(4px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-in-row {
+          animation: row-in 240ms ease-out both;
+        }
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+        .animate-fade-in {
+          animation: fade-in 150ms ease-out;
+        }
+        @keyframes slide-in-right {
+          from {
+            transform: translateX(16px);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        .animate-slide-in-right {
+          animation: slide-in-right 200ms ease-out;
+        }
+        @keyframes dialog-in {
+          from {
+            transform: translateY(8px) scale(0.98);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+          }
+        }
+        .animate-dialog-in {
+          animation: dialog-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Small local components (kept here because they are only used by   */
+/*  this page and have no reusable value elsewhere).                  */
+/* ------------------------------------------------------------------ */
+
+function IconBtn({
+  children,
+  onClick,
+  title,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  title: string;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`rounded-lg p-1.5 transition-colors ${
+        danger
+          ? 'text-red-500 hover:bg-red-50'
+          : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function ActionChip({
+  icon,
+  label,
+  onClick,
+  variant = 'default',
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  variant?: 'default' | 'danger' | 'success';
+}) {
+  const colors: Record<string, string> = {
+    default:
+      'bg-slate-900 text-white hover:bg-slate-800',
+    danger:
+      'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100',
+    success:
+      'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100',
+  };
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all active:scale-[0.97] ${colors[variant]}`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <dt className="text-[11px] font-semibold tracking-widest text-slate-400 uppercase shrink-0 pt-0.5">
+        {label}
+      </dt>
+      <dd className="text-right text-sm text-slate-700">{value}</dd>
+    </div>
+  );
+}
+
+function ContactListSkeleton() {
+  return (
+    <div className="px-8 py-6 space-y-2">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-3 px-4 py-2.5"
+          style={{ opacity: 1 - i * 0.08 }}
+        >
+          <div className="h-10 w-10 rounded-full bg-slate-200 animate-pulse" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3 w-32 bg-slate-200 rounded animate-pulse" />
+            <div className="h-2.5 w-20 bg-slate-100 rounded animate-pulse" />
+          </div>
+          <div className="h-3 w-24 bg-slate-100 rounded animate-pulse" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptyState({
+  hasQuery,
+  onSync,
+  syncing,
+}: {
+  hasQuery: boolean;
+  onSync: () => void;
+  syncing: boolean;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center px-6">
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
+        <Search className="h-7 w-7 text-slate-400" />
+      </div>
+      <h3 className="text-base font-semibold text-slate-900">
+        {hasQuery ? 'No contacts match' : 'No contacts yet'}
+      </h3>
+      <p className="mt-1 max-w-xs text-sm text-slate-500">
+        {hasQuery
+          ? 'Try adjusting your search or filter.'
+          : 'Sync your WhatsApp session to import the contacts saved in your phone.'}
+      </p>
+      {!hasQuery && (
+        <button
+          onClick={onSync}
+          disabled={syncing}
+          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60 transition-all active:scale-[0.98]"
+        >
+          <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+          {syncing ? 'Syncing…' : 'Sync contacts'}
+        </button>
       )}
     </div>
   );

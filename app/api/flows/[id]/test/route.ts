@@ -32,6 +32,8 @@ function parseFlowRow(row: Record<string, unknown>): Flow {
 interface TestContext {
   message: string;
   variables: Record<string, string>;
+  // Chain of flow IDs traversed via `go-to-flow` to detect loops
+  flowStack?: Set<string>;
 }
 
 // --- Conversation state for wait-for-reply ---
@@ -66,30 +68,39 @@ function evaluateCondition(
 ): boolean {
   const lowerActual = actual.toLowerCase();
   const lowerValue = value.toLowerCase();
+  // Normalize operator: accept both snake_case and camelCase
+  const op = operator.toLowerCase().replace(/_/g, '');
 
-  switch (operator) {
+  switch (op) {
     case 'contains':
-      return lowerActual.includes(lowerValue);
+      return lowerValue.length > 0 && lowerActual.includes(lowerValue);
+    case 'notcontains':
+      return !(lowerValue.length > 0 && lowerActual.includes(lowerValue));
     case 'equals':
       return lowerActual === lowerValue;
-    case 'startsWith':
-      return lowerActual.startsWith(lowerValue);
-    case 'endsWith':
-      return lowerActual.endsWith(lowerValue);
-    case 'regex': {
+    case 'notequals':
+      return lowerActual !== lowerValue;
+    case 'startswith':
+      return lowerValue.length > 0 && lowerActual.startsWith(lowerValue);
+    case 'endswith':
+      return lowerValue.length > 0 && lowerActual.endsWith(lowerValue);
+    case 'regex':
+    case 'matches': {
       try {
-        return new RegExp(value, 'i').test(actual);
+        return value.length > 0 && new RegExp(value, 'i').test(actual);
       } catch {
         return false;
       }
     }
     case 'exists':
       return actual.length > 0;
-    case 'notExists':
+    case 'notexists':
       return actual.length === 0;
-    case 'greaterThan':
+    case 'isempty':
+      return actual.trim().length === 0;
+    case 'greaterthan':
       return parseFloat(actual) > parseFloat(value);
-    case 'lessThan':
+    case 'lessthan':
       return parseFloat(actual) < parseFloat(value);
     default:
       return false;
@@ -219,14 +230,19 @@ async function walkFlow(
       }
 
       case 'send-location': {
-        const title = interpolateTestVariables((config.title as string) || 'Location', ctx);
-        responses.push(`[Location: ${title}]`);
+        const title = interpolateTestVariables((config.title as string) || '', ctx);
+        const address = interpolateTestVariables((config.address as string) || '', ctx);
+        const lat = (config.latitude as string) || '?';
+        const lng = (config.longitude as string) || '?';
+        const parts = [title || 'Location', address, `(${lat}, ${lng})`].filter(Boolean);
+        responses.push(`📍 [${parts.join(' · ')}]`);
         break;
       }
 
       case 'send-contact': {
-        const contactId = (config.contactId as string) || 'contact';
-        responses.push(`[Contact: ${contactId}]`);
+        const contactName = (config.contactName as string) || '';
+        const contactPhone = (config.contactPhone as string) || (config.contactId as string) || '';
+        responses.push(`👤 [Contact : ${contactName || '?'} — ${contactPhone || '?'}]`);
         break;
       }
 
@@ -242,11 +258,16 @@ async function walkFlow(
 
       case 'send-list': {
         const listTitle = interpolateTestVariables((config.title as string) || 'List', ctx);
-        const listDescription = interpolateTestVariables((config.description as string) || '', ctx);
+        // Panel writes `body`; older configs used `description`. Read both for safety.
+        const listBody = interpolateTestVariables(
+          (config.body as string) || (config.description as string) || '',
+          ctx
+        );
+        const buttonText = (config.buttonText as string) || '';
         const sections = (config.sections as Array<Record<string, unknown>>) || [];
 
         let listText = `*${listTitle}*`;
-        if (listDescription) listText += `\n${listDescription}`;
+        if (listBody) listText += `\n${listBody}`;
         for (const section of sections) {
           listText += `\n\n_${(section.title as string) || 'Options'}_`;
           const rows = (section.rows as Array<Record<string, unknown>>) || [];
@@ -255,6 +276,7 @@ async function walkFlow(
             if (row.description) listText += ` (${row.description})`;
           }
         }
+        if (buttonText) listText += `\n\n[${buttonText}]`;
         responses.push(listText);
         break;
       }
@@ -274,44 +296,76 @@ async function walkFlow(
       }
 
       case 'send-buttons': {
-        const btnText = interpolateTestVariables(
-          (config.text as string) || (config.message as string) || '',
+        // Panel writes `body` and optional `footer`; older configs used `text`/`message`.
+        const btnTitle = interpolateTestVariables((config.title as string) || '', ctx);
+        const btnBody = interpolateTestVariables(
+          (config.body as string) || (config.text as string) || (config.message as string) || '',
           ctx
         );
+        const btnFooter = interpolateTestVariables((config.footer as string) || '', ctx);
         const buttons = (config.buttons as Array<Record<string, unknown>>) || [];
-        let buttonMsg = btnText || '';
+
+        const lines: string[] = [];
+        if (btnTitle) lines.push(`*${btnTitle}*`);
+        if (btnBody) lines.push(btnBody);
         if (buttons.length > 0) {
-          buttonMsg += '\n';
-          for (const btn of buttons) {
-            buttonMsg += `\n[ ${(btn.text as string) || (btn.label as string) || 'Button'} ]`;
-          }
+          if (lines.length > 0) lines.push('');
+          buttons.forEach((btn, idx) => {
+            const text = (btn.text as string) || (btn.label as string) || `Button ${idx + 1}`;
+            lines.push(`[ ${text} ]`);
+          });
         }
-        responses.push(buttonMsg);
+        if (btnFooter) lines.push(`_${btnFooter}_`);
+        responses.push(lines.join('\n') || '[Empty button message]');
         break;
       }
 
       case 'send-reaction': {
-        const emoji = (config.emoji as string) || (config.reaction as string) || '';
-        if (emoji) responses.push(`[Reaction: ${emoji}]`);
+        const rawEmoji = ((config.emoji as string) || (config.reaction as string) || '').trim();
+        const emojiMap: Record<string, string> = {
+          thumbs_up: '👍', thumbsup: '👍', 'thumbs-up': '👍', like: '👍',
+          heart: '❤️', love: '❤️',
+          laugh: '😂', joy: '😂', haha: '😂',
+          wow: '😮', surprised: '😮',
+          sad: '😢', cry: '😢',
+          pray: '🙏', thanks: '🙏',
+          fire: '🔥', clap: '👏', party: '🎉', star: '⭐',
+          check: '✅', ok: '✅', cross: '❌', no: '❌',
+        };
+        const emoji = emojiMap[rawEmoji.toLowerCase()] || rawEmoji;
+        responses.push(
+          `${emoji} *Add Reaction* — nécessite un vrai message WhatsApp auquel réagir.\n\n` +
+          `_Cette action pose un emoji sur le message qui a déclenché le flow. Le simulateur n'a pas de "vrai" message entrant à marquer. Teste avec un vrai message WhatsApp vers ta session pour voir l'emoji apparaître sur ton téléphone._`
+        );
         break;
       }
 
       case 'condition': {
-        const field = (config.field as string) || 'messageBody';
-        const operator = (config.operator as string) || 'contains';
-        const condValue = interpolateTestVariables((config.value as string) || '', ctx);
+        // Read the new panel keys (leftOperand/rightOperand) with fallback to legacy (field/value)
+        const leftRaw =
+          (config.leftOperand as string) ||
+          (config.field as string) ||
+          '{{message}}';
+        const rightRaw =
+          (config.rightOperand as string) ||
+          (config.value as string) ||
+          '';
+        const operator = (config.operator as string) || 'equals';
 
+        // Resolve the left side
         let actual = '';
-        if (field === 'messageBody') {
-          actual = ctx.message;
-        } else if (field === 'sender') {
-          actual = 'test-user@c.us';
-        } else if (field === 'chatId') {
-          actual = 'test-user@c.us';
+        const legacyFields = ['messageBody', 'sender', 'chatId'];
+        if (legacyFields.includes(leftRaw)) {
+          if (leftRaw === 'messageBody') actual = ctx.message;
+          else if (leftRaw === 'sender') actual = '1234567890@c.us';
+          else if (leftRaw === 'chatId') actual = 'test-user@c.us';
+        } else if (!leftRaw.includes('{{') && ctx.variables[leftRaw] !== undefined) {
+          actual = ctx.variables[leftRaw];
         } else {
-          actual = ctx.variables[field] || '';
+          actual = interpolateTestVariables(leftRaw, ctx);
         }
 
+        const condValue = interpolateTestVariables(rightRaw, ctx);
         const matched = evaluateCondition(operator, condValue, actual);
 
         flowExecutionBus.emit({
@@ -322,72 +376,172 @@ async function walkFlow(
           nodeType: node.data.type,
           nodeLabel: node.data.label,
           timestamp: new Date().toISOString(),
-          data: { status: 'success', result: { matched }, durationMs: Date.now() - startTime },
+          data: {
+            status: 'success',
+            result: { matched, actual, expected: condValue, operator, branch: matched ? 'yes' : 'no' },
+            durationMs: Date.now() - startTime,
+          },
         });
 
-        // Follow matching branch
-        const trueTargets = getNextNodes(node.id, edges, matched ? 'true' : 'yes');
-        const falseTargets = getNextNodes(node.id, edges, matched ? 'false' : 'no');
-        const matchTargets = matched
-          ? [...trueTargets, ...getNextNodes(node.id, edges, 'true')]
-          : [...falseTargets, ...getNextNodes(node.id, edges, 'false')];
-        const uniqueTargets = [...new Set(matchTargets)];
+        // Route only to the branch that matches the condition result.
+        const yesTargets = [
+          ...getNextNodes(node.id, edges, 'yes'),
+          ...getNextNodes(node.id, edges, 'true'),
+        ];
+        const noTargets = [
+          ...getNextNodes(node.id, edges, 'no'),
+          ...getNextNodes(node.id, edges, 'false'),
+        ];
+        const chosen = matched ? yesTargets : noTargets;
+        const uniqueTargets = [...new Set(chosen)];
 
-        if (uniqueTargets.length === 0) {
-          const defaultTargets = getNextNodes(node.id, edges);
-          if (matched && defaultTargets.length > 0) {
-            for (const t of defaultTargets) {
-              const r = await walkFlow(t, nodes, edges, ctx, responses, visited, flowId, executionId);
-              if (r === 'paused') return 'paused';
-            }
-          }
-        } else {
-          for (const t of uniqueTargets) {
-            const r = await walkFlow(t, nodes, edges, ctx, responses, visited, flowId, executionId);
-            if (r === 'paused') return 'paused';
-          }
+        for (const t of uniqueTargets) {
+          const r = await walkFlow(t, nodes, edges, ctx, responses, visited, flowId, executionId);
+          if (r === 'paused') return 'paused';
         }
         return 'done';
       }
 
       case 'delay': {
-        // Skip delay in test mode but still emit events
+        // Honor the delay but cap it at 3s so the test chat stays responsive
+        const duration = Number(
+          (config.duration as number) ??
+          (config.seconds as number) ??
+          (config.delay as number) ??
+          1
+        );
+        const unit = (config.unit as string) || 'seconds';
+        let ms = duration * 1000;
+        if (unit === 'minutes') ms = duration * 60_000;
+        else if (unit === 'hours') ms = duration * 3_600_000;
+        const capped = Math.min(ms, 3000);
+        if (ms > 3000) {
+          responses.push(`⏱ [Délai simulé : ${duration} ${unit} — réduit à 3s en mode test]`);
+        }
+        await delay(capped);
         break;
       }
 
       case 'set-variable': {
-        const varName = (config.variableName as string) || (config.name as string) || (config.variable as string) || '';
+        const varName = (
+          (config.variableName as string) ||
+          (config.name as string) ||
+          (config.variable as string) ||
+          ''
+        ).trim();
+        if (!varName) {
+          throw new Error('Variable name is required');
+        }
         let varValue = interpolateTestVariables((config.value as string) || '', ctx);
-
         if (config.source === 'messageBody') {
           varValue = ctx.message;
         } else if (config.source === 'sender') {
-          varValue = 'test-user@c.us';
+          varValue = '1234567890@c.us';
         }
-
-        if (varName) {
-          ctx.variables[varName] = varValue;
-        }
+        ctx.variables[varName] = varValue;
         break;
       }
 
       case 'http-request': {
-        // Skip HTTP requests in test mode
-        const responseVar = (config.responseVariable as string) || (config.saveAs as string) || '';
-        if (responseVar) {
-          ctx.variables[responseVar] = '[Test mode: HTTP request skipped]';
+        // Actually perform the HTTP request in test mode so developers can
+        // validate their API integration before going live.
+        const url = interpolateTestVariables((config.url as string) || '', ctx);
+        if (!url) throw new Error('HTTP request URL is required');
+        const method = ((config.method as string) || 'GET').toUpperCase();
+
+        const rawHeaders = config.headers;
+        const headers: Record<string, string> = {};
+        if (Array.isArray(rawHeaders)) {
+          for (const h of rawHeaders as Array<{ key?: string; value?: string }>) {
+            if (h && h.key) {
+              headers[interpolateTestVariables(h.key, ctx)] =
+                interpolateTestVariables(h.value || '', ctx);
+            }
+          }
+        } else if (rawHeaders && typeof rawHeaders === 'object') {
+          for (const [k, v] of Object.entries(rawHeaders as Record<string, string>)) {
+            headers[interpolateTestVariables(k, ctx)] = interpolateTestVariables(v, ctx);
+          }
         }
-        ctx.variables['__http_status'] = '200';
-        ctx.variables['__http_response'] = '[Test mode: HTTP request skipped]';
-        responses.push('[HTTP request would be sent in live mode]');
+
+        const bodyConfig = config.body
+          ? interpolateTestVariables(
+              typeof config.body === 'string' ? config.body : JSON.stringify(config.body),
+              ctx
+            )
+          : undefined;
+
+        const fetchOptions: RequestInit = { method, headers };
+        if (bodyConfig && method !== 'GET' && method !== 'HEAD') {
+          fetchOptions.body = bodyConfig;
+          if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+        }
+
+        const controller = new AbortController();
+        const tId = setTimeout(() => controller.abort(), 15_000);
+        fetchOptions.signal = controller.signal;
+
+        try {
+          const response = await fetch(url, fetchOptions);
+          clearTimeout(tId);
+          const responseText = await response.text();
+          let responseData: unknown;
+          try {
+            responseData = JSON.parse(responseText);
+          } catch {
+            responseData = responseText;
+          }
+          const serialized = typeof responseData === 'string'
+            ? responseData
+            : JSON.stringify(responseData);
+          const responseVar =
+            (config.responseVariable as string) ||
+            (config.saveAs as string) ||
+            'apiResponse';
+          ctx.variables[responseVar] = serialized;
+          ctx.variables['apiResponse'] = serialized;
+          ctx.variables['__http_status'] = String(response.status);
+          ctx.variables['__http_response'] = serialized;
+          responses.push(`🌐 [${method} ${url} → ${response.status}]`);
+        } catch (err) {
+          clearTimeout(tId);
+          const msg = err instanceof Error ? err.message : String(err);
+          responses.push(`🌐 [${method} ${url} → erreur : ${msg}]`);
+          ctx.variables['__http_status'] = '0';
+          ctx.variables['__http_response'] = msg;
+        }
         break;
       }
 
       case 'ai-response': {
         const prompt = interpolateTestVariables((config.prompt as string) || '', ctx);
         const aiVar = (config.responseVariable as string) || 'aiResponse';
-        ctx.variables[aiVar] = `[AI would respond to: "${ctx.message}"]`;
-        responses.push(`[AI Response - prompt: "${prompt.substring(0, 60)}${prompt.length > 60 ? '...' : ''}"]`);
+        const model = (config.model as string) || undefined;
+        const maxTokens = (config.maxTokens as number) || undefined;
+        const temperature = (config.temperature as number) || undefined;
+
+        if (!prompt.trim()) {
+          throw new Error('AI prompt is empty — configure a prompt in the node settings');
+        }
+
+        try {
+          const { callAi, getAiSettings } = await import('@/lib/ai-providers');
+          if (!getAiSettings()) {
+            responses.push(
+              `🤖 *AI Response* — provider non configuré.\n\n` +
+              `_Va dans la page Settings pour ajouter une API key (Groq, OpenAI, Anthropic ou Gemini). Sans ça, ce nœud ne peut pas répondre ni ici ni en production._`
+            );
+            ctx.variables[aiVar] = '';
+            break;
+          }
+          const aiResult = await callAi({ prompt, model, maxTokens, temperature });
+          ctx.variables[aiVar] = aiResult.text;
+          responses.push(aiResult.text);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          responses.push(`🤖 *AI Response* — erreur : ${msg}`);
+          ctx.variables[aiVar] = '';
+        }
         break;
       }
 
@@ -429,21 +583,168 @@ async function walkFlow(
         return 'done'; // Stop
       }
 
-      case 'assign-label':
-      case 'remove-label':
-      case 'add-to-group':
-      case 'remove-from-group':
-      case 'block-contact':
-      case 'unblock-contact':
-      case 'forward-message':
-      case 'mark-as-read':
+      case 'assign-label': {
+        const labelName = interpolateTestVariables(
+          (config.labelName as string) || (config.label as string) || (config.name as string) || '',
+          ctx
+        );
+        responses.push(
+          `🏷️ *Assign Label* — nécessite un vrai contact WhatsApp.\n` +
+          `Label : "${labelName || '?'}"\n\n` +
+          `_Pour tester, envoie un vrai message depuis WhatsApp vers ta session. Les labels sont stockés côté base et visibles sur la page Contacts, ce n'est pas affichable dans ce simulateur._`
+        );
+        break;
+      }
+
+      case 'remove-label': {
+        const labelName = interpolateTestVariables(
+          (config.labelName as string) || (config.label as string) || (config.name as string) || '',
+          ctx
+        );
+        responses.push(
+          `🏷️ *Remove Label* — nécessite un vrai contact WhatsApp.\n` +
+          `Label : "${labelName || '?'}"\n\n` +
+          `_Pour tester, envoie un vrai message depuis WhatsApp. L'effet s'applique uniquement à un contact réellement présent dans ta base._`
+        );
+        break;
+      }
+
+      case 'add-to-group': {
+        const groupName = (config.groupName as string) || (config.groupId as string) || '?';
+        responses.push(
+          `👥 *Add to Group* — nécessite une connexion WhatsApp active.\n` +
+          `Groupe cible : "${groupName}"\n\n` +
+          `_Cette action fait un appel API WhatsApp pour ajouter un participant à un groupe existant. Tu dois être admin du groupe. Teste avec un vrai message WhatsApp pour déclencher réellement l'ajout._`
+        );
+        break;
+      }
+
+      case 'remove-from-group': {
+        const groupName = (config.groupName as string) || (config.groupId as string) || '?';
+        responses.push(
+          `👥 *Remove from Group* — nécessite une connexion WhatsApp active.\n` +
+          `Groupe cible : "${groupName}"\n\n` +
+          `_Cette action appelle WhatsApp pour retirer un participant. Tu dois être admin du groupe. Teste en vrai depuis WhatsApp._`
+        );
+        break;
+      }
+
+      case 'block-contact': {
+        responses.push(
+          `🚫 *Block Contact* — nécessite une conversation WhatsApp existante.\n\n` +
+          `_WhatsApp refuse de bloquer un numéro avec lequel tu n'as jamais échangé. Pour tester, envoie d'abord un vrai message depuis WhatsApp vers ta session, puis déclenche ce flow : le contact sera réellement bloqué côté WhatsApp ET dans ta base locale (badge rouge dans la page Contacts)._`
+        );
+        break;
+      }
+
+      case 'unblock-contact': {
+        responses.push(
+          `✅ *Unblock Contact* — nécessite une connexion WhatsApp active.\n\n` +
+          `_Le déblocage passe par l'API WhatsApp et met à jour ta base locale. Teste depuis un vrai message WhatsApp pour voir le changement dans la page Contacts._`
+        );
+        break;
+      }
+
+      case 'forward-message': {
+        const targets = (config.targets as string[]) || [];
+        const single = (config.targetChat as string) || (config.to as string) || '';
+        const count = targets.length || (single ? 1 : 0);
+        responses.push(
+          `↪️ *Forward Message* — nécessite un vrai message WhatsApp à transférer.\n` +
+          `${count} destinataire${count > 1 ? 's' : ''} configuré${count > 1 ? 's' : ''}.\n\n` +
+          `_Ce simulateur ne peut pas transférer un message qui n'existe pas réellement dans WhatsApp. Déclenche le flow depuis un vrai message entrant : il sera transféré (ou recopié en fallback) à tous les destinataires sélectionnés._`
+        );
+        break;
+      }
+
+      case 'mark-as-read': {
+        responses.push(
+          `✓✓ *Mark as Read* — nécessite une conversation WhatsApp active.\n\n` +
+          `_Cette action envoie le signal "lu" (double check bleu) à WhatsApp. Sans vraie conversation, rien à marquer. Teste depuis un vrai message._`
+        );
+        break;
+      }
+
       case 'typing-indicator': {
-        // Action nodes skipped in test mode
+        const duration = (config.duration as number) || 3;
+        responses.push(
+          `⌨️ *Typing Indicator* — nécessite une conversation WhatsApp active.\n` +
+          `Durée : ${duration}s\n\n` +
+          `_Ce nœud fait apparaître "en train d'écrire…" dans la conversation du contact pendant X secondes. Invisible dans ce simulateur — teste avec un vrai message WhatsApp pour voir l'indicateur s'afficher côté téléphone._`
+        );
         break;
       }
 
       case 'go-to-flow': {
-        responses.push('[Go to another flow - skipped in test mode]');
+        const targetFlowId = ((config.flowId as string) || '').trim();
+        if (!targetFlowId) {
+          responses.push('[Go to Flow: no target flow configured]');
+          break;
+        }
+        if (targetFlowId === flowId) {
+          responses.push('[Go to Flow: target is the current flow — skipped to avoid infinite loop]');
+          break;
+        }
+        if (ctx.flowStack && ctx.flowStack.has(targetFlowId)) {
+          responses.push(
+            `[Go to Flow: cyclic chain detected — flow "${targetFlowId}" is already running in this call]`
+          );
+          break;
+        }
+        if (ctx.flowStack && ctx.flowStack.size >= 10) {
+          responses.push('[Go to Flow: depth limit (10) reached — chain stopped]');
+          break;
+        }
+
+        const db = getDb();
+        const targetRow = db
+          .prepare(`SELECT * FROM flows WHERE id = ?`)
+          .get(targetFlowId) as Record<string, unknown> | undefined;
+        if (!targetRow) {
+          responses.push(`[Go to Flow: target flow "${targetFlowId}" not found]`);
+          break;
+        }
+
+        const targetNodes = JSON.parse((targetRow.nodes as string) || '[]') as FlowNodeSerialized[];
+        const targetEdges = JSON.parse((targetRow.edges as string) || '[]') as FlowEdgeSerialized[];
+
+        // Find entry points in the target flow: trigger's children, or root nodes if no trigger.
+        const trigger = targetNodes.find((n) => n.data.type === 'trigger');
+        let entryIds: string[] = [];
+        if (trigger) {
+          entryIds = getNextNodes(trigger.id, targetEdges);
+          if (entryIds.length === 0) {
+            const withIncoming = new Set(targetEdges.map((e) => e.target));
+            entryIds = targetNodes
+              .filter((n) => n.id !== trigger.id && !withIncoming.has(n.id))
+              .map((n) => n.id);
+          }
+        } else {
+          const withIncoming = new Set(targetEdges.map((e) => e.target));
+          entryIds = targetNodes
+            .filter((n) => !withIncoming.has(n.id))
+            .map((n) => n.id);
+        }
+
+        // Walk the target flow with a fresh visited set so nothing bleeds across.
+        // Also record the current flow in the stack to detect cyclic go-to-flow chains.
+        const subVisited = new Set<string>();
+        const subStack = new Set(ctx.flowStack || []);
+        subStack.add(flowId);
+        const subCtx: TestContext = { ...ctx, flowStack: subStack };
+        for (const id of entryIds) {
+          const state = await walkFlow(
+            id,
+            targetNodes,
+            targetEdges,
+            subCtx,
+            responses,
+            subVisited,
+            targetFlowId,
+            executionId
+          );
+          if (state === 'paused') return 'paused';
+        }
         break;
       }
 
@@ -504,19 +805,26 @@ async function walkFlow(
   return 'done';
 }
 
+// Check if trigger matches the simulated message.
+// Returns { matched, reason? }: reason is populated when matched=false so the
+// test chat can show the user a helpful explanation of what went wrong.
+export interface TriggerMatchResult {
+  matched: boolean;
+  reason?: string;
+}
+
 export interface SimOptions {
   msgType?: string;   // 'text'|'image'|'video'|'audio'|'document'|'sticker'|'location'|'contact'|'poll'
   isGroup?: boolean;
   sender?: string;    // phone number like "2299xxxxxxx" or full JID
 }
 
-// Check if trigger matches the simulated message (applies ALL configured filters)
 function checkTriggerMatch(
   trigger: Flow['trigger'],
   triggerConfig: Record<string, unknown>,
   message: string,
   sim: SimOptions = {}
-): boolean {
+): TriggerMatchResult {
   const triggerType = trigger?.type || (triggerConfig.triggerType as string) || 'message_received';
   const msgType = sim.msgType || 'text';
   const isGroup = sim.isGroup ?? false;
@@ -524,37 +832,8 @@ function checkTriggerMatch(
   const sender = rawSender.includes('@') ? rawSender : `${rawSender}@c.us`;
   const chatId = isGroup ? 'test-group@g.us' : sender;
 
-  // For keyword / regex triggers: check body first
-  if (triggerType === 'keyword') {
-    const rawKeywords = triggerConfig.keywords || triggerConfig.keyword || '';
-    const keywords = (typeof rawKeywords === 'string'
-      ? rawKeywords.split(/[,\n]/).map((k: string) => k.trim()).filter(Boolean)
-      : Array.isArray(rawKeywords) ? rawKeywords : []) as string[];
-    if (keywords.length === 0) return applyFilters();
-    const matchMode = (triggerConfig.matchMode as string) || 'contains';
-    const lowerMsg = message.toLowerCase();
-    const kwMatched = keywords.some((kw: string) => {
-      const lowerKw = kw.toLowerCase();
-      if (matchMode === 'exact') return lowerMsg === lowerKw;
-      if (matchMode === 'startsWith') return lowerMsg.startsWith(lowerKw);
-      return lowerMsg.includes(lowerKw);
-    });
-    if (!kwMatched) return false;
-    return applyFilters();
-  }
-
-  if (triggerType === 'regex') {
-    const pattern = (triggerConfig.pattern as string) || '';
-    if (!pattern) return applyFilters();
-    try {
-      if (!new RegExp(pattern, 'i').test(message)) return false;
-    } catch { return false; }
-    return applyFilters();
-  }
-
-  // For message_received and all other message-based triggers: apply all filters
-  return applyFilters();
-
+  // Helper: apply the advanced filters (messageType, chatType, sender, etc.)
+  // from `config.filters` against the simulated message context.
   function applyFilters(): boolean {
     return applyTriggerFilters(triggerConfig, {
       body: message,
@@ -571,6 +850,135 @@ function checkTriggerMatch(
       quotedFromMe: false,
     });
   }
+
+  // Keyword and regex share the same pattern: first match on body, then filters.
+  if (triggerType === 'keyword') {
+    const rawKeywords = triggerConfig.keywords || triggerConfig.keyword || '';
+    const keywords = (typeof rawKeywords === 'string'
+      ? rawKeywords.split(/[,\n]/).map((k: string) => k.trim()).filter(Boolean)
+      : Array.isArray(rawKeywords) ? rawKeywords : []) as string[];
+    if (keywords.length > 0) {
+      const matchMode = (triggerConfig.matchMode as string) || 'contains';
+      const lowerMsg = message.toLowerCase();
+      const kwMatched = keywords.some((kw: string) => {
+        const lowerKw = kw.toLowerCase();
+        if (matchMode === 'exact') return lowerMsg === lowerKw;
+        if (matchMode === 'startsWith') return lowerMsg.startsWith(lowerKw);
+        return lowerMsg.includes(lowerKw);
+      });
+      if (!kwMatched) {
+        return {
+          matched: false,
+          reason: `Aucun des mots-clés [${keywords.join(', ')}] n'a été trouvé dans ton message (mode : ${matchMode}).`,
+        };
+      }
+    }
+    return applyFilters()
+      ? { matched: true }
+      : { matched: false, reason: 'Les filtres avancés du trigger excluent ce message (type, chat, expéditeur…).' };
+  }
+
+  if (triggerType === 'regex') {
+    const pattern = (triggerConfig.pattern as string) || (triggerConfig.regex as string) || '';
+    if (pattern) {
+      try {
+        if (!new RegExp(pattern, 'i').test(message)) {
+          return {
+            matched: false,
+            reason: `Ton message ne correspond pas au pattern regex "${pattern}".`,
+          };
+        }
+      } catch {
+        return { matched: false, reason: `Pattern regex invalide : "${pattern}".` };
+      }
+    }
+    return applyFilters()
+      ? { matched: true }
+      : { matched: false, reason: 'Les filtres avancés du trigger excluent ce message.' };
+  }
+
+  // Context-dependent triggers — give the user a pedagogical explanation
+  // when sim options don't match.
+  if (triggerType === 'media_received') {
+    if (msgType === 'text') {
+      return {
+        matched: false,
+        reason:
+          '📷 *Trigger "Media Received"* — active l\'option Simuler en haut du chat et choisis un type de média (image/vidéo/audio), ou envoie un vrai média depuis WhatsApp.',
+      };
+    }
+    return applyFilters()
+      ? { matched: true }
+      : { matched: false, reason: 'Les filtres du trigger excluent ce type de média.' };
+  }
+
+  if (triggerType === 'group_message') {
+    if (!isGroup) {
+      return {
+        matched: false,
+        reason:
+          '👥 *Trigger "Group Message"* — active l\'option Groupe dans le simulateur, ou teste depuis un vrai groupe WhatsApp.',
+      };
+    }
+    return applyFilters()
+      ? { matched: true }
+      : { matched: false, reason: 'Les filtres avancés du trigger excluent ce groupe.' };
+  }
+
+  if (triggerType === 'contact_message') {
+    return applyFilters()
+      ? { matched: true }
+      : {
+          matched: false,
+          reason:
+            '👤 *Trigger "Contact Message"* — configure l\'expéditeur dans le simulateur ou teste depuis le contact ciblé.',
+        };
+  }
+
+  if (triggerType === 'new_contact') {
+    return {
+      matched: false,
+      reason:
+        '🆕 *Trigger "New Contact"* — se déclenche uniquement pour un contact jamais vu. Impossible à simuler car le contact de test est toujours le même.',
+    };
+  }
+
+  if (triggerType === 'added_to_group') {
+    return {
+      matched: false,
+      reason:
+        '➕ *Trigger "Added to Group"* — se déclenche quand ta session est ajoutée à un groupe. Impossible à simuler depuis le chat de test.',
+    };
+  }
+
+  if (triggerType === 'webhook') {
+    return {
+      matched: false,
+      reason:
+        '🔗 *Trigger "Webhook"* — se déclenche par un appel HTTP externe vers `/api/webhooks`, pas par un message. Teste avec curl ou Postman.',
+    };
+  }
+
+  if (triggerType === 'schedule') {
+    return {
+      matched: false,
+      reason:
+        '⏰ *Trigger "Schedule"* — se déclenche à des heures précises (cron). Pas déclenchable depuis un message de test.',
+    };
+  }
+
+  // message_received and anything else falls through to filter-based matching.
+  if (triggerType === 'message_received') {
+    return applyFilters()
+      ? { matched: true }
+      : { matched: false, reason: 'Les filtres avancés du trigger excluent ce message.' };
+  }
+
+  // Unknown trigger type — fail safe (don't silently match).
+  return {
+    matched: false,
+    reason: `⚠️ Type de trigger inconnu : "${triggerType}". Le simulateur ne sait pas comment le tester.`,
+  };
 }
 
 // --- Route handler ---
@@ -655,23 +1063,26 @@ export async function POST(
     // Clean up expired paused state
     if (pausedState) pausedStates.delete(id);
 
-    // Normal flow: start from trigger
+    // Normal flow: try to start from the trigger node. If there is no trigger,
+    // fall back to root nodes (same behaviour as the real engine) so that
+    // sub-flows jumped into via `go-to-flow` or orphan flows still run in test mode.
     const triggerNode = flow.nodes.find((n) => n.data.type === 'trigger');
-    if (!triggerNode) {
-      return Response.json({
-        success: true,
-        data: { responses: ['No trigger node configured in this flow.'] },
-      });
-    }
 
-    const triggerConfig = triggerNode.data.config || {};
-    const matched = checkTriggerMatch(flow.trigger, triggerConfig, message, simOptions || {});
-
-    if (!matched) {
-      return Response.json({
-        success: true,
-        data: { responses: [] },
-      });
+    // Only check trigger-match when a trigger node is present — otherwise any
+    // message simply runs the flow's root nodes.
+    if (triggerNode) {
+      const triggerConfig = triggerNode.data.config || {};
+      const result = checkTriggerMatch(flow.trigger, triggerConfig, message);
+      if (!result.matched) {
+        return Response.json({
+          success: true,
+          data: {
+            responses: result.reason
+              ? [`⚠️ *Trigger non déclenché*\n\n${result.reason}`]
+              : ['⚠️ Le trigger de ce flow ne correspond pas à ton message.'],
+          },
+        });
+      }
     }
 
     const ctx: TestContext = {
@@ -686,31 +1097,52 @@ export async function POST(
       timestamp: new Date().toISOString(),
     });
 
-    flowExecutionBus.emit({
-      type: 'node:executing',
-      flowId: flow.id,
-      executionId,
-      nodeId: triggerNode.id,
-      nodeType: 'trigger',
-      nodeLabel: triggerNode.data.label,
-      timestamp: new Date().toISOString(),
-    });
+    if (triggerNode) {
+      flowExecutionBus.emit({
+        type: 'node:executing',
+        flowId: flow.id,
+        executionId,
+        nodeId: triggerNode.id,
+        nodeType: 'trigger',
+        nodeLabel: triggerNode.data.label,
+        timestamp: new Date().toISOString(),
+      });
 
-    await delay(300);
+      await delay(300);
 
-    flowExecutionBus.emit({
-      type: 'node:completed',
-      flowId: flow.id,
-      executionId,
-      nodeId: triggerNode.id,
-      nodeType: 'trigger',
-      nodeLabel: triggerNode.data.label,
-      timestamp: new Date().toISOString(),
-      data: { status: 'success', durationMs: 0 },
-    });
+      flowExecutionBus.emit({
+        type: 'node:completed',
+        flowId: flow.id,
+        executionId,
+        nodeId: triggerNode.id,
+        nodeType: 'trigger',
+        nodeLabel: triggerNode.data.label,
+        timestamp: new Date().toISOString(),
+        data: { status: 'success', durationMs: 0 },
+      });
+    }
+
+    // Compute entry points:
+    //   - Trigger exists with outgoing edges → start from its children
+    //   - Trigger exists but isolated → fall back to root nodes
+    //   - No trigger at all → run every root node (no incoming edge)
+    let startTargets: string[] = [];
+    if (triggerNode) {
+      startTargets = getNextNodes(triggerNode.id, flow.edges);
+      if (startTargets.length === 0) {
+        const withIncoming = new Set(flow.edges.map((e) => e.target));
+        startTargets = flow.nodes
+          .filter((n) => n.id !== triggerNode.id && !withIncoming.has(n.id))
+          .map((n) => n.id);
+      }
+    } else {
+      const withIncoming = new Set(flow.edges.map((e) => e.target));
+      startTargets = flow.nodes
+        .filter((n) => !withIncoming.has(n.id))
+        .map((n) => n.id);
+    }
 
     let flowPaused = false;
-    const startTargets = getNextNodes(triggerNode.id, flow.edges);
     for (const targetId of startTargets) {
       const result = await walkFlow(
         targetId,

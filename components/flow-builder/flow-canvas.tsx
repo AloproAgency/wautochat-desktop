@@ -711,6 +711,10 @@ function FlowCanvasInner({
     [nodes, saveHistory]
   );
 
+  // Skip autosave on the very first render (nodes are seeded from DB).
+  const didHydrateRef = useRef(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Save flow
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -748,6 +752,24 @@ function FlowCanvasInner({
       setSaving(false);
     }
   }, [nodes, edges, flowId, onSaveTimestamp]);
+
+  // Autosave: 1.5s after any nodes/edges change, persist the flow to DB.
+  // Ensures that config tweaks (emoji picker, variable names, etc.) reach
+  // the test chat and the real engine without requiring the user to click
+  // the main Save button.
+  useEffect(() => {
+    if (!didHydrateRef.current) {
+      didHydrateRef.current = true;
+      return;
+    }
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      handleSave();
+    }, 1500);
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [nodes, edges, handleSave]);
 
   // Keyboard shortcuts
   const onKeyDown = useCallback(
@@ -1112,6 +1134,7 @@ function FlowCanvasInner({
               key={selectedNode.id}
               node={selectedNode}
               sessionId={sessionId}
+              currentFlowId={flowId}
               onClose={() => {
                 setSelectedNode(null);
                 setShowMobileConfig(false);
@@ -1137,6 +1160,7 @@ function FlowCanvasInner({
           key={selectedNode.id}
           node={selectedNode}
           sessionId={sessionId}
+          currentFlowId={flowId}
           onClose={() => setSelectedNode(null)}
           onUpdate={onUpdateNode}
           onDelete={onDeleteNode}

@@ -72,6 +72,7 @@ const nodeIconConfig: Record<string, { icon: React.ElementType; bg: string; grad
 interface NodeConfigPanelProps {
   node: Node<FlowNodeData> | null;
   sessionId?: string;
+  currentFlowId?: string;
   onClose: () => void;
   onUpdate: (nodeId: string, data: FlowNodeData) => void;
   onDelete: (nodeId: string) => void;
@@ -80,6 +81,7 @@ interface NodeConfigPanelProps {
 export default function NodeConfigPanel({
   node,
   sessionId,
+  currentFlowId,
   onClose,
   onUpdate,
   onDelete,
@@ -217,7 +219,8 @@ function renderConfigForm(
   nodeType: FlowNodeType,
   config: Record<string, unknown>,
   updateConfig: (key: string, value: unknown) => void,
-  sessionId?: string
+  sessionId?: string,
+  currentFlowId?: string
 ) {
   switch (nodeType) {
     case 'trigger':
@@ -271,7 +274,7 @@ function renderConfigForm(
     case 'remove-from-group':
       return <GroupConfig config={config} updateConfig={updateConfig} sessionId={sessionId} nodeType={nodeType} />;
     case 'go-to-flow':
-      return <GoToFlowConfig config={config} updateConfig={updateConfig} />;
+      return <GoToFlowConfig config={config} updateConfig={updateConfig} sessionId={sessionId} currentFlowId={currentFlowId} />;
     case 'send-reaction':
       return <ReactionConfig config={config} updateConfig={updateConfig} />;
     case 'forward-message':
@@ -2371,23 +2374,187 @@ function GroupConfig({
 
 // ---- Go to Flow Config ----
 
-function GoToFlowConfig({ config, updateConfig }: ConfigProps) {
+interface FlowSummary {
+  id: string;
+  sessionId: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+}
+
+function GoToFlowConfig({
+  config,
+  updateConfig,
+  sessionId,
+  currentFlowId,
+}: ConfigProps & { sessionId?: string; currentFlowId?: string }) {
+  const [flows, setFlows] = useState<FlowSummary[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [showPicker, setShowPicker] = useState(false);
+
+  const selectedFlowId = (config.flowId as string) || '';
+  const selectedFlow = flows.find((f) => f.id === selectedFlowId);
+  const selectedFlowName =
+    (config.flowName as string) || selectedFlow?.name || '';
+
+  useEffect(() => {
+    setLoading(true);
+    const url = sessionId ? `/api/flows?sessionId=${sessionId}` : '/api/flows';
+    fetch(url)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && Array.isArray(json.data)) {
+          setFlows(json.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [sessionId]);
+
+  // Never show the current flow in the picker (prevents infinite loops)
+  const availableFlows = flows.filter((f) => f.id !== currentFlowId);
+  const filteredFlows = availableFlows.filter((f) => {
+    const q = search.toLowerCase();
+    return (
+      !q ||
+      f.name.toLowerCase().includes(q) ||
+      (f.description || '').toLowerCase().includes(q)
+    );
+  });
+
+  function selectFlow(f: FlowSummary) {
+    updateConfig('flowId', f.id);
+    updateConfig('flowName', f.name);
+    setShowPicker(false);
+    setSearch('');
+  }
+
+  function clearSelection() {
+    updateConfig('flowId', '');
+    updateConfig('flowName', '');
+  }
+
   return (
     <>
-      <Field label="Flow Name">
-        <TextInput
-          value={(config.flowName as string) || ''}
-          onChange={(v) => updateConfig('flowName', v)}
-          placeholder="Welcome Flow"
-        />
+      <Field
+        label="Jump to flow"
+        hint="Execution will continue inside the selected flow."
+      >
+        {selectedFlowId ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+                <ExternalLink className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">
+                  {selectedFlowName || 'Unnamed flow'}
+                </p>
+                <p className="text-xs text-gray-500 truncate">
+                  {selectedFlow?.isActive ? 'Active' : 'Inactive'}
+                  {selectedFlow?.description ? ` · ${selectedFlow.description}` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="text-gray-400 hover:text-red-500 transition-colors"
+                title="Remove"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPicker(true)}
+              className="mt-2 text-xs text-emerald-700 font-medium hover:underline"
+            >
+              Change flow
+            </button>
+          </div>
+        ) : !showPicker ? (
+          <button
+            type="button"
+            onClick={() => setShowPicker(true)}
+            className="w-full px-3 py-3 text-sm rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-emerald-400 text-gray-600 transition-colors flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Choose a flow
+          </button>
+        ) : null}
+
+        {showPicker && (
+          <div className="mt-2 rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search flows..."
+                autoFocus
+                className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPicker(false);
+                  setSearch('');
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="max-h-56 overflow-y-auto">
+              {loading ? (
+                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                  Loading flows...
+                </p>
+              ) : availableFlows.length === 0 ? (
+                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                  No other flows found. Create one first on the Flows page.
+                </p>
+              ) : filteredFlows.length === 0 ? (
+                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                  No flows match your search.
+                </p>
+              ) : (
+                filteredFlows.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => selectFlow(f)}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 text-left transition-colors"
+                  >
+                    <div
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                        f.isActive
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-gray-100 text-gray-500'
+                      }`}
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {f.name || 'Unnamed flow'}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {f.isActive ? 'Active' : 'Inactive'}
+                        {f.description ? ` · ${f.description}` : ''}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </Field>
-      <Field label="Flow ID">
-        <TextInput
-          value={(config.flowId as string) || ''}
-          onChange={(v) => updateConfig('flowId', v)}
-          placeholder="flow-uuid"
-        />
-      </Field>
+
+      <HintBox text="When this node runs, execution jumps to the selected flow and the current flow stops. The current flow is hidden from the list to prevent infinite loops." />
     </>
   );
 }
