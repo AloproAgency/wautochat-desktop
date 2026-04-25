@@ -48,16 +48,16 @@ function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg rounded-lg border border-wa-border bg-wa-panel shadow-xl mx-4 max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between border-b border-wa-border px-6 py-4">
+      <div className="relative z-10 w-full max-w-lg rounded-lg border border-wa-border dark:border-zinc-700 bg-wa-panel dark:bg-zinc-800 shadow-xl mx-4 max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between border-b border-wa-border dark:border-zinc-700 px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-wa-text">{title}</h2>
+            <h2 className="text-lg font-semibold text-wa-text dark:text-zinc-100">{title}</h2>
             {description && (
-              <p className="mt-1 text-sm text-wa-text-secondary">{description}</p>
+              <p className="mt-1 text-sm text-wa-text-secondary dark:text-zinc-300">{description}</p>
             )}
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 hover:bg-wa-hover">
-            <X className="h-5 w-5 text-wa-text-muted" />
+          <button onClick={onClose} className="rounded-lg p-1 hover:bg-wa-hover dark:hover:bg-zinc-700">
+            <X className="h-5 w-5 text-wa-text-muted dark:text-zinc-500" />
           </button>
         </div>
         <div className="overflow-y-auto px-6 py-4">{children}</div>
@@ -82,7 +82,7 @@ function DropdownMenu({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-lg border border-wa-border bg-wa-panel py-1 shadow-lg">
+          <div className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-lg border border-wa-border dark:border-zinc-700 bg-wa-panel dark:bg-zinc-800 py-1 shadow-lg">
             {items.map((item, i) => (
               <button
                 key={i}
@@ -91,8 +91,8 @@ function DropdownMenu({
                   item.onClick();
                   setOpen(false);
                 }}
-                className={`flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-wa-hover ${
-                  item.danger ? 'text-wa-danger' : 'text-wa-text'
+                className={`flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-wa-hover dark:hover:bg-zinc-700 ${
+                  item.danger ? 'text-wa-danger' : 'text-wa-text dark:text-zinc-100'
                 }`}
               >
                 {item.icon}
@@ -120,9 +120,9 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-4 rounded-full bg-wa-bg p-4 text-wa-text-muted">{icon}</div>
-      <h3 className="mb-2 text-lg font-semibold text-wa-text">{title}</h3>
-      <p className="mb-6 max-w-sm text-sm text-wa-text-secondary">{description}</p>
+      <div className="mb-4 rounded-full bg-wa-bg dark:bg-zinc-800 p-4 text-wa-text-muted dark:text-zinc-500">{icon}</div>
+      <h3 className="mb-2 text-lg font-semibold text-wa-text dark:text-zinc-100">{title}</h3>
+      <p className="mb-6 max-w-sm text-sm text-wa-text-secondary dark:text-zinc-300">{description}</p>
       {action}
     </div>
   );
@@ -146,7 +146,7 @@ function SearchInput({
       prefix={<Search className="h-4 w-4" />}
       suffix={
         value ? (
-          <button onClick={() => onChange('')} className="hover:text-wa-text">
+          <button onClick={() => onChange('')} className="hover:text-wa-text dark:hover:text-zinc-100">
             <X className="h-4 w-4" />
           </button>
         ) : undefined
@@ -172,7 +172,7 @@ function Toggle({
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors ${
-          checked ? 'bg-wa-teal' : 'bg-gray-300'
+          checked ? 'bg-wa-teal' : 'bg-gray-300 dark:bg-zinc-600'
         }`}
       >
         <span
@@ -181,7 +181,7 @@ function Toggle({
           }`}
         />
       </button>
-      {label && <span className="text-sm text-wa-text">{label}</span>}
+      {label && <span className="text-sm text-wa-text dark:text-zinc-100">{label}</span>}
     </label>
   );
 }
@@ -485,33 +485,37 @@ export default function GroupsPage() {
   }
 
   return (
-    <div className="flex h-full">
-      {/* Main Content */}
-      <div className={`flex-1 overflow-y-auto p-6 ${detailPanel ? 'mr-[420px]' : ''}`}>
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-wa-text">Groups</h1>
-            <p className="mt-1 text-sm text-wa-text-secondary">
-              Manage your WhatsApp groups
-            </p>
+    <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none bg-slate-50 dark:bg-zinc-900 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+      <header className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-700">
+        <div className="flex items-center gap-3 px-5 h-14">
+          <div className="flex items-baseline gap-2 shrink-0">
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Groups</h1>
+            <span className="text-xs font-mono text-slate-400 dark:text-zinc-500 tabular-nums">{groups.length}</span>
           </div>
-          <Button
-            icon={<Plus className="h-4 w-4" />}
+          <div className="h-5 w-px bg-slate-200 dark:bg-zinc-700" />
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search groups…"
+              className="w-full rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 pl-8 pr-3 h-8 text-sm text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-500 focus:ring-2 focus:ring-slate-100 dark:focus:ring-zinc-700 transition"
+            />
+          </div>
+          <button
             onClick={() => setShowCreateModal(true)}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-zinc-700 h-8 px-3 text-[13px] font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 active:scale-[0.98] transition-all"
           >
-            Create Group
-          </Button>
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">New group</span>
+          </button>
         </div>
+      </header>
 
-        {/* Search */}
-        <div className="mb-6 max-w-md">
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search groups..."
-          />
-        </div>
+      {/* Body — main content + optional detail panel */}
+      <div className="flex flex-1 min-h-0">
+      {/* Main Content */}
+      <div className={`flex-1 overflow-y-auto p-5 ${detailPanel ? 'mr-[420px]' : ''}`}>
 
         {/* Groups Grid */}
         {filteredGroups.length === 0 ? (
@@ -539,7 +543,7 @@ export default function GroupsPage() {
             {filteredGroups.map((group) => (
               <Card
                 key={group.id}
-                className="cursor-pointer transition-shadow hover:shadow-md"
+                className="cursor-pointer transition-shadow hover:shadow-md dark:bg-zinc-800 dark:border-zinc-700"
                 onClick={() => openDetailPanel(group)}
               >
                 <CardBody>
@@ -552,11 +556,11 @@ export default function GroupsPage() {
                         className="shrink-0"
                       />
                       <div className="min-w-0 flex-1">
-                        <h3 className="truncate font-semibold text-wa-text">
+                        <h3 className="truncate font-semibold text-wa-text dark:text-zinc-100">
                           {group.name}
                         </h3>
                         {group.description && (
-                          <p className="mt-0.5 truncate text-sm text-wa-text-secondary">
+                          <p className="mt-0.5 truncate text-sm text-wa-text-secondary dark:text-zinc-300">
                             {group.description}
                           </p>
                         )}
@@ -564,8 +568,8 @@ export default function GroupsPage() {
                     </div>
                     <DropdownMenu
                       trigger={
-                        <button className="rounded-lg p-1.5 hover:bg-wa-hover">
-                          <MoreVertical className="h-4 w-4 text-wa-text-muted" />
+                        <button className="rounded-lg p-1.5 hover:bg-wa-hover dark:hover:bg-zinc-700">
+                          <MoreVertical className="h-4 w-4 text-wa-text-muted dark:text-zinc-500" />
                         </button>
                       }
                       items={[
@@ -594,7 +598,7 @@ export default function GroupsPage() {
                     />
                   </div>
                   <div className="mt-4 flex items-center gap-3">
-                    <div className="flex items-center gap-1 text-sm text-wa-text-secondary">
+                    <div className="flex items-center gap-1 text-sm text-wa-text-secondary dark:text-zinc-300">
                       <Users className="h-3.5 w-3.5" />
                       <span>{group.participantCount} members</span>
                     </div>
@@ -602,7 +606,7 @@ export default function GroupsPage() {
                       <Badge variant="success">Admin</Badge>
                     )}
                   </div>
-                  <div className="mt-2 text-xs text-wa-text-muted">
+                  <div className="mt-2 text-xs text-wa-text-muted dark:text-zinc-500">
                     Created {new Date(group.createdAt).toLocaleDateString()}
                   </div>
                 </CardBody>
@@ -614,24 +618,24 @@ export default function GroupsPage() {
 
       {/* Detail Panel */}
       {detailPanel && selectedGroup && (
-        <div className="fixed right-0 top-0 z-40 flex h-full w-[420px] flex-col border-l border-wa-border bg-wa-panel shadow-lg">
+        <div className="fixed right-0 top-0 z-40 flex h-full w-[420px] flex-col border-l border-wa-border dark:border-zinc-700 bg-wa-panel dark:bg-zinc-800 shadow-lg">
           {/* Panel Header */}
-          <div className="flex items-center justify-between border-b border-wa-border bg-wa-header px-4 py-3">
-            <h2 className="font-semibold text-wa-text">Group Info</h2>
+          <div className="flex items-center justify-between border-b border-wa-border dark:border-zinc-700 bg-wa-header dark:bg-zinc-900 px-4 py-3">
+            <h2 className="font-semibold text-wa-text dark:text-zinc-100">Group Info</h2>
             <button
               onClick={() => {
                 setDetailPanel(false);
                 setSelectedGroup(null);
               }}
-              className="rounded-lg p-1 hover:bg-wa-hover"
+              className="rounded-lg p-1 hover:bg-wa-hover dark:hover:bg-zinc-700"
             >
-              <X className="h-5 w-5 text-wa-text-muted" />
+              <X className="h-5 w-5 text-wa-text-muted dark:text-zinc-500" />
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {/* Group Profile */}
-            <div className="flex flex-col items-center border-b border-wa-border px-6 py-6">
+            <div className="flex flex-col items-center border-b border-wa-border dark:border-zinc-700 px-6 py-6">
               <Avatar
                 src={selectedGroup.profilePicUrl}
                 name={selectedGroup.name}
@@ -658,36 +662,36 @@ export default function GroupsPage() {
                 </div>
               ) : (
                 <div className="mt-3 flex items-center gap-2">
-                  <h3 className="text-lg font-semibold text-wa-text">
+                  <h3 className="text-lg font-semibold text-wa-text dark:text-zinc-100">
                     {selectedGroup.name}
                   </h3>
                   {selectedGroup.isAdmin && (
                     <button
                       onClick={() => setEditingName(true)}
-                      className="rounded p-1 hover:bg-wa-hover"
+                      className="rounded p-1 hover:bg-wa-hover dark:hover:bg-zinc-700"
                     >
-                      <Pencil className="h-3.5 w-3.5 text-wa-text-muted" />
+                      <Pencil className="h-3.5 w-3.5 text-wa-text-muted dark:text-zinc-500" />
                     </button>
                   )}
                 </div>
               )}
-              <p className="mt-1 text-sm text-wa-text-secondary">
+              <p className="mt-1 text-sm text-wa-text-secondary dark:text-zinc-300">
                 Group - {selectedGroup.participantCount} participants
               </p>
             </div>
 
             {/* Description */}
-            <div className="border-b border-wa-border px-6 py-4">
+            <div className="border-b border-wa-border dark:border-zinc-700 px-6 py-4">
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+                <h4 className="text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                   Description
                 </h4>
                 {selectedGroup.isAdmin && !editingDescription && (
                   <button
                     onClick={() => setEditingDescription(true)}
-                    className="rounded p-1 hover:bg-wa-hover"
+                    className="rounded p-1 hover:bg-wa-hover dark:hover:bg-zinc-700"
                   >
-                    <Pencil className="h-3.5 w-3.5 text-wa-text-muted" />
+                    <Pencil className="h-3.5 w-3.5 text-wa-text-muted dark:text-zinc-500" />
                   </button>
                 )}
               </div>
@@ -713,19 +717,19 @@ export default function GroupsPage() {
                   </div>
                 </div>
               ) : (
-                <p className="mt-1 text-sm text-wa-text-secondary">
+                <p className="mt-1 text-sm text-wa-text-secondary dark:text-zinc-300">
                   {selectedGroup.description || 'No description'}
                 </p>
               )}
             </div>
 
             {/* Invite Link */}
-            <div className="border-b border-wa-border px-6 py-4">
-              <h4 className="text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+            <div className="border-b border-wa-border dark:border-zinc-700 px-6 py-4">
+              <h4 className="text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                 Invite Link
               </h4>
               <div className="mt-2 flex items-center gap-2">
-                <div className="flex-1 truncate rounded-lg bg-wa-input-bg px-3 py-2 text-sm text-wa-text-secondary">
+                <div className="flex-1 truncate rounded-lg bg-wa-input-bg dark:bg-zinc-700 px-3 py-2 text-sm text-wa-text-secondary dark:text-zinc-300">
                   {inviteLink || selectedGroup.inviteLink || 'No invite link available'}
                 </div>
                 <Button
@@ -741,8 +745,8 @@ export default function GroupsPage() {
 
             {/* Group Settings */}
             {selectedGroup.isAdmin && (
-              <div className="border-b border-wa-border px-6 py-4">
-                <h4 className="mb-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+              <div className="border-b border-wa-border dark:border-zinc-700 px-6 py-4">
+                <h4 className="mb-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                   Settings
                 </h4>
                 <Toggle
@@ -756,7 +760,7 @@ export default function GroupsPage() {
             {/* Members */}
             <div className="px-6 py-4">
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+                <h4 className="text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                   Members ({members.length})
                 </h4>
               </div>
@@ -790,7 +794,7 @@ export default function GroupsPage() {
                   {members.map((member) => (
                     <div
                       key={member.id}
-                      className="flex items-center justify-between rounded-lg px-2 py-2 hover:bg-wa-hover"
+                      className="flex items-center justify-between rounded-lg px-2 py-2 hover:bg-wa-hover dark:hover:bg-zinc-700"
                     >
                       <div className="flex items-center gap-3">
                         <Avatar
@@ -800,7 +804,7 @@ export default function GroupsPage() {
                         />
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-wa-text">
+                            <span className="text-sm font-medium text-wa-text dark:text-zinc-100">
                               {member.name}
                             </span>
                             {member.isSuperAdmin && (
@@ -816,7 +820,7 @@ export default function GroupsPage() {
                               </Badge>
                             )}
                           </div>
-                          <span className="text-xs text-wa-text-muted">
+                          <span className="text-xs text-wa-text-muted dark:text-zinc-500">
                             {member.phone}
                           </span>
                         </div>
@@ -824,8 +828,8 @@ export default function GroupsPage() {
                       {selectedGroup.isAdmin && !member.isSuperAdmin && (
                         <DropdownMenu
                           trigger={
-                            <button className="rounded p-1 hover:bg-gray-200">
-                              <MoreVertical className="h-3.5 w-3.5 text-wa-text-muted" />
+                            <button className="rounded p-1 hover:bg-gray-200 dark:hover:bg-zinc-700">
+                              <MoreVertical className="h-3.5 w-3.5 text-wa-text-muted dark:text-zinc-500" />
                             </button>
                           }
                           items={[
@@ -883,7 +887,7 @@ export default function GroupsPage() {
           />
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-wa-text">
+            <label className="mb-1.5 block text-sm font-medium text-wa-text dark:text-zinc-100">
               Participants
             </label>
 
@@ -895,7 +899,7 @@ export default function GroupsPage() {
                   return (
                     <span
                       key={pid}
-                      className="inline-flex items-center gap-1 rounded-full bg-wa-light-green px-2.5 py-1 text-xs font-medium text-wa-teal-dark"
+                      className="inline-flex items-center gap-1 rounded-full bg-wa-light-green dark:bg-zinc-700 px-2.5 py-1 text-xs font-medium text-wa-teal-dark dark:text-zinc-200"
                     >
                       {contact?.name || pid}
                       <button
@@ -922,9 +926,9 @@ export default function GroupsPage() {
             />
 
             {/* Contact List */}
-            <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-wa-border">
+            <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-wa-border dark:border-zinc-700">
               {filteredContacts.length === 0 ? (
-                <p className="px-4 py-3 text-center text-sm text-wa-text-muted">
+                <p className="px-4 py-3 text-center text-sm text-wa-text-muted dark:text-zinc-500">
                   No contacts found
                 </p>
               ) : (
@@ -934,14 +938,14 @@ export default function GroupsPage() {
                     onClick={() =>
                       setSelectedParticipants((prev) => [...prev, contact.id])
                     }
-                    className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-wa-hover"
+                    className="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-wa-hover dark:hover:bg-zinc-700"
                   >
                     <Avatar src={contact.profilePicUrl} name={contact.name} size="sm" />
                     <div>
-                      <span className="text-sm font-medium text-wa-text">
+                      <span className="text-sm font-medium text-wa-text dark:text-zinc-100">
                         {contact.name}
                       </span>
-                      <span className="ml-2 text-xs text-wa-text-muted">
+                      <span className="ml-2 text-xs text-wa-text-muted dark:text-zinc-500">
                         {contact.phone}
                       </span>
                     </div>
@@ -949,7 +953,7 @@ export default function GroupsPage() {
                 ))
               )}
             </div>
-            <p className="mt-1 text-xs text-wa-text-muted">
+            <p className="mt-1 text-xs text-wa-text-muted dark:text-zinc-500">
               {selectedParticipants.length} participant
               {selectedParticipants.length !== 1 ? 's' : ''} selected
             </p>
@@ -976,6 +980,7 @@ export default function GroupsPage() {
           </div>
         </div>
       </Modal>
+      </div>
     </div>
   );
 }

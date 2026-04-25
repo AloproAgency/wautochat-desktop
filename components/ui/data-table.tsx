@@ -29,11 +29,11 @@ export function DataTable<T extends Record<string, any>>({
     <div className={`overflow-x-auto ${className}`}>
       <table className="w-full">
         <thead>
-          <tr className="border-b border-wa-border">
+          <tr className="border-b border-wa-border dark:border-zinc-700">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-wa-text-secondary ${col.className || ''}`}
+                className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-wa-text-secondary dark:text-zinc-400 ${col.className || ''}`}
               >
                 {col.header}
               </th>
@@ -43,7 +43,7 @@ export function DataTable<T extends Record<string, any>>({
         <tbody>
           {data.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-12 text-center text-sm text-wa-text-muted">
+              <td colSpan={columns.length} className="px-4 py-12 text-center text-sm text-wa-text-muted dark:text-zinc-400">
                 {emptyMessage}
               </td>
             </tr>
@@ -52,12 +52,12 @@ export function DataTable<T extends Record<string, any>>({
               <tr
                 key={(row.id as string) || idx}
                 onClick={() => onRowClick?.(row)}
-                className={`border-b border-wa-border transition-colors hover:bg-wa-hover ${
+                className={`border-b border-wa-border transition-colors hover:bg-wa-hover dark:border-zinc-700 dark:hover:bg-zinc-700 ${
                   onRowClick ? 'cursor-pointer' : ''
                 }`}
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={`px-4 py-3 text-sm text-wa-text ${col.className || ''}`}>
+                  <td key={col.key} className={`px-4 py-3 text-sm text-wa-text dark:text-zinc-100 ${col.className || ''}`}>
                     {col.render ? col.render(row) : (row[col.key] as ReactNode)}
                   </td>
                 ))}

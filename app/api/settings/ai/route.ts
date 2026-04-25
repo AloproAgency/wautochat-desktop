@@ -1,34 +1,27 @@
 import { NextRequest } from 'next/server';
 import {
-  getAiSettings,
-  saveAiSettings,
-  clearAiSettings,
+  getAllProviderConfigs,
+  saveProviderConfig,
+  clearProviderConfig,
+  getDefaultProviderName,
+  setDefaultProviderName,
   PROVIDER_MODELS,
   type AiProvider,
-  type AiSettings,
 } from '@/lib/ai-providers';
+
+function maskKey(key: string): string {
+  return key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : '••••';
+}
 
 export async function GET() {
   try {
-    const settings = getAiSettings();
-    if (!settings) {
-      return Response.json({ success: true, data: null });
+    const all = getAllProviderConfigs();
+    const defaultProvider = getDefaultProviderName();
+    const providers: Record<string, { model: string; apiKeyMasked: string } | null> = {};
+    for (const [p, config] of Object.entries(all)) {
+      providers[p] = config ? { model: config.model, apiKeyMasked: maskKey(config.apiKey) } : null;
     }
-    // Never send the full API key back to the browser — only a masked preview.
-    const masked =
-      settings.apiKey.length > 8
-        ? `${settings.apiKey.slice(0, 4)}…${settings.apiKey.slice(-4)}`
-        : '••••';
-    return Response.json({
-      success: true,
-      data: {
-        provider: settings.provider,
-        model: settings.model,
-        systemPrompt: settings.systemPrompt || '',
-        apiKeyMasked: masked,
-        configured: true,
-      },
-    });
+    return Response.json({ success: true, data: { providers, defaultProvider } });
   } catch (error) {
     return Response.json(
       { success: false, error: error instanceof Error ? error.message : 'Failed to read AI settings' },
@@ -40,29 +33,37 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { provider, apiKey, model, systemPrompt } = body as Partial<AiSettings>;
+    const { provider, apiKey, model, setDefaultOnly } = body as {
+      provider: AiProvider;
+      apiKey?: string;
+      model?: string;
+      setDefaultOnly?: boolean;
+    };
 
     if (!provider || !Object.keys(PROVIDER_MODELS).includes(provider)) {
-      return Response.json(
-        { success: false, error: 'Invalid provider. Must be one of: groq, openai, anthropic, gemini.' },
-        { status: 400 }
-      );
+      return Response.json({ success: false, error: 'Invalid provider' }, { status: 400 });
     }
+
+    // Just set the default pointer, no key update needed
+    if (setDefaultOnly) {
+      setDefaultProviderName(provider);
+      return Response.json({ success: true });
+    }
+
     if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length < 8) {
       return Response.json(
-        { success: false, error: 'API key is required and must be a real key (min 8 chars).' },
+        { success: false, error: 'API key required (min 8 chars)' },
         { status: 400 }
       );
     }
 
-    const resolvedModel = model || PROVIDER_MODELS[provider as AiProvider][0].value;
+    const resolvedModel = model || PROVIDER_MODELS[provider][0].value;
+    saveProviderConfig(provider, { apiKey: apiKey.trim(), model: resolvedModel });
 
-    saveAiSettings({
-      provider: provider as AiProvider,
-      apiKey: apiKey.trim(),
-      model: resolvedModel,
-      systemPrompt: systemPrompt || '',
-    });
+    // Auto-set as default if none is currently set
+    if (!getDefaultProviderName()) {
+      setDefaultProviderName(provider);
+    }
 
     return Response.json({ success: true });
   } catch (error) {
@@ -73,9 +74,13 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request: NextRequest) {
   try {
-    clearAiSettings();
+    const { searchParams } = new URL(request.url);
+    const provider = searchParams.get('provider') as AiProvider | null;
+    if (provider && Object.keys(PROVIDER_MODELS).includes(provider)) {
+      clearProviderConfig(provider);
+    }
     return Response.json({ success: true });
   } catch (error) {
     return Response.json(

@@ -70,7 +70,7 @@ function TriggerNode({ id, data, selected }: NodeProps<FlowNodeData>) {
           className="rounded-xl px-2.5 py-2 flex items-center gap-2"
         >
           {/* Icon badge: white bg, colored icon */}
-          <div className="w-7 h-7 rounded-lg bg-white/90 shadow-sm flex items-center justify-center shrink-0">
+          <div className="w-7 h-7 rounded-lg bg-white/90 dark:bg-white/85 shadow-sm flex items-center justify-center shrink-0">
             <Icon className="w-[15px] h-[15px]" style={{ color: FROM_COLOR }} />
           </div>
           {/* Text */}

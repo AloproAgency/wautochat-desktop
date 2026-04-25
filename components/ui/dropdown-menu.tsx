@@ -33,7 +33,7 @@ export function DropdownMenu({ trigger, children, align = 'left', className = ''
       </div>
       {open && (
         <div
-          className={`absolute z-50 mt-1 min-w-[180px] rounded-lg border border-wa-border bg-wa-panel py-1 shadow-lg animate-[fadeIn_100ms_ease-out] ${
+          className={`absolute z-50 mt-1 min-w-[180px] rounded-lg border border-wa-border bg-wa-panel py-1 shadow-lg animate-[fadeIn_100ms_ease-out] dark:border-zinc-700 dark:bg-zinc-800 ${
             align === 'right' ? 'right-0' : 'left-0'
           }`}
         >
@@ -59,8 +59,8 @@ export function DropdownItem({ children, onClick, disabled = false, danger = fal
       disabled={disabled}
       className={`flex w-full items-center px-3 py-2 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         danger
-          ? 'text-wa-danger hover:bg-wa-danger/5'
-          : 'text-wa-text hover:bg-wa-hover'
+          ? 'text-wa-danger hover:bg-wa-danger/5 dark:hover:bg-red-900/20'
+          : 'text-wa-text hover:bg-wa-hover dark:text-zinc-100 dark:hover:bg-zinc-700'
       } ${className}`}
     >
       {children}
@@ -69,5 +69,5 @@ export function DropdownItem({ children, onClick, disabled = false, danger = fal
 }
 
 export function DropdownDivider() {
-  return <div className="my-1 border-t border-wa-border" />;
+  return <div className="my-1 border-t border-wa-border dark:border-zinc-700" />;
 }

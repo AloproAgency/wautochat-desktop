@@ -63,9 +63,9 @@ export default function SessionsPage() {
   const qrIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
 
-  const fetchSessions = useCallback(async () => {
+  const fetchSessions = useCallback(async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const res = await fetch('/api/sessions');
       if (res.ok) {
         const data: ApiResponse<Session[]> = await res.json();
@@ -74,15 +74,33 @@ export default function SessionsPage() {
         }
       }
     } catch {
-      toast({ title: 'Failed to load sessions', variant: 'error' });
+      if (!silent) toast({ title: 'Failed to load sessions', variant: 'error' });
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [setSessions, toast]);
 
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
+
+  // Poll silently while any session is reconnecting so the UI updates
+  // automatically without the user having to navigate away and back.
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    const hasTransitional = sessions.some(
+      (s) => s.status === 'connecting' || s.status === 'disconnected'
+    );
+    if (hasTransitional && !pollRef.current) {
+      pollRef.current = setInterval(() => fetchSessions(true), 2500);
+    } else if (!hasTransitional && pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    return () => {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    };
+  }, [sessions, fetchSessions]);
 
   // QR / Pair Code Polling
   const [qrStatus, setQrStatus] = useState<string>('');
@@ -330,25 +348,25 @@ export default function SessionsPage() {
     // Negative margins cancel the parent layout's padding so this page is
     // edge-to-edge (header stuck to the top, cards touch the sidebar and the
     // right edge). `lg:max-w-none` overrides the parent's `max-w-7xl`.
-    <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none bg-slate-50 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+    <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none bg-slate-50 dark:bg-zinc-900 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
       {/* ===== Sticky header — single compact row ===== */}
-      <header className="sticky top-0 z-20 bg-white border-b border-slate-200">
+      <header className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-700">
         <div className="flex items-center gap-3 px-5 h-14">
           <div className="flex items-baseline gap-2 shrink-0">
-            <h1 className="text-base font-semibold tracking-tight text-slate-900">Sessions</h1>
-            <span className="text-xs font-mono text-slate-400 tabular-nums">{sessions.length}</span>
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Sessions</h1>
+            <span className="text-xs font-mono text-slate-400 dark:text-zinc-500 tabular-nums">{sessions.length}</span>
           </div>
 
-          <div className="h-5 w-px bg-slate-200" />
+          <div className="h-5 w-px bg-slate-200 dark:bg-zinc-700" />
 
           {/* Search */}
           <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search name, phone…"
-              className="w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 h-8 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition"
+              className="w-full rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 pl-8 pr-3 h-8 text-sm text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-500 focus:ring-2 focus:ring-slate-100 dark:focus:ring-zinc-700 transition"
             />
           </div>
 
@@ -361,13 +379,13 @@ export default function SessionsPage() {
                   key={f.key}
                   onClick={() => setFilter(f.key)}
                   className={`inline-flex items-center gap-1.5 rounded-md h-8 px-2.5 text-[13px] font-medium transition-colors whitespace-nowrap ${
-                    active ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    active ? 'bg-slate-900 text-white dark:bg-zinc-700' : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
                   }`}
                 >
                   {f.label}
                   <span
                     className={`rounded px-1 text-[10px] font-mono tabular-nums ${
-                      active ? 'bg-white/20 text-white' : 'text-slate-400'
+                      active ? 'bg-white/20 text-white' : 'text-slate-400 dark:text-zinc-500'
                     }`}
                   >
                     {f.count}
@@ -380,7 +398,7 @@ export default function SessionsPage() {
           {/* Primary action — ml-auto to stick to the edge */}
           <button
             onClick={() => setShowNewModal(true)}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-slate-900 h-8 px-3 text-[13px] font-medium text-white hover:bg-slate-800 active:scale-[0.98] transition-all"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-zinc-700 h-8 px-3 text-[13px] font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 active:scale-[0.98] transition-all"
           >
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">New session</span>
@@ -396,10 +414,10 @@ export default function SessionsPage() {
           <SessionEmptyState onCreate={() => setShowNewModal(true)} />
         ) : filteredSessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <p className="text-sm text-slate-500">No sessions match your filters.</p>
+            <p className="text-sm text-slate-500 dark:text-zinc-400">No sessions match your filters.</p>
             <button
               onClick={() => { setFilter('all'); setSearchQuery(''); }}
-              className="mt-3 text-xs font-medium text-slate-700 hover:underline"
+              className="mt-3 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:underline"
             >
               Clear filters
             </button>
@@ -414,31 +432,32 @@ export default function SessionsPage() {
               return (
                 <div
                   key={session.id}
-                  className="group relative rounded-xl border border-slate-200 bg-white p-4 transition-all hover:border-slate-300 hover:shadow-sm animate-in-row"
+                  className="group relative rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-4 transition-all hover:border-slate-300 dark:hover:border-gray-600 hover:shadow-sm animate-in-row"
                   style={{ animationDelay: `${Math.min(idx * 25, 200)}ms` }}
                 >
                   {/* Top row: avatar + name + status */}
                   <div className="flex items-start gap-3">
                     <div className="relative shrink-0">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 dark:bg-zinc-700 text-slate-700 dark:text-zinc-300">
                         <Smartphone className="h-5 w-5" />
                       </div>
                       {isConnected && (
                         <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center">
-                          <span className="absolute h-3.5 w-3.5 rounded-full bg-emerald-400 opacity-75 animate-ping" />
-                          <span className="relative h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
+                          <span className="relative h-3 w-3 rounded-full border-2 border-white dark:border-zinc-800 bg-emerald-500" />
                         </span>
                       )}
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <h3 className="truncate text-sm font-semibold text-slate-900">
+                      <h3 className="truncate text-sm font-semibold text-slate-900 dark:text-zinc-100">
                         {session.name}
                       </h3>
                       <span
                         className={`mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.pillBg} ${meta.pillBorder} ${meta.text}`}
                       >
-                        <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                        {session.status !== 'connected' && (
+                          <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                        )}
                         {meta.label}
                       </span>
                     </div>
@@ -447,7 +466,7 @@ export default function SessionsPage() {
                     {isQrReady && (
                       <button
                         onClick={() => setShowQrModal(session.id)}
-                        className="rounded-lg p-1.5 text-sky-600 hover:bg-sky-50 transition-colors shrink-0"
+                        className="rounded-lg p-1.5 text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 transition-colors shrink-0"
                         title="Show QR code"
                       >
                         <QrCode className="h-4 w-4" />
@@ -455,11 +474,11 @@ export default function SessionsPage() {
                     )}
                   </div>
 
-                  {/* Meta info */}
+                  {/* Meta info — InfoLine uses its own color classes (updated below) */}
                   <dl className="mt-3.5 space-y-1.5 text-xs">
                     <InfoLine
                       icon={<Phone className="h-3 w-3" />}
-                      value={session.phone ? formatPhoneNumber(session.phone) : '—'}
+                      value={session.phone ? formatPhoneNumber(session.phone) : 'No number'}
                       muted={!session.phone}
                     />
                     <InfoLine
@@ -475,12 +494,12 @@ export default function SessionsPage() {
                   </dl>
 
                   {/* Actions row */}
-                  <div className="mt-4 flex items-center gap-1.5 pt-3 border-t border-slate-100">
+                  <div className="mt-4 flex items-center gap-1.5 pt-3 border-t border-slate-100 dark:border-zinc-700">
                     {isConnected ? (
                       <button
                         onClick={() => handleDisconnect(session.id)}
                         disabled={actionLoading === session.id}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white h-8 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-8 px-3 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-700 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all"
                       >
                         <WifiOff className="h-3.5 w-3.5" />
                         {actionLoading === session.id ? 'Disconnecting…' : 'Disconnect'}
@@ -489,7 +508,7 @@ export default function SessionsPage() {
                       <button
                         onClick={() => handleConnect(session.id)}
                         disabled={actionLoading === session.id || isConnecting}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 h-8 px-3 text-xs font-medium text-white hover:bg-slate-800 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-md bg-slate-900 dark:bg-zinc-700 h-8 px-3 text-xs font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all"
                       >
                         {isConnecting || actionLoading === session.id ? (
                           <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -502,7 +521,7 @@ export default function SessionsPage() {
 
                     <button
                       onClick={() => setShowDeleteModal(session.id)}
-                      className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                      className="rounded-md p-1.5 text-slate-400 dark:text-zinc-500 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                       title="Delete session"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -748,18 +767,18 @@ export default function SessionsPage() {
               onClick={() => !isDeleting && setShowDeleteModal(null)}
             />
             <div
-              className="relative w-full max-w-sm rounded-xl bg-white shadow-xl ring-1 ring-slate-900/5 animate-dialog-in"
+              className="relative w-full max-w-sm rounded-xl bg-white dark:bg-zinc-800 shadow-xl ring-1 ring-slate-900/5 dark:ring-gray-700 animate-dialog-in"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-3 px-5 pt-5 pb-4">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600 shrink-0">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 shrink-0">
                   <Trash2 className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 id="delete-session-title" className="text-base font-semibold text-slate-900">
+                  <h3 id="delete-session-title" className="text-base font-semibold text-slate-900 dark:text-zinc-100">
                     Delete this session?
                   </h3>
-                  <p className="mt-0.5 text-xs text-slate-500 truncate">
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-zinc-400 truncate">
                     {target?.name}
                     {target?.phone ? ` · ${target.phone}` : ''}
                   </p>
@@ -767,15 +786,15 @@ export default function SessionsPage() {
               </div>
 
               <div className="px-5 pb-5 space-y-2.5">
-                <ul className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-sm text-slate-700 leading-relaxed">
+                <ul className="rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 p-3 space-y-1.5 text-sm text-slate-700 dark:text-zinc-300 leading-relaxed">
                   <li className="flex gap-2">
-                    <span className="shrink-0 text-slate-400">•</span>
+                    <span className="shrink-0 text-slate-400 dark:text-zinc-500">•</span>
                     <span className="flex-1 min-w-0">
                       La session sera déconnectée de WhatsApp Web.
                     </span>
                   </li>
                   <li className="flex gap-2">
-                    <span className="shrink-0 text-slate-400">•</span>
+                    <span className="shrink-0 text-slate-400 dark:text-zinc-500">•</span>
                     <span className="flex-1 min-w-0">
                       Les messages, contacts, groupes et flows stockés dans
                       WAutoChat pour cette session seront supprimés
@@ -783,7 +802,7 @@ export default function SessionsPage() {
                     </span>
                   </li>
                 </ul>
-                <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800 leading-relaxed">
+                <div className="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20 p-3 text-xs text-sky-800 dark:text-sky-300 leading-relaxed">
                   <p>
                     <span className="font-semibold">Bon à savoir :</span>{' '}
                     ton numéro WhatsApp n&apos;est pas affecté. Tu pourras le
@@ -798,7 +817,7 @@ export default function SessionsPage() {
                 <button
                   onClick={() => setShowDeleteModal(null)}
                   disabled={isDeleting}
-                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 transition active:scale-[0.98]"
+                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 disabled:opacity-50 transition active:scale-[0.98]"
                 >
                   Annuler
                 </button>
@@ -843,7 +862,7 @@ export default function SessionsPage() {
 
 function InfoLine({ icon, value, muted }: { icon: React.ReactNode; value: string; muted?: boolean }) {
   return (
-    <div className={`flex items-center gap-2 ${muted ? 'text-slate-400' : 'text-slate-600'}`}>
+    <div className={`flex items-center gap-2 ${muted ? 'text-slate-400 dark:text-zinc-500' : 'text-slate-600 dark:text-zinc-400'}`}>
       <span className="shrink-0">{icon}</span>
       <span className="truncate">{value}</span>
     </div>
@@ -856,21 +875,21 @@ function SessionGridSkeleton() {
       {Array.from({ length: 6 }).map((_, i) => (
         <div
           key={i}
-          className="rounded-xl border border-slate-200 bg-white p-4"
+          className="rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-4"
           style={{ opacity: 1 - i * 0.08 }}
         >
           <div className="flex items-start gap-3">
-            <div className="h-11 w-11 rounded-xl bg-slate-100 animate-pulse" />
+            <div className="h-11 w-11 rounded-xl bg-slate-100 dark:bg-zinc-700 animate-pulse" />
             <div className="flex-1 space-y-2">
-              <div className="h-3.5 w-32 rounded bg-slate-100 animate-pulse" />
-              <div className="h-4 w-20 rounded-full bg-slate-100 animate-pulse" />
+              <div className="h-3.5 w-32 rounded bg-slate-100 dark:bg-zinc-700 animate-pulse" />
+              <div className="h-4 w-20 rounded-full bg-slate-100 dark:bg-zinc-700 animate-pulse" />
             </div>
           </div>
           <div className="mt-4 space-y-2">
-            <div className="h-2.5 w-full rounded bg-slate-100 animate-pulse" />
-            <div className="h-2.5 w-3/4 rounded bg-slate-100 animate-pulse" />
+            <div className="h-2.5 w-full rounded bg-slate-100 dark:bg-zinc-700 animate-pulse" />
+            <div className="h-2.5 w-3/4 rounded bg-slate-100 dark:bg-zinc-700 animate-pulse" />
           </div>
-          <div className="mt-4 h-8 rounded bg-slate-100 animate-pulse" />
+          <div className="mt-4 h-8 rounded bg-slate-100 dark:bg-zinc-700 animate-pulse" />
         </div>
       ))}
     </div>
@@ -880,16 +899,16 @@ function SessionGridSkeleton() {
 function SessionEmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
-        <Smartphone className="h-7 w-7 text-slate-400" />
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 dark:bg-zinc-800">
+        <Smartphone className="h-7 w-7 text-slate-400 dark:text-zinc-500" />
       </div>
-      <h3 className="text-base font-semibold text-slate-900">No sessions yet</h3>
-      <p className="mt-1 max-w-xs text-sm text-slate-500">
+      <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100">No sessions yet</h3>
+      <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-zinc-400">
         Connect your first WhatsApp account to start building conversations and automations.
       </p>
       <button
         onClick={onCreate}
-        className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition-all active:scale-[0.98]"
+        className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 dark:bg-zinc-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 transition-all active:scale-[0.98]"
       >
         <Plus className="h-4 w-4" />
         Create a session

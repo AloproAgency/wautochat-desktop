@@ -16,7 +16,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         {label && (
           <label
             htmlFor={selectId}
-            className="mb-1.5 block text-sm font-medium text-wa-text"
+            className="mb-1.5 block text-sm font-medium text-wa-text dark:text-zinc-100"
           >
             {label}
           </label>
@@ -25,8 +25,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           <select
             ref={ref}
             id={selectId}
-            className={`h-10 w-full appearance-none rounded-lg border bg-wa-input-bg px-3 pr-10 text-sm text-wa-text transition-colors focus:border-wa-green focus:bg-white focus:outline-none focus:ring-2 focus:ring-wa-green/20 disabled:cursor-not-allowed disabled:opacity-50 ${
-              error ? 'border-wa-danger focus:border-wa-danger focus:ring-wa-danger/20' : 'border-wa-border'
+            className={`h-10 w-full appearance-none rounded-lg border bg-wa-input-bg px-3 pr-10 text-sm text-wa-text transition-colors focus:border-wa-green focus:bg-white focus:outline-none focus:ring-2 focus:ring-wa-green/20 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:bg-zinc-900 ${
+              error ? 'border-wa-danger focus:border-wa-danger focus:ring-wa-danger/20 dark:border-red-500' : 'border-wa-border dark:border-zinc-600'
             } ${className}`}
             aria-invalid={error ? 'true' : undefined}
             {...props}
@@ -39,7 +39,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
                 ))
               : children}
           </select>
-          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-wa-text-muted">
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-wa-text-muted dark:text-zinc-400">
             <ChevronDown className="h-4 w-4" />
           </div>
         </div>

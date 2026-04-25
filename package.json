@@ -2,11 +2,17 @@
   "name": "wautochat-web",
   "version": "0.1.0",
   "private": true,
+  "main": "dist/electron/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "electron:compile": "tsc -p tsconfig.electron.json && node -e \"require('fs').copyFileSync('electron/loading.html','dist/electron/loading.html')\"",
+    "electron:dev": "npm run electron:compile && concurrently -n next,electron -c blue,green \"next dev --port 3001\" \"wait-on tcp:3001 && cross-env ELECTRON_RUN_AS_NODE= NODE_ENV=development DEV_SERVER_PORT=3001 electron .\"",
+    "electron:build": "next build && npm run electron:compile && electron-builder",
+    "electron:pack": "next build && npm run electron:compile && electron-builder --dir",
+    "rebuild": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
     "@reactflow/background": "^11.3.14",
@@ -21,6 +27,8 @@
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.8.0",
     "clsx": "^2.1.1",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
     "jose": "^6.2.2",
     "libphonenumber-js": "^1.12.42",
     "lucide-react": "^1.7.0",
@@ -34,13 +42,19 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^36.2.1",
+    "electron-builder": "^25.1.8",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wait-on": "^8.0.3"
   }
 }

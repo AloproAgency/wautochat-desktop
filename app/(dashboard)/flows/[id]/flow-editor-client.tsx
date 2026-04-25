@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Flow } from '@/lib/types';
+import type { Flow, Session, ApiResponse } from '@/lib/types';
 import FlowCanvas from '@/components/flow-builder/flow-canvas';
 import TestChat from '@/components/flow-builder/test-chat';
 import {
@@ -11,6 +11,8 @@ import {
   Pencil,
   Power,
   PowerOff,
+  Smartphone,
+  ChevronDown,
 } from 'lucide-react';
 
 interface FlowEditorClientProps {
@@ -34,6 +36,8 @@ export default function FlowEditorClient({ flow }: FlowEditorClientProps) {
   const router = useRouter();
   const [flowName, setFlowName] = useState(flow.name);
   const [isActive, setIsActive] = useState(flow.isActive);
+  const [sessionId, setSessionId] = useState(flow.sessionId);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [editingName, setEditingName] = useState(false);
   const [savingName, setSavingName] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -42,6 +46,7 @@ export default function FlowEditorClient({ flow }: FlowEditorClientProps) {
 
   // Responsive
   const [isMobile, setIsMobile] = useState(false);
+  const [isMac, setIsMac] = useState(false);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -49,6 +54,31 @@ export default function FlowEditorClient({ flow }: FlowEditorClientProps) {
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
   }, []);
+
+  useEffect(() => {
+    setIsMac(window.electronAPI?.platform === 'darwin');
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/sessions')
+      .then((r) => r.json())
+      .then((d: ApiResponse<Session[]>) => { if (d.success && d.data) setSessions(d.data); })
+      .catch(() => {});
+  }, []);
+
+  const handleSessionChange = useCallback(async (newSessionId: string) => {
+    setSessionId(newSessionId);
+    try {
+      await fetch(`/api/flows/${flow.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: newSessionId }),
+      });
+    } catch (err) {
+      console.error('Failed to update session:', err);
+      setSessionId(sessionId);
+    }
+  }, [flow.id, sessionId]);
 
   // Update the saved text every 10 seconds
   useEffect(() => {
@@ -109,29 +139,37 @@ export default function FlowEditorClient({ flow }: FlowEditorClientProps) {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-gray-50">
-      {/* Top bar — dark */}
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-50 dark:bg-zinc-900">
+      {/* Top bar — also serves as macOS drag region */}
       <div
-        className="flex items-center px-2 md:px-4 gap-2 md:gap-3 shrink-0"
-        style={{ height: isMobile ? 48 : 56, backgroundColor: '#09090b' }}
+        className="flex items-center h-14 shrink-0 bg-white dark:bg-zinc-800 border-b border-slate-200 dark:border-zinc-700"
+        style={isMac ? { WebkitAppRegion: 'drag' } as React.CSSProperties : undefined}
       >
+        {/* Brand — fills the traffic lights zone on macOS */}
+        {isMac && (
+          <div
+            className="flex items-center gap-2 pl-21 pr-3 shrink-0"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
+            <img src="/wautochat_logo.png" alt="WAutoChat" className="h-5 w-5 rounded-md shrink-0" />
+            <span className="text-xs font-semibold text-slate-500 dark:text-zinc-400 whitespace-nowrap">Flow Editor</span>
+          </div>
+        )}
+        <div className="flex items-center gap-2 px-3 flex-1 min-w-0" style={isMac ? { WebkitAppRegion: 'no-drag' } as React.CSSProperties : undefined}>
         {/* Back */}
         <button
           onClick={() => router.push('/flows')}
-          className="w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-lg transition-colors shrink-0"
-          style={{}}
-          onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)')}
-          onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+          className="shrink-0 flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-700 hover:text-slate-700 dark:hover:text-zinc-100 transition-colors"
           title="Back to Flows"
         >
-          <ArrowLeft className="w-4 h-4 text-white/70" />
+          <ArrowLeft className="w-4 h-4" />
         </button>
 
-        <div className="w-px h-5 md:h-7 bg-white/10" />
+        <div className="w-px h-5 bg-slate-200 dark:bg-zinc-700" />
 
         {/* Editable flow name */}
         {editingName ? (
-          <div className="flex items-center gap-1.5 md:gap-2 min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
             <input
               ref={inputRef}
               type="text"
@@ -145,56 +183,75 @@ export default function FlowEditorClient({ flow }: FlowEditorClientProps) {
                 }
               }}
               onBlur={handleNameSave}
-              className="px-2 md:px-3 py-1 md:py-1.5 text-sm font-semibold text-white rounded-lg focus:outline-none min-w-0 flex-1"
-              style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
+              className="px-2.5 py-1.5 text-sm font-semibold text-slate-900 dark:text-zinc-100 rounded-lg border border-slate-300 dark:border-zinc-700 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-600 focus:ring-2 focus:ring-slate-100 dark:focus:ring-zinc-700 min-w-0 flex-1 bg-white dark:bg-zinc-900"
             />
             <button
               onClick={handleNameSave}
               disabled={savingName}
-              className="w-7 h-7 flex items-center justify-center rounded-lg shrink-0"
+              className="shrink-0 flex items-center justify-center h-7 w-7 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors"
             >
-              <Check className="w-4 h-4 text-emerald-400" />
+              <Check className="w-4 h-4" />
             </button>
           </div>
         ) : (
           <button
             onClick={() => setEditingName(true)}
-            className="flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-lg transition-colors group min-w-0"
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors group min-w-0"
           >
-            <span className="text-sm font-semibold text-white truncate">{flowName}</span>
-            <Pencil className="w-3.5 h-3.5 text-white/30 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+            <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">{flowName}</span>
+            <Pencil className="w-3 h-3 text-slate-400 dark:text-zinc-400 shrink-0" />
           </button>
         )}
 
+        {/* Session selector */}
+        <div className="relative ml-auto shrink-0 hidden sm:flex items-center">
+          <Smartphone className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-400 pointer-events-none" />
+          <select
+            value={sessionId}
+            onChange={(e) => handleSessionChange(e.target.value)}
+            className="h-8 appearance-none rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 pl-8 pr-7 text-xs font-medium text-slate-700 dark:text-zinc-100 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-600 transition-colors cursor-pointer"
+          >
+            {sessions.length === 0 && (
+              <option value={sessionId}>{sessionId}</option>
+            )}
+            {sessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}{s.status === 'connected' ? ' ●' : ''}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400 dark:text-zinc-400 pointer-events-none" />
+        </div>
+
+        <div className="w-px h-5 bg-slate-200 dark:bg-zinc-700 hidden sm:block" />
+
         {/* Right side */}
-        <div className="ml-auto flex items-center gap-2 md:gap-3 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Save status */}
           <div className="hidden md:flex items-center gap-1.5">
             {lastSaved ? (
               <>
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span className="text-xs text-white/40">Saved {savedText}</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span className="text-xs text-slate-400 dark:text-zinc-400">Saved {savedText}</span>
               </>
             ) : (
               <>
                 <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-xs text-white/40">Unsaved</span>
+                <span className="text-xs text-slate-400 dark:text-zinc-400">Unsaved</span>
               </>
             )}
           </div>
 
-          <div className="w-px h-5 md:h-7 bg-white/10 hidden md:block" />
+          <div className="w-px h-5 bg-slate-200 dark:bg-zinc-700 hidden md:block" />
 
           {/* Active/Inactive toggle */}
           <button
             onClick={handleToggleActive}
-            className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1 md:py-1.5 rounded-full text-xs font-semibold transition-all ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
               isActive
-                ? 'bg-emerald-500 text-white hover:bg-emerald-400'
-                : 'text-white/50 hover:text-white/70'
+                ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                : 'bg-slate-100 dark:bg-zinc-700 text-slate-500 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-600'
             }`}
-            style={!isActive ? { backgroundColor: 'rgba(255,255,255,0.08)' } : {}}
           >
             {isActive ? (
               <>
@@ -208,6 +265,7 @@ export default function FlowEditorClient({ flow }: FlowEditorClientProps) {
               </>
             )}
           </button>
+        </div>
         </div>
       </div>
 

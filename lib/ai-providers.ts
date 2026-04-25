@@ -31,16 +31,25 @@ export interface AiCallResult {
 const SETTINGS_KEY = 'ai';
 
 export function getAiSettings(): AiSettings | null {
+  // New per-provider storage: use default provider if set
+  const defaultProvider = getDefaultProviderName();
+  if (defaultProvider) {
+    const config = getProviderConfig(defaultProvider);
+    if (config) return { provider: defaultProvider, apiKey: config.apiKey, model: config.model };
+  }
+  // Try all providers, return the first configured one
+  const providers: AiProvider[] = ['groq', 'openai', 'anthropic', 'gemini'];
+  for (const p of providers) {
+    const config = getProviderConfig(p);
+    if (config) return { provider: p, apiKey: config.apiKey, model: config.model };
+  }
+  // Backward compat: fall back to old single-provider 'ai' key
   const db = getDb();
   const row = db
-    .prepare(`SELECT value FROM app_settings WHERE key = ?`)
+    .prepare('SELECT value FROM app_settings WHERE key = ?')
     .get(SETTINGS_KEY) as { value: string } | undefined;
   if (!row) return null;
-  try {
-    return JSON.parse(row.value) as AiSettings;
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(row.value) as AiSettings; } catch { return null; }
 }
 
 export function saveAiSettings(settings: AiSettings): void {
@@ -55,6 +64,60 @@ export function saveAiSettings(settings: AiSettings): void {
 export function clearAiSettings(): void {
   const db = getDb();
   db.prepare(`DELETE FROM app_settings WHERE key = ?`).run(SETTINGS_KEY);
+}
+
+// ── Per-provider storage (new multi-provider approach) ────────────────────────
+
+export function getProviderConfig(provider: AiProvider): { apiKey: string; model: string } | null {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT value FROM app_settings WHERE key = ?')
+    .get(`ai_provider_${provider}`) as { value: string } | undefined;
+  if (!row) return null;
+  try { return JSON.parse(row.value); } catch { return null; }
+}
+
+export function saveProviderConfig(provider: AiProvider, config: { apiKey: string; model: string }): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  ).run(`ai_provider_${provider}`, JSON.stringify(config));
+}
+
+export function clearProviderConfig(provider: AiProvider): void {
+  const db = getDb();
+  db.prepare('DELETE FROM app_settings WHERE key = ?').run(`ai_provider_${provider}`);
+  const defRow = db
+    .prepare('SELECT value FROM app_settings WHERE key = ?')
+    .get('ai_default_provider') as { value: string } | undefined;
+  if (defRow?.value === provider) {
+    db.prepare('DELETE FROM app_settings WHERE key = ?').run('ai_default_provider');
+  }
+}
+
+export function getAllProviderConfigs(): Record<AiProvider, { apiKey: string; model: string } | null> {
+  const providers: AiProvider[] = ['groq', 'openai', 'anthropic', 'gemini'];
+  return Object.fromEntries(
+    providers.map((p) => [p, getProviderConfig(p)])
+  ) as Record<AiProvider, { apiKey: string; model: string } | null>;
+}
+
+export function getDefaultProviderName(): AiProvider | null {
+  const db = getDb();
+  const row = db
+    .prepare('SELECT value FROM app_settings WHERE key = ?')
+    .get('ai_default_provider') as { value: string } | undefined;
+  if (!row) return null;
+  return row.value as AiProvider;
+}
+
+export function setDefaultProviderName(provider: AiProvider): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  ).run('ai_default_provider', provider);
 }
 
 // --- Model catalog per provider (what the UI shows in the picker) ---

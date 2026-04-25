@@ -26,7 +26,6 @@ import ReactFlow, {
   type ReactFlowInstance,
 } from 'reactflow';
 import { CanvasContextMenu, type ContextMenuTarget } from './canvas-context-menu';
-import { QuickAddNode } from './quick-add-node';
 import { Controls } from '@reactflow/controls';
 import { MiniMap } from '@reactflow/minimap';
 import { Background, BackgroundVariant } from '@reactflow/background';
@@ -174,14 +173,26 @@ function FlowCanvasInner({
 
   // Context menu, quick-add popup, clipboard
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; target: ContextMenuTarget } | null>(null);
-  const [quickAdd, setQuickAdd] = useState<{ screenX: number; screenY: number; flowX: number; flowY: number } | null>(null);
   const [clipboard, setClipboard] = useState<Node<FlowNodeData>[]>([]);
+  // Flow position where the palette was opened (double-click), null = use viewport center
+  const paletteDropPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Responsive state
   const [isMobile, setIsMobile] = useState(false);
   const [isTablet, setIsTablet] = useState(false);
-  const [showMobilePalette, setShowMobilePalette] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
+  // Screen position for the floating palette (double-click); null = anchored to toolbar
+  const [paletteScreenPos, setPaletteScreenPos] = useState<{ x: number; y: number } | null>(null);
   const [showMobileConfig, setShowMobileConfig] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsDark(document.documentElement.dataset.theme === 'dark');
+    check();
+    const obs = new MutationObserver(check);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => obs.disconnect();
+  }, []);
 
   useEffect(() => {
     const check = () => {
@@ -351,7 +362,8 @@ function FlowCanvasInner({
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
     setContextMenu(null);
-    setQuickAdd(null);
+    setShowPalette(false);
+    setPaletteScreenPos(null);
     if (isMobile) setShowMobileConfig(false);
   }, [isMobile]);
 
@@ -434,13 +446,17 @@ function FlowCanvasInner({
     [saveHistory]
   );
 
-  // Add node from mobile palette overlay
+  // Add node from palette (dropdown or mobile overlay)
   const handleMobilePaletteSelect = useCallback(
     (item: PaletteItem) => {
       saveHistory();
 
-      // Place in center of current viewport
-      const position = rfInstance
+      // Use stored double-click position, or fall back to viewport center
+      const dropPos = paletteDropPosRef.current;
+      paletteDropPosRef.current = null;
+      const position = dropPos
+        ? dropPos
+        : rfInstance
         ? rfInstance.screenToFlowPosition({
             x: window.innerWidth / 2,
             y: window.innerHeight / 2,
@@ -464,7 +480,7 @@ function FlowCanvasInner({
       };
 
       setNodes((nds) => [...nds, newNode]);
-      setShowMobilePalette(false);
+      setShowPalette(false);
     },
     [rfInstance, saveHistory]
   );
@@ -628,7 +644,7 @@ function FlowCanvasInner({
     []
   );
 
-  // ---- Double-click on canvas to quick-add ----
+  // ---- Double-click on canvas to open palette at click position ----
   const onPaneDoubleClick = useCallback(
     (event: React.MouseEvent) => {
       if (!rfInstance || !reactFlowWrapper.current) return;
@@ -637,7 +653,15 @@ function FlowCanvasInner({
         x: event.clientX - bounds.left,
         y: event.clientY - bounds.top,
       });
-      setQuickAdd({ screenX: event.clientX, screenY: event.clientY, flowX: flowPos.x, flowY: flowPos.y });
+      paletteDropPosRef.current = flowPos;
+
+      // Position the floating panel near the click, clamped to viewport
+      const paletteW = 288;
+      const paletteH = window.innerHeight * 0.7;
+      const x = Math.min(event.clientX + 8, window.innerWidth - paletteW - 8);
+      const y = Math.min(event.clientY + 8, window.innerHeight - paletteH - 8);
+      setPaletteScreenPos({ x, y });
+      setShowPalette(true);
     },
     [rfInstance]
   );
@@ -809,8 +833,9 @@ function FlowCanvasInner({
       // Escape — close menus
       if (e.key === 'Escape') {
         setContextMenu(null);
-        setQuickAdd(null);
         setSelectedNode(null);
+        setShowPalette(false);
+        setPaletteScreenPos(null);
       }
     },
     [handleUndo, handleRedo, handleSave, handleCopySelected, handlePaste, handleDuplicateSelected, handleSelectAll]
@@ -825,28 +850,40 @@ function FlowCanvasInner({
 
   const isEmpty = nodes.length === 0;
 
-  // Palette width for tablet / desktop
-  const paletteWidth = isTablet ? 200 : 240;
-
   return (
     <div className="flex w-full" style={{ height: '100%' }} onKeyDown={onKeyDown} tabIndex={0}>
-      {/* Left palette - hidden on mobile */}
-      {!isMobile && (
-        <div style={{ width: paletteWidth, minWidth: paletteWidth }} className="shrink-0">
-          <NodePalette />
-        </div>
-      )}
-
-      {/* Canvas */}
+      {/* Canvas — full width */}
       <div className="flex-1 relative" ref={reactFlowWrapper} style={{ minHeight: 0 }} onDoubleClick={onPaneDoubleClick}>
         {/* Floating toolbar */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 bg-white/90 backdrop-blur-sm border border-slate-200 rounded-full px-2 py-1.5 shadow-lg shadow-slate-200/60">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 bg-white/90 dark:bg-zinc-800/90 backdrop-blur-sm border border-slate-200 dark:border-zinc-700 rounded-full px-2 py-1.5 shadow-lg shadow-slate-200/60 dark:shadow-zinc-900/60">
+          {/* Add node dropdown button */}
+          <div className="relative">
+            <button
+              onClick={() => { paletteDropPosRef.current = null; setPaletteScreenPos(null); setShowPalette((v) => !v); }}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium transition-colors ${showPalette && !paletteScreenPos ? 'bg-slate-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700'}`}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Add</span>
+            </button>
+            {/* Toolbar-anchored dropdown (Add button) */}
+            {showPalette && !paletteScreenPos && (
+              <div className="absolute top-full left-0 mt-2 z-30 w-72 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl overflow-hidden flex flex-col" style={{ height: '70vh' }}>
+                <NodePalette
+                  onClose={() => setShowPalette(false)}
+                  onItemSelect={(item) => { handleMobilePaletteSelect(item); setShowPalette(false); }}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="w-px h-4 bg-slate-200 dark:bg-zinc-700 mx-1" />
+
           {/* Undo */}
           <button
             onClick={handleUndo}
             disabled={!canUndo()}
             title="Undo (Ctrl+Z)"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-medium"
           >
             <Undo2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Undo</span>
@@ -856,35 +893,35 @@ function FlowCanvasInner({
             onClick={handleRedo}
             disabled={!canRedo()}
             title="Redo (Ctrl+Shift+Z)"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-xs font-medium"
           >
             <Redo2 className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Redo</span>
           </button>
 
           {/* Divider */}
-          <div className="w-px h-4 bg-slate-200 mx-1" />
+          <div className="w-px h-4 bg-slate-200 dark:bg-zinc-700 mx-1" />
 
           {/* Auto layout */}
           <button
             onClick={handleAutoLayout}
             title="Auto Layout"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-slate-600 hover:bg-slate-100 transition-colors text-xs font-medium"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 transition-colors text-xs font-medium"
           >
             <LayoutGrid className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Layout</span>
           </button>
 
           {/* Divider */}
-          <div className="w-px h-4 bg-slate-200 mx-1" />
+          <div className="w-px h-4 bg-slate-200 dark:bg-zinc-700 mx-1" />
 
           {/* Zoom display */}
-          <span className="px-2 text-xs text-slate-500 font-mono tabular-nums w-12 text-center">
+          <span className="px-2 text-xs text-slate-500 dark:text-zinc-400 font-mono tabular-nums w-12 text-center">
             {Math.round(zoom * 100)}%
           </span>
 
           {/* Divider */}
-          <div className="w-px h-4 bg-slate-200 mx-1" />
+          <div className="w-px h-4 bg-slate-200 dark:bg-zinc-700 mx-1" />
 
           {/* Save button */}
           <button
@@ -900,7 +937,7 @@ function FlowCanvasInner({
           {/* Live indicator */}
           {activeExecutionId && (
             <>
-              <div className="w-px h-4 bg-slate-200 mx-1" />
+              <div className="w-px h-4 bg-slate-200 dark:bg-zinc-700 mx-1" />
               <div className="flex items-center gap-1.5 px-1 md:px-2">
                 <span
                   style={{
@@ -948,11 +985,11 @@ function FlowCanvasInner({
         {isEmpty && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center">
-              <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-4">
-                <Workflow className="w-8 h-8 text-slate-400" />
+              <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-zinc-700 flex items-center justify-center mx-auto mb-4">
+                <Workflow className="w-8 h-8 text-slate-400 dark:text-zinc-400" />
               </div>
-              <p className="text-sm font-medium text-slate-600">Drag a node from the left panel</p>
-              <p className="text-xs text-slate-400 mt-1">or click a node to add it to the canvas</p>
+              <p className="text-sm font-medium text-slate-600 dark:text-zinc-300">Click Add to add your first node</p>
+              <p className="text-xs text-slate-400 dark:text-zinc-500 mt-1">or double-click anywhere on the canvas</p>
             </div>
           </div>
         )}
@@ -989,12 +1026,13 @@ function FlowCanvasInner({
           snapGrid={[20, 20]}
           minZoom={0.2}
           maxZoom={3}
+          zoomOnDoubleClick={false}
           connectionMode={ConnectionMode.Loose}
           connectionLineStyle={{ stroke: '#94a3b8', strokeWidth: 1.5, strokeDasharray: '5 4', opacity: 0.6 }}
           defaultEdgeOptions={{ type: 'colored' }}
           proOptions={{ hideAttribution: true }}
         >
-          <Controls position="bottom-left" className="shadow-lg border border-slate-200 rounded-xl overflow-hidden" />
+          <Controls position="bottom-left" className="shadow-lg border border-slate-200 dark:border-zinc-700 rounded-xl overflow-hidden" />
           {!isMobile && (
             <MiniMap
               position="bottom-right"
@@ -1038,11 +1076,24 @@ function FlowCanvasInner({
           <Background
             variant={BackgroundVariant.Dots}
             gap={20}
-            size={1.5}
-            color="#cbd5e1"
+            size={1}
+            color={isDark ? '#3f3f46' : '#d4d4d8'}
           />
         </ReactFlow>
         </ExecutionContext.Provider>
+
+        {/* Floating palette (double-click / right-click "Add here") */}
+        {showPalette && paletteScreenPos && (
+          <div
+            className="fixed z-50 w-72 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl overflow-hidden flex flex-col"
+            style={{ left: paletteScreenPos.x, top: paletteScreenPos.y, height: '70vh' }}
+          >
+            <NodePalette
+              onClose={() => { setShowPalette(false); setPaletteScreenPos(null); }}
+              onItemSelect={(item) => { handleMobilePaletteSelect(item); setShowPalette(false); setPaletteScreenPos(null); }}
+            />
+          </div>
+        )}
 
         {/* Context menu */}
         {contextMenu && (
@@ -1055,12 +1106,17 @@ function FlowCanvasInner({
             actions={{
               // pane actions
               onAddNodeHere: contextMenu.target.kind === 'pane'
-                ? () => setQuickAdd({
-                    screenX: contextMenu.x,
-                    screenY: contextMenu.y,
-                    flowX: (contextMenu.target as { flowX: number; flowY: number }).flowX,
-                    flowY: (contextMenu.target as { flowX: number; flowY: number }).flowY,
-                  })
+                ? () => {
+                    const { flowX, flowY } = contextMenu.target as { flowX: number; flowY: number };
+                    paletteDropPosRef.current = { x: flowX, y: flowY };
+                    const paletteW = 288;
+                    const paletteH = window.innerHeight * 0.7;
+                    const x = Math.min(contextMenu.x + 8, window.innerWidth - paletteW - 8);
+                    const y = Math.min(contextMenu.y + 8, window.innerHeight - paletteH - 8);
+                    setPaletteScreenPos({ x, y });
+                    setContextMenu(null);
+                    setShowPalette(true);
+                  }
                 : undefined,
               onPaste: handlePaste,
               onSelectAll: handleSelectAll,
@@ -1095,23 +1151,10 @@ function FlowCanvasInner({
           />
         )}
 
-        {/* Quick-add popup (double-click on canvas) */}
-        {quickAdd && (
-          <QuickAddNode
-            x={quickAdd.screenX}
-            y={quickAdd.screenY}
-            onSelect={(item) => {
-              addNodeAtPosition(item.type, item.nodeCategory, item.label, quickAdd.flowX, quickAdd.flowY, item.triggerCategory);
-              setQuickAdd(null);
-            }}
-            onClose={() => setQuickAdd(null)}
-          />
-        )}
-
         {/* Mobile floating "+" button to open palette */}
         {isMobile && (
           <button
-            onClick={() => setShowMobilePalette(true)}
+            onClick={() => setShowPalette(true)}
             className="fixed bottom-6 right-6 z-20 w-14 h-14 rounded-full bg-emerald-500 text-white shadow-xl shadow-emerald-200 flex items-center justify-center hover:bg-emerald-600 active:scale-95 transition-all"
           >
             <Plus className="w-6 h-6" />
@@ -1119,17 +1162,17 @@ function FlowCanvasInner({
         )}
 
         {/* Mobile palette overlay */}
-        {isMobile && showMobilePalette && (
+        {isMobile && showPalette && (
           <NodePalette
             mode="overlay"
-            onClose={() => setShowMobilePalette(false)}
+            onClose={() => setShowPalette(false)}
             onItemSelect={handleMobilePaletteSelect}
           />
         )}
 
         {/* Mobile config panel overlay */}
         {isMobile && showMobileConfig && selectedNode && (
-          <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+          <div className="fixed inset-0 z-50 bg-white dark:bg-zinc-800 overflow-y-auto">
             <NodeConfigPanel
               key={selectedNode.id}
               node={selectedNode}

@@ -41,16 +41,16 @@ function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 mx-4 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border border-wa-border bg-wa-panel shadow-xl">
-        <div className="flex items-center justify-between border-b border-wa-border px-6 py-4">
+      <div className="relative z-10 mx-4 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border border-wa-border dark:border-zinc-700 bg-wa-panel dark:bg-zinc-800 shadow-xl">
+        <div className="flex items-center justify-between border-b border-wa-border dark:border-zinc-700 px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-wa-text">{title}</h2>
+            <h2 className="text-lg font-semibold text-wa-text dark:text-zinc-100">{title}</h2>
             {description && (
-              <p className="mt-1 text-sm text-wa-text-secondary">{description}</p>
+              <p className="mt-1 text-sm text-wa-text-secondary dark:text-zinc-300">{description}</p>
             )}
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 hover:bg-wa-hover">
-            <X className="h-5 w-5 text-wa-text-muted" />
+          <button onClick={onClose} className="rounded-lg p-1 hover:bg-wa-hover dark:hover:bg-zinc-700">
+            <X className="h-5 w-5 text-wa-text-muted dark:text-zinc-500" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4">{children}</div>
@@ -73,7 +73,7 @@ function DropdownMenu({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-20 mt-1 min-w-[150px] rounded-lg border border-wa-border bg-wa-panel py-1 shadow-lg">
+          <div className="absolute right-0 top-full z-20 mt-1 min-w-[150px] rounded-lg border border-wa-border dark:border-zinc-700 bg-wa-panel dark:bg-zinc-800 py-1 shadow-lg">
             {items.map((item, i) => (
               <button
                 key={i}
@@ -82,8 +82,8 @@ function DropdownMenu({
                   item.onClick();
                   setOpen(false);
                 }}
-                className={`flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-wa-hover ${
-                  item.danger ? 'text-wa-danger' : 'text-wa-text'
+                className={`flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-wa-hover dark:hover:bg-zinc-700 ${
+                  item.danger ? 'text-wa-danger' : 'text-wa-text dark:text-zinc-100'
                 }`}
               >
                 {item.icon}
@@ -110,9 +110,9 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-4 rounded-full bg-wa-bg p-4 text-wa-text-muted">{icon}</div>
-      <h3 className="mb-2 text-lg font-semibold text-wa-text">{title}</h3>
-      <p className="mb-6 max-w-sm text-sm text-wa-text-secondary">{description}</p>
+      <div className="mb-4 rounded-full bg-wa-bg dark:bg-zinc-800 p-4 text-wa-text-muted dark:text-zinc-500">{icon}</div>
+      <h3 className="mb-2 text-lg font-semibold text-wa-text dark:text-zinc-100">{title}</h3>
+      <p className="mb-6 max-w-sm text-sm text-wa-text-secondary dark:text-zinc-300">{description}</p>
       {action}
     </div>
   );
@@ -135,7 +135,7 @@ function SearchInput({
       prefix={<Search className="h-4 w-4" />}
       suffix={
         value ? (
-          <button onClick={() => onChange('')} className="hover:text-wa-text">
+          <button onClick={() => onChange('')} className="hover:text-wa-text dark:hover:text-zinc-100">
             <X className="h-4 w-4" />
           </button>
         ) : undefined
@@ -344,38 +344,44 @@ export default function LabelsPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-wa-text">Labels</h1>
-          <p className="mt-1 text-sm text-wa-text-secondary">
-            Organize your contacts and chats with labels
-          </p>
+    <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none bg-slate-50 dark:bg-zinc-900 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+      <header className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-700">
+        <div className="flex items-center gap-3 px-5 h-14">
+          <div className="flex items-baseline gap-2 shrink-0">
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Labels</h1>
+            <span className="text-xs font-mono text-slate-400 dark:text-zinc-500 tabular-nums">{labels.length}</span>
+          </div>
+          <div className="h-5 w-px bg-slate-200 dark:bg-zinc-700" />
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search labels…"
+              className="w-full rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 pl-8 pr-3 h-8 text-sm text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-500 focus:ring-2 focus:ring-slate-100 dark:focus:ring-zinc-700 transition"
+            />
+          </div>
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              onClick={handleSyncLabels}
+              disabled={syncing}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-8 px-3 text-[13px] font-medium text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-700 active:scale-[0.98] disabled:opacity-50 transition-all"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{syncing ? 'Syncing…' : 'Sync'}</span>
+            </button>
+            <button
+              onClick={openCreateModal}
+              className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-zinc-700 h-8 px-3 text-[13px] font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 active:scale-[0.98] transition-all"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">New label</span>
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            icon={<RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />}
-            onClick={handleSyncLabels}
-            disabled={syncing}
-          >
-            {syncing ? 'Syncing...' : 'Sync Labels'}
-          </Button>
-          <Button icon={<Plus className="h-4 w-4" />} onClick={openCreateModal}>
-            Create Label
-          </Button>
-        </div>
-      </div>
+      </header>
 
-      {/* Search */}
-      <div className="mb-6 max-w-md">
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Search labels..."
-        />
-      </div>
+      <div className="p-5">
 
       {/* Labels Grid */}
       {filteredLabels.length === 0 ? (
@@ -400,7 +406,7 @@ export default function LabelsPage() {
           {filteredLabels.map((label) => (
             <Card
               key={label.id}
-              className="cursor-pointer transition-shadow hover:shadow-md overflow-hidden"
+              className="cursor-pointer transition-shadow hover:shadow-md overflow-hidden dark:bg-zinc-800 dark:border-zinc-700"
               onClick={() => openLabelDetail(label)}
             >
               <CardBody>
@@ -410,17 +416,17 @@ export default function LabelsPage() {
                     style={{ backgroundColor: label.color }}
                   />
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-semibold text-wa-text text-sm">
+                    <h3 className="truncate font-semibold text-wa-text dark:text-zinc-100 text-sm">
                       {label.name}
                     </h3>
-                    <p className="mt-0.5 text-xs text-wa-text-secondary">
+                    <p className="mt-0.5 text-xs text-wa-text-secondary dark:text-zinc-300">
                       {label.count} {label.count === 1 ? 'item' : 'items'}
                     </p>
                   </div>
                   <DropdownMenu
                     trigger={
-                      <button className="rounded-lg p-1.5 hover:bg-wa-hover shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <MoreVertical className="h-4 w-4 text-wa-text-muted" />
+                      <button className="rounded-lg p-1.5 hover:bg-wa-hover dark:hover:bg-zinc-700 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <MoreVertical className="h-4 w-4 text-wa-text-muted dark:text-zinc-500" />
                       </button>
                     }
                     items={[
@@ -464,7 +470,7 @@ export default function LabelsPage() {
           />
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-wa-text">
+            <label className="mb-1.5 block text-sm font-medium text-wa-text dark:text-zinc-100">
               Color
             </label>
             <div className="flex flex-wrap gap-3">
@@ -474,7 +480,7 @@ export default function LabelsPage() {
                   onClick={() => setFormColor(color.value)}
                   className={`group relative h-10 w-10 rounded-full transition-transform hover:scale-110 ${
                     formColor === color.value
-                      ? 'ring-2 ring-wa-teal ring-offset-2'
+                      ? 'ring-2 ring-wa-teal ring-offset-2 dark:ring-offset-gray-800'
                       : ''
                   }`}
                   style={{ backgroundColor: color.value }}
@@ -536,7 +542,7 @@ export default function LabelsPage() {
           <div>
             {/* Label header */}
             {selectedLabel && (
-              <div className="flex items-center gap-3 mb-4 pb-4 border-b border-wa-border">
+              <div className="flex items-center gap-3 mb-4 pb-4 border-b border-wa-border dark:border-zinc-700">
                 <div
                   className="h-10 w-10 rounded-full flex items-center justify-center"
                   style={{ backgroundColor: selectedLabel.color + '30' }}
@@ -544,8 +550,8 @@ export default function LabelsPage() {
                   <Tag className="h-5 w-5" style={{ color: selectedLabel.color }} />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-wa-text">{selectedLabel.name}</h3>
-                  <p className="text-sm text-wa-text-secondary">
+                  <h3 className="font-semibold text-wa-text dark:text-zinc-100">{selectedLabel.name}</h3>
+                  <p className="text-sm text-wa-text-secondary dark:text-zinc-300">
                     {labelContacts.length + labelChats.length} discussion{labelContacts.length + labelChats.length !== 1 ? 's' : ''}
                   </p>
                 </div>
@@ -554,14 +560,14 @@ export default function LabelsPage() {
 
             {/* Discussions list - contacts + chats combined */}
             <div>
-              <h4 className="mb-3 text-sm font-semibold text-wa-text">Discussions</h4>
+              <h4 className="mb-3 text-sm font-semibold text-wa-text dark:text-zinc-100">Discussions</h4>
 
               {labelContacts.length === 0 && labelChats.length === 0 ? (
-                <p className="rounded-lg bg-wa-bg px-4 py-8 text-center text-sm text-wa-text-muted">
+                <p className="rounded-lg bg-wa-bg dark:bg-zinc-700 px-4 py-8 text-center text-sm text-wa-text-muted dark:text-zinc-500">
                   No discussions with this label
                 </p>
               ) : (
-                <div className="max-h-[400px] overflow-y-auto rounded-lg border border-wa-border divide-y divide-wa-border">
+                <div className="max-h-[400px] overflow-y-auto rounded-lg border border-wa-border dark:border-zinc-700 divide-y divide-wa-border dark:divide-gray-700">
                   {/* Contacts as discussions */}
                   {labelContacts.map((contact) => (
                     <button
@@ -570,7 +576,7 @@ export default function LabelsPage() {
                         setShowLabelDetail(false);
                         window.location.href = `/conversations?chat=${contact.wppId}`;
                       }}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-wa-hover transition-colors"
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-wa-hover dark:hover:bg-zinc-700 transition-colors"
                     >
                       <Avatar
                         src={contact.profilePicUrl}
@@ -578,10 +584,10 @@ export default function LabelsPage() {
                         size="md"
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-wa-text truncate">{contact.name}</p>
-                        <p className="text-xs text-wa-text-muted truncate">{contact.phone}</p>
+                        <p className="font-medium text-wa-text dark:text-zinc-100 truncate">{contact.name}</p>
+                        <p className="text-xs text-wa-text-muted dark:text-zinc-500 truncate">{contact.phone}</p>
                       </div>
-                      <MessageSquare className="h-4 w-4 text-wa-text-muted shrink-0" />
+                      <MessageSquare className="h-4 w-4 text-wa-text-muted dark:text-zinc-500 shrink-0" />
                     </button>
                   ))}
 
@@ -593,7 +599,7 @@ export default function LabelsPage() {
                         setShowLabelDetail(false);
                         window.location.href = `/conversations?chat=${chat.wppId}`;
                       }}
-                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-wa-hover transition-colors"
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-wa-hover dark:hover:bg-zinc-700 transition-colors"
                     >
                       <Avatar
                         src={chat.profilePicUrl}
@@ -601,10 +607,10 @@ export default function LabelsPage() {
                         size="md"
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-wa-text truncate">
+                        <p className="font-medium text-wa-text dark:text-zinc-100 truncate">
                           {chat.name}
                           {chat.isGroup && (
-                            <span className="ml-2 rounded bg-wa-bg px-1.5 py-0.5 text-xs text-wa-text-muted">
+                            <span className="ml-2 rounded bg-wa-bg dark:bg-zinc-700 px-1.5 py-0.5 text-xs text-wa-text-muted dark:text-zinc-500">
                               Group
                             </span>
                           )}
@@ -613,7 +619,7 @@ export default function LabelsPage() {
                           <p className="text-xs text-wa-green font-medium">{chat.unreadCount} unread</p>
                         )}
                       </div>
-                      <MessageSquare className="h-4 w-4 text-wa-text-muted shrink-0" />
+                      <MessageSquare className="h-4 w-4 text-wa-text-muted dark:text-zinc-500 shrink-0" />
                     </button>
                   ))}
                 </div>
@@ -622,6 +628,7 @@ export default function LabelsPage() {
           </div>
         )}
       </Modal>
+      </div>
     </div>
   );
 }

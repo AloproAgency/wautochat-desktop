@@ -17,22 +17,22 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="mb-1.5 block text-sm font-medium text-wa-text"
+            className="mb-1.5 block text-sm font-medium text-wa-text dark:text-zinc-100"
           >
             {label}
           </label>
         )}
         <div className="relative">
           {prefix && (
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-wa-text-muted">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-wa-text-muted dark:text-zinc-400">
               {prefix}
             </div>
           )}
           <input
             ref={ref}
             id={inputId}
-            className={`h-10 w-full rounded-lg border bg-wa-input-bg px-3 text-sm text-wa-text placeholder:text-wa-text-muted transition-colors focus:border-wa-green focus:bg-white focus:outline-none focus:ring-2 focus:ring-wa-green/20 disabled:cursor-not-allowed disabled:opacity-50 ${
-              error ? 'border-wa-danger focus:border-wa-danger focus:ring-wa-danger/20' : 'border-wa-border'
+            className={`h-10 w-full rounded-lg border bg-wa-input-bg px-3 text-sm text-wa-text placeholder:text-wa-text-muted transition-colors focus:border-wa-green focus:bg-white focus:outline-none focus:ring-2 focus:ring-wa-green/20 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-400 dark:focus:bg-zinc-900 ${
+              error ? 'border-wa-danger focus:border-wa-danger focus:ring-wa-danger/20 dark:border-red-500' : 'border-wa-border dark:border-zinc-600'
             } ${prefix ? 'pl-10' : ''} ${suffix ? 'pr-10' : ''} ${className}`}
             aria-invalid={error ? 'true' : undefined}
             aria-describedby={
@@ -41,7 +41,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {...props}
           />
           {suffix && (
-            <div className="absolute inset-y-0 right-0 flex items-center pr-3 text-wa-text-muted">
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 text-wa-text-muted dark:text-zinc-400">
               {suffix}
             </div>
           )}
@@ -52,7 +52,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           </p>
         )}
         {helperText && !error && (
-          <p id={`${inputId}-helper`} className="mt-1.5 text-xs text-wa-text-muted">
+          <p id={`${inputId}-helper`} className="mt-1.5 text-xs text-wa-text-muted dark:text-zinc-400">
             {helperText}
           </p>
         )}

@@ -131,24 +131,13 @@ function EventRow({ event }: { event: FlowExecutionEvent }) {
   const hasDetail = event.data?.result !== undefined || event.data?.error !== undefined || event.data?.inputData !== undefined;
 
   return (
-    <div
-      style={{
-        borderBottom: '1px solid #f3f4f6',
-        padding: '6px 12px',
-        fontSize: 12,
-      }}
-    >
+    <div className="border-b border-gray-100 dark:border-zinc-700/60 px-3 py-1.5 text-xs">
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          cursor: hasDetail ? 'pointer' : 'default',
-        }}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: hasDetail ? 'pointer' : 'default' }}
         onClick={() => hasDetail && setExpanded(!expanded)}
       >
         {/* Timestamp */}
-        <span style={{ color: '#9ca3af', fontFamily: 'monospace', fontSize: 11, flexShrink: 0 }}>
+        <span className="text-gray-400 dark:text-zinc-500 font-mono text-[11px] shrink-0">
           {formatTimestamp(event.timestamp)}
         </span>
 
@@ -158,7 +147,7 @@ function EventRow({ event }: { event: FlowExecutionEvent }) {
         </span>
 
         {/* Node name */}
-        <span style={{ color: '#374151', fontWeight: 500, flexShrink: 0, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span className="text-gray-700 dark:text-zinc-200 font-medium shrink-0 max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap">
           {event.nodeLabel || (event.type === 'execution:start' ? 'Flow Started' : event.type === 'execution:end' ? 'Flow Ended' : event.nodeId || '')}
         </span>
 
@@ -167,44 +156,30 @@ function EventRow({ event }: { event: FlowExecutionEvent }) {
 
         {/* Duration */}
         {event.data?.durationMs != null && (
-          <span style={{ color: '#9ca3af', fontSize: 11, marginLeft: 'auto', flexShrink: 0 }}>
+          <span className="text-gray-400 dark:text-zinc-500 text-[11px] ml-auto shrink-0">
             {event.data.durationMs}ms
           </span>
         )}
 
         {/* Expand indicator */}
         {hasDetail && (
-          <span style={{ color: '#9ca3af', fontSize: 10, marginLeft: event.data?.durationMs != null ? 4 : 'auto' }}>
-            {expanded ? '\u25B2' : '\u25BC'}
+          <span className="text-gray-400 dark:text-zinc-500 text-[10px]" style={{ marginLeft: event.data?.durationMs != null ? 4 : 'auto' }}>
+            {expanded ? '▲' : '▼'}
           </span>
         )}
       </div>
 
       {/* Expanded detail */}
       {expanded && hasDetail && (
-        <div
-          style={{
-            marginTop: 4,
-            padding: '6px 8px',
-            backgroundColor: '#f9fafb',
-            borderRadius: 6,
-            fontSize: 11,
-            fontFamily: 'monospace',
-            color: '#4b5563',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all',
-            maxHeight: 120,
-            overflow: 'auto',
-          }}
-        >
+        <div className="mt-1 px-2 py-1.5 bg-gray-50 dark:bg-zinc-900 rounded-md text-[11px] font-mono text-gray-600 dark:text-zinc-300 whitespace-pre-wrap break-all max-h-[120px] overflow-auto">
           {event.data?.error && (
-            <div style={{ color: '#dc2626', marginBottom: 4 }}>Error: {event.data.error}</div>
+            <div className="text-red-500 dark:text-red-400 mb-1">Error: {event.data.error}</div>
           )}
           {event.data?.result !== undefined && (
             <div>Result: {JSON.stringify(event.data.result, null, 2)}</div>
           )}
           {event.data?.inputData !== undefined && (
-            <div style={{ marginTop: 4 }}>Input: {JSON.stringify(event.data.inputData, null, 2)}</div>
+            <div className="mt-1">Input: {JSON.stringify(event.data.inputData, null, 2)}</div>
           )}
         </div>
       )}
@@ -235,29 +210,11 @@ export default function ExecutionLogPanel({ events, isVisible, onToggle, onClear
   return (
     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 20, pointerEvents: 'none' }}>
       {/* Toggle tab */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          pointerEvents: 'auto',
-        }}
-      >
+      <div style={{ display: 'flex', justifyContent: 'center', pointerEvents: 'auto' }}>
         <button
           onClick={onToggle}
-          style={{
-            backgroundColor: '#ffffff',
-            border: '1px solid #e5e7eb',
-            borderBottom: isVisible ? 'none' : '1px solid #e5e7eb',
-            borderRadius: '8px 8px 0 0',
-            padding: '4px 16px',
-            fontSize: 12,
-            fontWeight: 600,
-            color: '#374151',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
+          className="bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-t-lg px-4 py-1 text-xs font-semibold text-gray-700 dark:text-zinc-200 cursor-pointer flex items-center gap-1.5"
+          style={{ borderBottom: isVisible ? 'none' : undefined }}
         >
           <span>Execution Log</span>
           {recentEvents.length > 0 && (
@@ -276,8 +233,8 @@ export default function ExecutionLogPanel({ events, isVisible, onToggle, onClear
               {recentEvents.length}
             </span>
           )}
-          <span style={{ fontSize: 10, color: '#9ca3af' }}>
-            {isVisible ? '\u25BC' : '\u25B2'}
+          <span className="text-[10px] text-gray-400 dark:text-zinc-500">
+            {isVisible ? '▼' : '▲'}
           </span>
         </button>
       </div>
@@ -285,43 +242,18 @@ export default function ExecutionLogPanel({ events, isVisible, onToggle, onClear
       {/* Panel */}
       {isVisible && (
         <div
-          style={{
-            height: 240,
-            backgroundColor: '#ffffff',
-            borderTop: '1px solid #e5e7eb',
-            display: 'flex',
-            flexDirection: 'column',
-            pointerEvents: 'auto',
-          }}
+          className="bg-white dark:bg-zinc-800 border-t border-gray-200 dark:border-zinc-700 flex flex-col"
+          style={{ height: 240, pointerEvents: 'auto' }}
         >
           {/* Header */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '6px 12px',
-              borderBottom: '1px solid #f3f4f6',
-              flexShrink: 0,
-            }}
-          >
-            <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100 dark:border-zinc-700/60 shrink-0">
+            <span className="text-[11px] text-gray-400 dark:text-zinc-500 font-medium">
               {recentEvents.length} event{recentEvents.length !== 1 ? 's' : ''}
             </span>
             {onClear && recentEvents.length > 0 && (
               <button
                 onClick={handleClear}
-                style={{
-                  fontSize: 11,
-                  color: '#9ca3af',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.color = '#9ca3af'; }}
+                className="text-[11px] text-gray-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 bg-transparent border-none cursor-pointer px-1.5 py-0.5 rounded transition-colors"
               >
                 Clear
               </button>
@@ -329,25 +261,9 @@ export default function ExecutionLogPanel({ events, isVisible, onToggle, onClear
           </div>
 
           {/* Events list */}
-          <div
-            ref={scrollRef}
-            style={{
-              flex: 1,
-              overflowY: 'auto',
-              overflowX: 'hidden',
-            }}
-          >
+          <div ref={scrollRef} className="flex-1 overflow-y-auto overflow-x-hidden">
             {recentEvents.length === 0 ? (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  height: '100%',
-                  color: '#9ca3af',
-                  fontSize: 12,
-                }}
-              >
+              <div className="flex items-center justify-center h-full text-gray-400 dark:text-zinc-500 text-xs">
                 No execution events yet
               </div>
             ) : (

@@ -30,7 +30,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         {label && (
           <label
             htmlFor={textareaId}
-            className="mb-1.5 block text-sm font-medium text-wa-text"
+            className="mb-1.5 block text-sm font-medium text-wa-text dark:text-zinc-100"
           >
             {label}
           </label>
@@ -42,8 +42,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           value={value}
           defaultValue={defaultValue}
           onChange={handleChange}
-          className={`min-h-[80px] w-full rounded-lg border bg-wa-input-bg px-3 py-2.5 text-sm text-wa-text placeholder:text-wa-text-muted transition-colors focus:border-wa-green focus:bg-white focus:outline-none focus:ring-2 focus:ring-wa-green/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y ${
-            error ? 'border-wa-danger focus:border-wa-danger focus:ring-wa-danger/20' : 'border-wa-border'
+          className={`min-h-[80px] w-full rounded-lg border bg-wa-input-bg px-3 py-2.5 text-sm text-wa-text placeholder:text-wa-text-muted transition-colors focus:border-wa-green focus:bg-white focus:outline-none focus:ring-2 focus:ring-wa-green/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-400 dark:focus:bg-zinc-900 ${
+            error ? 'border-wa-danger focus:border-wa-danger focus:ring-wa-danger/20 dark:border-red-500' : 'border-wa-border dark:border-zinc-600'
           } ${className}`}
           aria-invalid={error ? 'true' : undefined}
           {...props}
@@ -55,7 +55,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
             <span />
           )}
           {showCount && maxLength && (
-            <span className={`text-xs ${charCount >= maxLength ? 'text-wa-danger' : 'text-wa-text-muted'}`}>
+            <span className={`text-xs ${charCount >= maxLength ? 'text-wa-danger' : 'text-wa-text-muted dark:text-zinc-400'}`}>
               {charCount}/{maxLength}
             </span>
           )}

@@ -47,24 +47,24 @@ export function Modal({ open, onClose, title, description, children, footer }: M
         aria-modal="true"
         aria-labelledby={title ? 'modal-title' : undefined}
         aria-describedby={description ? 'modal-description' : undefined}
-        className="relative z-10 w-full max-w-lg rounded-xl border border-wa-border bg-wa-panel shadow-xl animate-[scaleIn_150ms_ease-out]"
+        className="relative z-10 w-full max-w-lg rounded-xl border border-wa-border bg-wa-panel shadow-xl animate-[scaleIn_150ms_ease-out] dark:border-zinc-700 dark:bg-zinc-800"
       >
-        <div className="flex items-start justify-between border-b border-wa-border px-6 py-4">
+        <div className="flex items-start justify-between border-b border-wa-border px-6 py-4 dark:border-zinc-700">
           <div>
             {title && (
-              <h2 id="modal-title" className="text-lg font-semibold text-wa-text">
+              <h2 id="modal-title" className="text-lg font-semibold text-wa-text dark:text-zinc-100">
                 {title}
               </h2>
             )}
             {description && (
-              <p id="modal-description" className="mt-1 text-sm text-wa-text-secondary">
+              <p id="modal-description" className="mt-1 text-sm text-wa-text-secondary dark:text-zinc-300">
                 {description}
               </p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="ml-4 shrink-0 rounded-lg p-1.5 text-wa-text-muted transition-colors hover:bg-wa-hover hover:text-wa-text"
+            className="ml-4 shrink-0 rounded-lg p-1.5 text-wa-text-muted transition-colors hover:bg-wa-hover hover:text-wa-text dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
@@ -74,7 +74,7 @@ export function Modal({ open, onClose, title, description, children, footer }: M
         <div className="px-6 py-4">{children}</div>
 
         {footer && (
-          <div className="flex items-center justify-end gap-3 border-t border-wa-border px-6 py-4">
+          <div className="flex items-center justify-end gap-3 border-t border-wa-border px-6 py-4 dark:border-zinc-700">
             {footer}
           </div>
         )}

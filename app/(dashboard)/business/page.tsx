@@ -47,16 +47,16 @@ function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 mx-4 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border border-wa-border bg-wa-panel shadow-xl">
-        <div className="flex items-center justify-between border-b border-wa-border px-6 py-4">
+      <div className="relative z-10 mx-4 flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border border-wa-border dark:border-zinc-700 bg-wa-panel dark:bg-zinc-800 shadow-xl">
+        <div className="flex items-center justify-between border-b border-wa-border dark:border-zinc-700 px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-wa-text">{title}</h2>
+            <h2 className="text-lg font-semibold text-wa-text dark:text-zinc-100">{title}</h2>
             {description && (
-              <p className="mt-1 text-sm text-wa-text-secondary">{description}</p>
+              <p className="mt-1 text-sm text-wa-text-secondary dark:text-zinc-300">{description}</p>
             )}
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 hover:bg-wa-hover">
-            <X className="h-5 w-5 text-wa-text-muted" />
+          <button onClick={onClose} className="rounded-lg p-1 hover:bg-wa-hover dark:hover:bg-zinc-700">
+            <X className="h-5 w-5 text-wa-text-muted dark:text-zinc-500" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4">{children}</div>
@@ -81,7 +81,7 @@ function Toggle({
         aria-checked={checked}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors ${
-          checked ? 'bg-wa-teal' : 'bg-gray-300'
+          checked ? 'bg-wa-teal' : 'bg-gray-300 dark:bg-zinc-600'
         }`}
       >
         <span
@@ -90,7 +90,7 @@ function Toggle({
           }`}
         />
       </button>
-      {label && <span className="text-sm text-wa-text">{label}</span>}
+      {label && <span className="text-sm text-wa-text dark:text-zinc-100">{label}</span>}
     </label>
   );
 }
@@ -108,9 +108,9 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-4 rounded-full bg-wa-bg p-4 text-wa-text-muted">{icon}</div>
-      <h3 className="mb-2 text-lg font-semibold text-wa-text">{title}</h3>
-      <p className="mb-6 max-w-sm text-sm text-wa-text-secondary">{description}</p>
+      <div className="mb-4 rounded-full bg-wa-bg dark:bg-zinc-800 p-4 text-wa-text-muted dark:text-zinc-500">{icon}</div>
+      <h3 className="mb-2 text-lg font-semibold text-wa-text dark:text-zinc-100">{title}</h3>
+      <p className="mb-6 max-w-sm text-sm text-wa-text-secondary dark:text-zinc-300">{description}</p>
       {action}
     </div>
   );
@@ -133,7 +133,7 @@ function SearchInput({
       prefix={<Search className="h-4 w-4" />}
       suffix={
         value ? (
-          <button onClick={() => onChange('')} className="hover:text-wa-text">
+          <button onClick={() => onChange('')} className="hover:text-wa-text dark:hover:text-zinc-100">
             <X className="h-4 w-4" />
           </button>
         ) : undefined
@@ -156,7 +156,7 @@ function DropdownMenu({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-20 mt-1 min-w-[150px] rounded-lg border border-wa-border bg-wa-panel py-1 shadow-lg">
+          <div className="absolute right-0 top-full z-20 mt-1 min-w-[150px] rounded-lg border border-wa-border dark:border-zinc-700 bg-wa-panel dark:bg-zinc-800 py-1 shadow-lg">
             {items.map((item, i) => (
               <button
                 key={i}
@@ -165,8 +165,8 @@ function DropdownMenu({
                   item.onClick();
                   setOpen(false);
                 }}
-                className={`flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-wa-hover ${
-                  item.danger ? 'text-wa-danger' : 'text-wa-text'
+                className={`flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-wa-hover dark:hover:bg-zinc-700 ${
+                  item.danger ? 'text-wa-danger' : 'text-wa-text dark:text-zinc-100'
                 }`}
               >
                 {item.icon}
@@ -497,66 +497,68 @@ export default function BusinessPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-wa-text">Business Catalog</h1>
-        <p className="mt-1 text-sm text-wa-text-secondary">
-          Manage your WhatsApp Business products and collections
-        </p>
-      </div>
+    <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none bg-slate-50 dark:bg-zinc-900 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+      <header className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-700">
+        <div className="flex items-center gap-3 px-5 h-14">
+          <div className="flex items-baseline gap-2 shrink-0">
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Business</h1>
+          </div>
+          <div className="h-5 w-px bg-slate-200 dark:bg-zinc-700" />
+          {/* Tab pills */}
+          <div className="flex items-center gap-0.5">
+            <button
+              onClick={() => { setActiveTab('products'); setSearch(''); }}
+              className={`inline-flex items-center gap-1.5 rounded-md h-8 px-2.5 text-[13px] font-medium transition-colors ${
+                activeTab === 'products'
+                  ? 'bg-slate-900 dark:bg-zinc-700 text-white'
+                  : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700'
+              }`}
+            >
+              <Package className="h-3.5 w-3.5" />
+              Products
+              <span className={`rounded px-1 text-[10px] font-mono tabular-nums ${activeTab === 'products' ? 'bg-white/20 text-white' : 'text-slate-400 dark:text-zinc-500'}`}>
+                {products.length}
+              </span>
+            </button>
+            <button
+              onClick={() => { setActiveTab('collections'); setSearch(''); }}
+              className={`inline-flex items-center gap-1.5 rounded-md h-8 px-2.5 text-[13px] font-medium transition-colors ${
+                activeTab === 'collections'
+                  ? 'bg-slate-900 dark:bg-zinc-700 text-white'
+                  : 'text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700'
+              }`}
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+              Collections
+              <span className={`rounded px-1 text-[10px] font-mono tabular-nums ${activeTab === 'collections' ? 'bg-white/20 text-white' : 'text-slate-400 dark:text-zinc-500'}`}>
+                {collections.length}
+              </span>
+            </button>
+          </div>
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={activeTab === 'products' ? 'Search products…' : 'Search collections…'}
+              className="w-full rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 pl-8 pr-3 h-8 text-sm text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-500 focus:ring-2 focus:ring-slate-100 dark:focus:ring-zinc-700 transition"
+            />
+          </div>
+          <button
+            onClick={activeTab === 'products' ? openCreateProduct : openCreateCollection}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-zinc-700 h-8 px-3 text-[13px] font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 active:scale-[0.98] transition-all"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">{activeTab === 'products' ? 'Add product' : 'Add collection'}</span>
+          </button>
+        </div>
+      </header>
 
-      {/* Tabs */}
-      <div className="mb-6 flex border-b border-wa-border">
-        <button
-          onClick={() => {
-            setActiveTab('products');
-            setSearch('');
-          }}
-          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
-            activeTab === 'products'
-              ? 'border-wa-teal text-wa-teal'
-              : 'border-transparent text-wa-text-muted hover:text-wa-text'
-          }`}
-        >
-          <Package className="h-4 w-4" />
-          Products ({products.length})
-        </button>
-        <button
-          onClick={() => {
-            setActiveTab('collections');
-            setSearch('');
-          }}
-          className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
-            activeTab === 'collections'
-              ? 'border-wa-teal text-wa-teal'
-              : 'border-transparent text-wa-text-muted hover:text-wa-text'
-          }`}
-        >
-          <FolderOpen className="h-4 w-4" />
-          Collections ({collections.length})
-        </button>
-      </div>
+      <div className="p-5">
 
       {/* Products Tab */}
       {activeTab === 'products' && (
         <>
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <div className="max-w-md flex-1">
-              <SearchInput
-                value={search}
-                onChange={setSearch}
-                placeholder="Search products..."
-              />
-            </div>
-            <Button
-              icon={<Plus className="h-4 w-4" />}
-              onClick={openCreateProduct}
-            >
-              Add Product
-            </Button>
-          </div>
-
           {filteredProducts.length === 0 ? (
             <EmptyState
               icon={<ShoppingBag className="h-10 w-10" />}
@@ -582,10 +584,10 @@ export default function BusinessPage() {
               {filteredProducts.map((product) => (
                 <Card
                   key={product.id}
-                  className="overflow-hidden transition-shadow hover:shadow-md"
+                  className="overflow-hidden transition-shadow hover:shadow-md dark:bg-zinc-800 dark:border-zinc-700"
                 >
                   {/* Product Image */}
-                  <div className="relative aspect-square bg-gray-100">
+                  <div className="relative aspect-square bg-gray-100 dark:bg-zinc-700">
                     {product.imageUrl ? (
                       <img
                         src={product.imageUrl}
@@ -608,7 +610,7 @@ export default function BusinessPage() {
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center">
-                        <ImageIcon className="h-12 w-12 text-gray-300" />
+                        <ImageIcon className="h-12 w-12 text-gray-300 dark:text-zinc-600" />
                       </div>
                     )}
                     {!product.isVisible && (
@@ -622,8 +624,8 @@ export default function BusinessPage() {
                     <div className="absolute right-2 top-2">
                       <DropdownMenu
                         trigger={
-                          <button className="rounded-full bg-white/90 p-1.5 shadow hover:bg-white">
-                            <MoreVertical className="h-4 w-4 text-wa-text-muted" />
+                          <button className="rounded-full bg-white/90 dark:bg-zinc-800/90 p-1.5 shadow hover:bg-white dark:hover:bg-zinc-700">
+                            <MoreVertical className="h-4 w-4 text-wa-text-muted dark:text-zinc-400" />
                           </button>
                         }
                         items={[
@@ -652,7 +654,7 @@ export default function BusinessPage() {
                     </div>
                   </div>
                   <CardBody>
-                    <h3 className="truncate font-semibold text-wa-text">
+                    <h3 className="truncate font-semibold text-wa-text dark:text-zinc-100">
                       {product.name}
                     </h3>
                     <div className="mt-1 flex items-center gap-2">
@@ -661,7 +663,7 @@ export default function BusinessPage() {
                           <p className="text-lg font-bold text-wa-teal">
                             {formatPrice(product.salePrice, product.currency)}
                           </p>
-                          <p className="text-sm text-wa-text-muted line-through">
+                          <p className="text-sm text-wa-text-muted dark:text-zinc-500 line-through">
                             {formatPrice(product.price, product.currency)}
                           </p>
                         </>
@@ -672,7 +674,7 @@ export default function BusinessPage() {
                       )}
                     </div>
                     {product.description && (
-                      <p className="mt-1 line-clamp-2 text-sm text-wa-text-secondary">
+                      <p className="mt-1 line-clamp-2 text-sm text-wa-text-secondary dark:text-zinc-300">
                         {product.description}
                       </p>
                     )}
@@ -694,22 +696,6 @@ export default function BusinessPage() {
       {/* Collections Tab */}
       {activeTab === 'collections' && (
         <>
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <div className="max-w-md flex-1">
-              <SearchInput
-                value={search}
-                onChange={setSearch}
-                placeholder="Search collections..."
-              />
-            </div>
-            <Button
-              icon={<Plus className="h-4 w-4" />}
-              onClick={openCreateCollection}
-            >
-              Add Collection
-            </Button>
-          </div>
-
           {filteredCollections.length === 0 ? (
             <EmptyState
               icon={<FolderOpen className="h-10 w-10" />}
@@ -733,18 +719,18 @@ export default function BusinessPage() {
           ) : (
             <div className="space-y-3">
               {filteredCollections.map((collection) => (
-                <Card key={collection.id}>
+                <Card key={collection.id} className="dark:bg-zinc-800 dark:border-zinc-700">
                   <CardBody>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-wa-teal/10">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-wa-teal/10 dark:bg-wa-teal/20">
                           <FolderOpen className="h-5 w-5 text-wa-teal" />
                         </div>
                         <div>
-                          <h3 className="font-semibold text-wa-text">
+                          <h3 className="font-semibold text-wa-text dark:text-zinc-100">
                             {collection.name}
                           </h3>
-                          <p className="text-sm text-wa-text-secondary">
+                          <p className="text-sm text-wa-text-secondary dark:text-zinc-300">
                             {collection.productIds.length} product
                             {collection.productIds.length !== 1 ? 's' : ''}
                           </p>
@@ -758,7 +744,7 @@ export default function BusinessPage() {
                             return (
                               <div
                                 key={pid}
-                                className="h-8 w-8 overflow-hidden rounded-full border-2 border-white bg-gray-100"
+                                className="h-8 w-8 overflow-hidden rounded-full border-2 border-white dark:border-zinc-800 bg-gray-100 dark:bg-zinc-700"
                               >
                                 {product?.imageUrl ? (
                                   <img
@@ -768,22 +754,22 @@ export default function BusinessPage() {
                                   />
                                 ) : (
                                   <div className="flex h-full items-center justify-center">
-                                    <Package className="h-3 w-3 text-gray-400" />
+                                    <Package className="h-3 w-3 text-gray-400 dark:text-zinc-500" />
                                   </div>
                                 )}
                               </div>
                             );
                           })}
                           {collection.productIds.length > 3 && (
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-wa-bg text-xs font-medium text-wa-text-muted">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-white dark:border-zinc-800 bg-wa-bg dark:bg-zinc-700 text-xs font-medium text-wa-text-muted dark:text-zinc-400">
                               +{collection.productIds.length - 3}
                             </div>
                           )}
                         </div>
                         <DropdownMenu
                           trigger={
-                            <button className="rounded-lg p-1.5 hover:bg-wa-hover">
-                              <MoreVertical className="h-4 w-4 text-wa-text-muted" />
+                            <button className="rounded-lg p-1.5 hover:bg-wa-hover dark:hover:bg-zinc-700">
+                              <MoreVertical className="h-4 w-4 text-wa-text-muted dark:text-zinc-500" />
                             </button>
                           }
                           items={[
@@ -845,7 +831,7 @@ export default function BusinessPage() {
               value={productPrice}
               onChange={(e) => setProductPrice(e.target.value)}
               placeholder="0.00"
-              prefix={<span className="text-xs font-medium text-wa-text-secondary">
+              prefix={<span className="text-xs font-medium text-wa-text-secondary dark:text-zinc-400">
                 {productCurrency === 'XOF' || productCurrency === 'XAF' ? 'FCFA' :
                  productCurrency === 'USD' ? '$' :
                  productCurrency === 'EUR' ? '€' :
@@ -866,10 +852,10 @@ export default function BusinessPage() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-wa-text">Product Image</label>
+            <label className="mb-1 block text-sm font-medium text-wa-text dark:text-zinc-100">Product Image</label>
             <div className="flex items-center gap-3">
               <label
-                className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border bg-white px-4 py-2 text-sm text-wa-text-secondary transition-colors hover:border-wa-green hover:bg-wa-light-green/30"
+                className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2 text-sm text-wa-text-secondary dark:text-zinc-300 transition-colors hover:border-wa-green hover:bg-wa-light-green/30 dark:hover:bg-zinc-700"
               >
                 <ImageIcon className="h-4 w-4" />
                 Choose Image
@@ -907,7 +893,7 @@ export default function BusinessPage() {
           </div>
 
           {productImageUrl && (
-            <div className="h-32 w-32 overflow-hidden rounded-lg bg-gray-100">
+            <div className="h-32 w-32 overflow-hidden rounded-lg bg-gray-100 dark:bg-zinc-700">
               <img
                 src={productImageUrl}
                 alt="Preview"
@@ -971,12 +957,12 @@ export default function BusinessPage() {
           />
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-wa-text">
+            <label className="mb-1.5 block text-sm font-medium text-wa-text dark:text-zinc-100">
               Products ({collectionProducts.length} selected)
             </label>
-            <div className="max-h-64 overflow-y-auto rounded-lg border border-wa-border">
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-wa-border dark:border-zinc-700">
               {products.length === 0 ? (
-                <p className="px-4 py-6 text-center text-sm text-wa-text-muted">
+                <p className="px-4 py-6 text-center text-sm text-wa-text-muted dark:text-zinc-500">
                   No products available. Create products first.
                 </p>
               ) : (
@@ -992,18 +978,18 @@ export default function BusinessPage() {
                             : [...prev, product.id]
                         )
                       }
-                      className="flex w-full items-center gap-3 border-b border-wa-border px-4 py-2 text-left transition-colors last:border-0 hover:bg-wa-hover"
+                      className="flex w-full items-center gap-3 border-b border-wa-border dark:border-zinc-700 px-4 py-2 text-left transition-colors last:border-0 hover:bg-wa-hover dark:hover:bg-zinc-700"
                     >
                       <div
                         className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
                           isSelected
                             ? 'border-wa-teal bg-wa-teal text-white'
-                            : 'border-wa-border bg-white'
+                            : 'border-wa-border dark:border-zinc-600 bg-white dark:bg-zinc-800'
                         }`}
                       >
                         {isSelected && <Check className="h-3 w-3" />}
                       </div>
-                      <div className="h-8 w-8 shrink-0 overflow-hidden rounded bg-gray-100">
+                      <div className="h-8 w-8 shrink-0 overflow-hidden rounded bg-gray-100 dark:bg-zinc-700">
                         {product.imageUrl ? (
                           <img
                             src={product.imageUrl}
@@ -1012,12 +998,12 @@ export default function BusinessPage() {
                           />
                         ) : (
                           <div className="flex h-full items-center justify-center">
-                            <Package className="h-3 w-3 text-gray-400" />
+                            <Package className="h-3 w-3 text-gray-400 dark:text-zinc-500" />
                           </div>
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <span className="text-sm font-medium text-wa-text">
+                        <span className="text-sm font-medium text-wa-text dark:text-zinc-100">
                           {product.name}
                         </span>
                         {product.salePrice ? (
@@ -1025,12 +1011,12 @@ export default function BusinessPage() {
                             <span className="ml-2 text-xs font-medium text-wa-teal">
                               {formatPrice(product.salePrice, product.currency)}
                             </span>
-                            <span className="ml-1 text-xs text-wa-text-muted line-through">
+                            <span className="ml-1 text-xs text-wa-text-muted dark:text-zinc-500 line-through">
                               {formatPrice(product.price, product.currency)}
                             </span>
                           </>
                         ) : (
-                          <span className="ml-2 text-xs text-wa-text-muted">
+                          <span className="ml-2 text-xs text-wa-text-muted dark:text-zinc-500">
                             {formatPrice(product.price, product.currency)}
                           </span>
                         )}
@@ -1059,6 +1045,7 @@ export default function BusinessPage() {
           </div>
         </div>
       </Modal>
+      </div>
     </div>
   );
 }
