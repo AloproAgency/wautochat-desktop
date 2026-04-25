@@ -26,7 +26,7 @@ export function Tabs({ tabs, defaultIndex = 0, className = '' }: TabsProps) {
             onClick={() => setActiveIndex(index)}
             className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
               activeIndex === index
-                ? 'text-wa-teal dark:text-zinc-900 dark:bg-white dark:rounded-md'
+                ? 'text-zinc-900 dark:bg-white dark:rounded-md'
                 : 'text-wa-text-secondary hover:text-wa-text dark:text-zinc-400 dark:hover:text-zinc-200'
             }`}
           >
