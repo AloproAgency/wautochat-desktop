@@ -2001,7 +2001,7 @@ export default function ConversationsPage() {
           />
         </div>
 
-        {/* Segmented filter (sober, no pill border, single active state) */}
+        {/* Segmented filter */}
         <div
           style={{
             display: 'flex',
@@ -2009,6 +2009,7 @@ export default function ConversationsPage() {
             backgroundColor: THEME.inputBg,
             padding: 2,
             borderRadius: 8,
+            border: isDark ? '1px solid #3f3f46' : 'none',
           }}
         >
           {(['all', 'direct', 'group'] as const).map((filter) => {
@@ -2022,14 +2023,14 @@ export default function ConversationsPage() {
                   flex: 1,
                   height: 26,
                   borderRadius: 6,
-                  border: 'none',
+                  border: isActive && isDark ? '1px solid #52525b' : 'none',
                   cursor: 'pointer',
                   fontSize: 12,
                   fontWeight: 500,
                   transition: 'all 0.15s ease',
-                  backgroundColor: isActive ? THEME.headerBg : 'transparent',
+                  backgroundColor: isActive ? (isDark ? '#3f3f46' : THEME.headerBg) : 'transparent',
                   color: isActive ? THEME.textPrimary : THEME.textSecondary,
-                  boxShadow: isActive ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                  boxShadow: isActive && !isDark ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
                 }}
               >
                 {label}
@@ -2600,7 +2601,6 @@ export default function ConversationsPage() {
       <div style={fullBleedStyle}>
         {chatListPanel}
         {messagesPanel}
-        {rightSidebar}
       </div>
     </ThemeContext.Provider>
   );
