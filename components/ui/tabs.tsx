@@ -26,7 +26,7 @@ export function Tabs({ tabs, defaultIndex = 0, className = '' }: TabsProps) {
             onClick={() => setActiveIndex(index)}
             className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
               activeIndex === index
-                ? 'text-wa-teal'
+                ? 'text-wa-teal dark:text-white'
                 : 'text-wa-text-secondary hover:text-wa-text dark:text-zinc-400 dark:hover:text-zinc-100'
             }`}
           >
@@ -36,7 +36,7 @@ export function Tabs({ tabs, defaultIndex = 0, className = '' }: TabsProps) {
                 <span
                   className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-xs font-medium ${
                     activeIndex === index
-                      ? 'bg-wa-teal text-white'
+                      ? 'bg-wa-teal text-white dark:bg-white dark:text-zinc-900'
                       : 'bg-gray-200 text-gray-600 dark:bg-zinc-700 dark:text-zinc-300'
                   }`}
                 >
@@ -45,7 +45,7 @@ export function Tabs({ tabs, defaultIndex = 0, className = '' }: TabsProps) {
               )}
             </span>
             {activeIndex === index && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-wa-teal" />
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-wa-teal dark:bg-white" />
             )}
           </button>
         ))}
