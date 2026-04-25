@@ -104,15 +104,31 @@ export default function SessionsPage() {
 
   // QR / Pair Code Polling
   const [qrStatus, setQrStatus] = useState<string>('');
+  const [qrExpired, setQrExpired] = useState(false);
   const qrPollCountRef = useRef(0);
+  const qrShownAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (showQrModal) {
       qrPollCountRef.current = 0;
+      qrShownAtRef.current = null;
+      setQrExpired(false);
       setQrStatus('Initializing browser...');
 
       const pollQr = async () => {
         qrPollCountRef.current++;
+        // WhatsApp QR codes expire ~60s after they were shown. Surface this
+        // explicitly so the user can refresh instead of staring at a dead
+        // square.
+        if (qrShownAtRef.current && Date.now() - qrShownAtRef.current > 60_000) {
+          setQrExpired(true);
+          setQrStatus('QR code expired — click refresh to generate a new one');
+          if (qrIntervalRef.current) {
+            clearInterval(qrIntervalRef.current);
+            qrIntervalRef.current = null;
+          }
+          return;
+        }
         try {
           const res = await fetch(`/api/sessions/${showQrModal}/qr`);
           if (res.ok) {
@@ -123,6 +139,7 @@ export default function SessionsPage() {
                 setQrImage(null);
                 setPairCode(null);
                 setQrStatus('');
+                qrShownAtRef.current = null;
                 updateSession(showQrModal, { status: 'connected' });
                 toast({ title: 'Session connected!', variant: 'success' });
                 return;
@@ -131,6 +148,7 @@ export default function SessionsPage() {
                 setPairCode(data.data.pairCode);
                 setQrImage(null);
                 setQrStatus('Enter this code in WhatsApp on your phone');
+                if (qrShownAtRef.current === null) qrShownAtRef.current = Date.now();
                 updateSession(showQrModal, { status: 'qr_ready' });
                 return;
               }
@@ -138,6 +156,7 @@ export default function SessionsPage() {
                 setQrImage(data.data.qrCode);
                 setPairCode(null);
                 setQrStatus('Scan the QR code with WhatsApp');
+                if (qrShownAtRef.current === null) qrShownAtRef.current = Date.now();
                 updateSession(showQrModal, { status: 'qr_ready' });
                 return;
               }
@@ -720,15 +739,38 @@ export default function SessionsPage() {
               </ol>
             </div>
           ) : qrImage ? (
-            <div className="rounded-xl border border-wa-border bg-white p-4">
+            <div className="relative rounded-xl border border-wa-border bg-white p-4">
               <Image
                 src={qrImage.startsWith('data:') ? qrImage : `data:image/png;base64,${qrImage}`}
                 alt="WhatsApp QR Code"
                 width={256}
                 height={256}
                 unoptimized
-                className="h-64 w-64"
+                className={`h-64 w-64 ${qrExpired ? 'opacity-30 blur-sm' : ''}`}
               />
+              {qrExpired && (
+                <button
+                  onClick={() => {
+                    setQrImage(null);
+                    setPairCode(null);
+                    setQrExpired(false);
+                    qrShownAtRef.current = null;
+                    qrPollCountRef.current = 0;
+                    setQrStatus('Refreshing QR code...');
+                    if (qrIntervalRef.current) clearInterval(qrIntervalRef.current);
+                    qrIntervalRef.current = setInterval(() => {
+                      // re-trigger poll by toggling state — pollQr is closed
+                      // over `showQrModal` so re-running the effect is the
+                      // simplest path. We force it via a no-op set.
+                      setQrStatus((s) => s);
+                    }, 1500);
+                    fetch(`/api/sessions/${showQrModal}/qr?refresh=1`).catch(() => {});
+                  }}
+                  className="absolute inset-0 m-auto flex h-12 w-44 items-center justify-center gap-2 rounded-lg bg-wa-teal text-sm font-semibold text-white shadow-lg hover:bg-wa-teal-dark"
+                >
+                  Refresh QR code
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex h-64 w-64 flex-col items-center justify-center gap-3 rounded-xl border border-wa-border bg-gray-50">
@@ -739,9 +781,11 @@ export default function SessionsPage() {
             </div>
           )}
           <div className="mt-4 flex items-center gap-2 text-sm text-wa-text-secondary">
-            <Spinner size="sm" />
+            {!qrExpired && <Spinner size="sm" />}
             <span>
-              {pairCode
+              {qrExpired
+                ? 'Code expired — refresh to continue.'
+                : pairCode
                 ? 'Waiting for phone confirmation...'
                 : qrImage
                 ? 'Waiting for scan...'

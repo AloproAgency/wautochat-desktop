@@ -14,7 +14,8 @@ import {
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/avatar';
 import { useToast } from '@/components/ui/toast';
-import { useContactStore } from '@/lib/store';
+import { NoSessionState } from '@/components/ui/no-session-state';
+import { useContactStore, useSessionStore } from '@/lib/store';
 import { useActiveSession } from '@/hooks/use-active-session';
 import { formatPhoneNumber, formatTimestamp } from '@/lib/utils';
 import type { Contact, ApiResponse } from '@/lib/types';
@@ -31,6 +32,7 @@ type FilterKey = 'all' | 'whatsapp' | 'blocked' | 'labeled';
 
 export default function ContactsPage() {
   const activeSessionId = useActiveSession();
+  const sessions = useSessionStore((s) => s.sessions);
   const { contacts, setContacts, updateContact } = useContactStore();
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -45,6 +47,10 @@ export default function ContactsPage() {
   >([]);
   const [blockConfirm, setBlockConfirm] = useState<Contact | null>(null);
   const [blocking, setBlocking] = useState(false);
+  // Real online presence keyed by wppId. We refuse to fall back to
+  // `isWAContact` (which only means "has a WhatsApp account") so the dot
+  // truly reflects current connection state.
+  const [presenceMap, setPresenceMap] = useState<Record<string, { isOnline: boolean; lastSeen: number | null }>>({});
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -102,6 +108,39 @@ export default function ContactsPage() {
     fetchContacts();
     fetchLabels();
   }, [fetchContacts, fetchLabels]);
+
+  // Real online presence — batch every 30s so the green dot is honest.
+  useEffect(() => {
+    if (!activeSessionId || contacts.length === 0) return;
+    let cancelled = false;
+    const fetchPresence = async () => {
+      const ids = contacts
+        .filter((c) => c.isWAContact && !c.isBlocked && c.wppId)
+        .slice(0, 200)
+        .map((c) => c.wppId);
+      if (ids.length === 0) return;
+      try {
+        const res = await fetch('/api/presence/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: activeSessionId, chatIds: ids }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data.success && data.data) {
+          setPresenceMap(data.data);
+        }
+      } catch {
+        // silently keep previous state
+      }
+    };
+    fetchPresence();
+    const interval = setInterval(fetchPresence, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [activeSessionId, contacts]);
 
   const handleSync = async () => {
     if (!activeSessionId) return;
@@ -186,13 +225,15 @@ export default function ContactsPage() {
   };
 
   const filteredContacts = useMemo(() => {
-    const q = searchQuery.toLowerCase();
+    const q = searchQuery.toLowerCase().trim();
+    // Strip everything but digits so "+229 57 22 27" still matches "229572227".
+    const qDigits = searchQuery.replace(/\D/g, '');
     return contacts.filter((c) => {
       if (q) {
         const matches =
           c.name.toLowerCase().includes(q) ||
-          c.phone.includes(searchQuery) ||
-          c.pushName?.toLowerCase().includes(q);
+          c.pushName?.toLowerCase().includes(q) ||
+          (qDigits && c.phone.replace(/\D/g, '').includes(qDigits));
         if (!matches) return false;
       }
       if (filter === 'whatsapp' && !c.isWAContact) return false;
@@ -243,6 +284,16 @@ export default function ContactsPage() {
     setSelectedContact(c);
     setShowPanel(true);
     setEditingLabels(editLabels);
+  }
+
+  const currentSession = sessions.find((s) => s.id === activeSessionId);
+  const sessionConnected = currentSession?.status === 'connected';
+  if (!activeSessionId || !sessionConnected) {
+    return (
+      <div className="flex -m-4 md:-m-6 lg:max-w-none bg-slate-50 dark:bg-zinc-900 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+        <NoSessionState feature="les contacts" />
+      </div>
+    );
   }
 
   return (
@@ -378,10 +429,10 @@ export default function ContactsPage() {
                                 src={avatarUrl(c)}
                                 className="ring-1 ring-slate-200 dark:ring-gray-700"
                               />
-                              {c.isWAContact && (
+                              {presenceMap[c.wppId]?.isOnline && !c.isBlocked && (
                                 <span
                                   className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-zinc-900 bg-emerald-500"
-                                  title="Active on WhatsApp"
+                                  title="Online now"
                                 />
                               )}
                               {c.isBlocked && (
@@ -434,10 +485,7 @@ export default function ContactsPage() {
                               <IconBtn
                                 title="Open conversation"
                                 onClick={() => {
-                                  const chatId = c.wppId.includes('@lid')
-                                    ? `${c.phone}@c.us`
-                                    : c.wppId;
-                                  window.location.href = `/conversations?chat=${chatId}`;
+                                  window.location.href = `/conversations?contact=${encodeURIComponent(c.id)}`;
                                 }}
                               >
                                 <MessageSquare className="h-3.5 w-3.5" />
@@ -510,10 +558,10 @@ export default function ContactsPage() {
                   src={avatarUrl(selectedContact)}
                   className="h-24 w-24 text-2xl ring-1 ring-slate-200 dark:ring-gray-700"
                 />
-                {selectedContact.isWAContact && !selectedContact.isBlocked && (
+                {presenceMap[selectedContact.wppId]?.isOnline && !selectedContact.isBlocked && (
                   <span
                     className="absolute bottom-0.5 right-0.5 h-4 w-4 rounded-full border-[3px] border-white dark:border-zinc-800 bg-emerald-500"
-                    title="Active on WhatsApp"
+                    title="Online now"
                   />
                 )}
                 {selectedContact.isBlocked && (
@@ -559,10 +607,7 @@ export default function ContactsPage() {
               <div className="mt-6 grid grid-cols-2 gap-2 w-full">
                 <button
                   onClick={() => {
-                    const chatId = selectedContact.wppId.includes('@lid')
-                      ? `${selectedContact.phone}@c.us`
-                      : selectedContact.wppId;
-                    window.location.href = `/conversations?chat=${chatId}`;
+                    window.location.href = `/conversations?contact=${encodeURIComponent(selectedContact.id)}`;
                   }}
                   className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 dark:bg-zinc-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 active:scale-[0.98] transition"
                 >

@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sessionId, name, recipients, messageTemplate, messageType } = body;
+    const { sessionId, name, recipients, messageTemplate, messageType, scheduledAt } = body;
 
     if (!sessionId || !name || !recipients || !messageTemplate) {
       return Response.json(
@@ -70,9 +70,17 @@ export async function POST(request: NextRequest) {
     const recipientList: string[] = recipients;
     const type = messageType || 'text';
 
+    // If a future scheduledAt is provided, store the row as 'draft' and
+    // defer the send until the timer fires. Past dates are treated as
+    // "send now".
+    const scheduledTs = scheduledAt ? Date.parse(scheduledAt) : NaN;
+    const now = Date.now();
+    const isScheduled = Number.isFinite(scheduledTs) && scheduledTs > now;
+    const initialStatus = isScheduled ? 'draft' : 'sending';
+
     db.prepare(
-      `INSERT INTO broadcasts (id, session_id, name, recipients, message_template, message_type, status, sent_count, failed_count, total_count, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'sending', 0, 0, ?, datetime('now'))`
+      `INSERT INTO broadcasts (id, session_id, name, recipients, message_template, message_type, status, sent_count, failed_count, total_count, scheduled_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, datetime('now'))`
     ).run(
       broadcastId,
       sessionId,
@@ -80,7 +88,9 @@ export async function POST(request: NextRequest) {
       JSON.stringify(recipientList),
       messageTemplate,
       type,
-      recipientList.length
+      initialStatus,
+      recipientList.length,
+      isScheduled ? new Date(scheduledTs).toISOString() : null
     );
 
     // Parse media info for non-text types
@@ -99,11 +109,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Send messages asynchronously
+    // Send messages asynchronously. For scheduled broadcasts, defer the
+    // entire send pipeline behind a setTimeout so the row stays in 'draft'
+    // until the requested time. The scheduler is in-process — if the app
+    // restarts, the user-visible 'draft' state is preserved and the
+    // bootstrap path (lib/wppconnect-manager) can re-arm pending timers.
     const capturedClient = client;
     const page = (capturedClient as unknown as { waPage?: { evaluate: (fn: string) => Promise<unknown> } }).waPage;
+    const delayMs = isScheduled ? Math.max(0, scheduledTs - now) : 0;
 
-    (async () => {
+    const startSend = () => {
+      if (isScheduled) {
+        db.prepare(`UPDATE broadcasts SET status = 'sending' WHERE id = ?`).run(broadcastId);
+      }
+      void runSend();
+    };
+
+    const runSend = async () => {
       let sentCount = 0;
       let failedCount = 0;
 
@@ -142,32 +164,59 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Fallback: send individually via WPPConnect client
+      // Fallback: send individually via WPPConnect client.
       if (sentCount === 0 && failedCount === 0) {
+        // Media uploaded from the broadcast UI is always a data URL (base64
+        // produced by FileReader). The *FromBase64 helpers handle that path
+        // cleanly; the generic sendImage / sendFile signatures vary across
+        // wppconnect versions and silently fail on positional args.
+        const isBase64Url = (s: string) => typeof s === 'string' && s.startsWith('data:');
+        const sendByType = async (recipient: string) => {
+          switch (type) {
+            case 'text':
+              return capturedClient.sendText(recipient, messageTemplate);
+            case 'image': {
+              const filename = mediaFilename || 'image.jpg';
+              if (isBase64Url(mediaUrl)) {
+                return capturedClient.sendImageFromBase64(recipient, mediaUrl, filename, mediaCaption || '');
+              }
+              return capturedClient.sendImage(recipient, mediaUrl, filename, mediaCaption || '');
+            }
+            case 'video': {
+              const filename = mediaFilename || 'video.mp4';
+              if (isBase64Url(mediaUrl)) {
+                return capturedClient.sendFileFromBase64(recipient, mediaUrl, filename, mediaCaption || '');
+              }
+              return capturedClient.sendFile(recipient, mediaUrl, { filename, caption: mediaCaption || '' });
+            }
+            case 'audio': {
+              const filename = mediaFilename || 'audio.ogg';
+              if (isBase64Url(mediaUrl)) {
+                return capturedClient.sendPttFromBase64(recipient, mediaUrl, filename);
+              }
+              return capturedClient.sendPtt(recipient, mediaUrl, filename);
+            }
+            case 'document': {
+              const filename = mediaFilename || 'document';
+              if (isBase64Url(mediaUrl)) {
+                return capturedClient.sendFileFromBase64(recipient, mediaUrl, filename, mediaCaption || '');
+              }
+              return capturedClient.sendFile(recipient, mediaUrl, { filename, caption: mediaCaption || '' });
+            }
+            default:
+              return capturedClient.sendText(recipient, messageTemplate);
+          }
+        };
+
         for (const recipient of recipientList) {
           try {
-            switch (type) {
-              case 'text':
-                await capturedClient.sendText(recipient, messageTemplate);
-                break;
-              case 'image':
-                await capturedClient.sendImage(recipient, mediaUrl, 'image', mediaCaption);
-                break;
-              case 'video':
-                await capturedClient.sendFile(recipient, mediaUrl, 'video', mediaCaption);
-                break;
-              case 'audio':
-                await capturedClient.sendFile(recipient, mediaUrl, 'audio', '');
-                break;
-              case 'document':
-                await capturedClient.sendFile(recipient, mediaUrl, mediaFilename, mediaCaption);
-                break;
-              default:
-                await capturedClient.sendText(recipient, messageTemplate);
+            if (type !== 'text' && !mediaUrl) {
+              throw new Error('Empty media URL — pick a file or paste a URL before sending');
             }
+            await sendByType(recipient);
             sentCount++;
           } catch (err) {
-            console.error(`[broadcast][${broadcastId}] Failed to send to ${recipient}:`, err);
+            console.error(`[broadcast][${broadcastId}] Failed to send ${type} to ${recipient}:`, err);
             failedCount++;
           }
 
@@ -192,7 +241,13 @@ export async function POST(request: NextRequest) {
         `UPDATE broadcasts SET status = ?, sent_count = ?, failed_count = ? WHERE id = ?`
       ).run(finalStatus, sentCount, failedCount, broadcastId);
       console.log(`[broadcast][${broadcastId}] Complete: ${sentCount} sent, ${failedCount} failed`);
-    })();
+    };
+
+    if (delayMs > 0) {
+      setTimeout(startSend, delayMs);
+    } else {
+      startSend();
+    }
 
     const broadcast: Broadcast = {
       id: broadcastId,
@@ -201,10 +256,11 @@ export async function POST(request: NextRequest) {
       recipients: recipientList,
       messageTemplate,
       messageType: type,
-      status: 'sending',
+      status: initialStatus as Broadcast['status'],
       sentCount: 0,
       failedCount: 0,
       totalCount: recipientList.length,
+      scheduledAt: isScheduled ? new Date(scheduledTs).toISOString() : undefined,
       createdAt: new Date().toISOString(),
     };
 

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { getDb } from '@/lib/db';
+import manager from '@/lib/wppconnect-manager';
 import type { Label } from '@/lib/types';
 
 export async function GET(
@@ -105,6 +106,19 @@ export async function DELETE(
 
     const labelName = existing.name as string;
     const sessionId = existing.session_id as string;
+    const labelWppId = (existing.wpp_id as string) || null;
+
+    // Push delete to WhatsApp so the label disappears on the phone.
+    if (labelWppId) {
+      const client = manager.getClient(sessionId);
+      if (client) {
+        try {
+          await (client as unknown as { deleteLabel: (id: string | string[]) => Promise<void> }).deleteLabel(labelWppId);
+        } catch (err) {
+          console.error('[labels/[id] DELETE] WhatsApp delete failed:', err);
+        }
+      }
+    }
 
     // Remove label from all contacts
     const contacts = db.prepare(

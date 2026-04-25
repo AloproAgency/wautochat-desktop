@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
+import { NoSessionState } from '@/components/ui/no-session-state';
 import { useActiveSession } from '@/hooks/use-active-session';
 import { useSessionStore } from '@/lib/store';
 import { formatTimestamp, truncate } from '@/lib/utils';
@@ -52,8 +53,11 @@ import type { Chat, Message, ApiResponse } from '@/lib/types';
 const LIGHT_THEME = {
   primary: '#075E54',
   primaryDark: '#054640',
-  sent: '#DCF8C6',
+  sent: '#d9fdd3',
+  sentText: '#111b21',
+  sentMuted: '#5a6e62',
   received: '#ffffff',
+  receivedText: '#111b21',
   chatBg: '#efeae2',
   inputBg: '#f0f2f5',
   headerBg: '#ffffff',
@@ -71,8 +75,12 @@ const LIGHT_THEME = {
 const DARK_THEME = {
   primary: '#00a884',
   primaryDark: '#008c6e',
-  sent: '#005c4b',
-  received: '#1f2c34',
+  sent: '#0a7a5e',
+  sentText: '#ffffff',
+  // High-contrast muted for time/status icons on the dark green bubble.
+  sentMuted: 'rgba(255,255,255,0.78)',
+  received: '#262d33',
+  receivedText: '#e9edef',
   chatBg: '#0b141a',
   inputBg: '#1f2c34',
   headerBg: '#1f2c34',
@@ -301,17 +309,20 @@ function InlineAvatar({
 
 function MessageStatusIcon({ status }: { status: Message['status'] }) {
   const THEME = useTheme();
+  // Status icons live on the sent bubble — use sentMuted (high-contrast on
+  // the bubble's own background) instead of textMuted (tuned for the chat
+  // background).
   switch (status) {
     case 'pending':
-      return <Clock style={{ width: 14, height: 14, color: THEME.textMuted }} />;
+      return <Clock style={{ width: 14, height: 14, color: THEME.sentMuted }} />;
     case 'sent':
-      return <Check style={{ width: 14, height: 14, color: THEME.textMuted }} />;
+      return <Check style={{ width: 14, height: 14, color: THEME.sentMuted }} />;
     case 'delivered':
-      return <CheckCheck style={{ width: 14, height: 14, color: THEME.textMuted }} />;
+      return <CheckCheck style={{ width: 14, height: 14, color: THEME.sentMuted }} />;
     case 'read':
       return <CheckCheck style={{ width: 14, height: 14, color: THEME.blueCheck }} />;
     case 'failed':
-      return <AlertCircle style={{ width: 14, height: 14, color: '#ea4335' }} />;
+      return <AlertCircle style={{ width: 14, height: 14, color: '#ff6b6b' }} />;
     default:
       return null;
   }
@@ -900,9 +911,10 @@ function MessageBubble({
           maxWidth: isMobile ? '85%' : '60%',
           minWidth: 0,
           backgroundColor: isSent ? THEME.sent : THEME.received,
+          color: isSent ? THEME.sentText : THEME.receivedText,
           borderRadius: isSent ? '10px 0px 10px 10px' : '0px 10px 10px 10px',
           padding: hasMedia ? '4px 4px 6px 4px' : '7px 10px 6px 10px',
-          boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+          boxShadow: '0 1px 1px rgba(0,0,0,0.13), 0 1px 0.5px rgba(0,0,0,0.08)',
           // Long URLs or unbreakable strings (Google Forms links etc.) must
           // wrap within the bubble instead of blowing up its width.
           overflowWrap: 'anywhere',
@@ -963,7 +975,7 @@ function MessageBubble({
               marginTop: 2,
             }}
           >
-            <span style={{ fontSize: 11, color: THEME.textMuted }}>{time}</span>
+            <span style={{ fontSize: 11, color: isSent ? THEME.sentMuted : THEME.textMuted }}>{time}</span>
             {isSent && <MessageStatusIcon status={message.status} />}
           </div>
         )}
@@ -1151,6 +1163,8 @@ export default function ConversationsPage() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
   const chatParam = searchParams.get('chat');
+  const phoneParam = searchParams.get('phone');
+  const contactParam = searchParams.get('contact');
   const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false);
 
   // Responsive
@@ -1264,13 +1278,12 @@ export default function ConversationsPage() {
   // Fetch messages for selected chat
   // ---------------------------------------------------------------------------
   const fetchMessages = useCallback(
-    async (chat: Chat, opts?: { silent?: boolean }) => {
+    async (chat: Chat, opts?: { silent?: boolean; sync?: boolean }) => {
       if (!activeSessionId) return;
       try {
         if (!opts?.silent) setMessagesLoading(true);
-        const res = await fetch(
-          `/api/messages?sessionId=${activeSessionId}&chatId=${chat.id}&limit=1000`
-        );
+        const url = `/api/messages?sessionId=${activeSessionId}&chatId=${chat.id}&limit=1000${opts?.sync ? '&sync=1' : ''}`;
+        const res = await fetch(url);
         if (res.ok) {
           const data: ApiResponse<Message[]> = await res.json();
           if (data.success && data.data) {
@@ -1307,7 +1320,9 @@ export default function ConversationsPage() {
       return;
     }
 
-    fetchMessages(selectedChat);
+    // Initial load triggers a one-shot history sync from WhatsApp; the
+    // recurring polls are silent reads from local DB only.
+    fetchMessages(selectedChat, { sync: true });
 
     pollIntervalRef.current = setInterval(() => {
       fetchMessages(selectedChat, { silent: true });
@@ -1372,9 +1387,12 @@ export default function ConversationsPage() {
 
   // Auto-scroll runs every time `messages` changes — i.e. AFTER the new chat's
   // messages have actually been rendered. Two cases:
-  //   1. New chat just opened → force-jump to the bottom.
+  //   1. New chat just opened → force-jump to the bottom (newest message).
   //   2. A new message arrived in the current chat AND the user is already
   //      near the bottom → smooth scroll. Otherwise leave their position.
+  // We delay marking the chat as "already scrolled" until we actually have
+  // messages to scroll over, otherwise the empty-state render consumes the
+  // initial-jump flag and the user lands at the top once messages arrive.
   useEffect(() => {
     if (!selectedChat) return;
     const container = messagesContainerRef.current;
@@ -1384,16 +1402,26 @@ export default function ConversationsPage() {
     const hasNewMessage = messages.length > lastMessageCountRef.current;
 
     if (isNewChat) {
-      // Wait two frames so the DOM has painted with the new message list.
-      // `scrollHeight` is only meaningful after the children are laid out.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const c = messagesContainerRef.current;
-          if (c) c.scrollTop = c.scrollHeight;
-        });
-      });
+      if (messages.length === 0) {
+        // No messages rendered yet — wait for the next change before claiming
+        // the chat has been scrolled. Don't update lastMessageCountRef either.
+        return;
+      }
+      // Two frames so the DOM has painted with the new message list and
+      // scrollHeight reflects the laid-out children. Then a fallback timeout
+      // covers slow-rendering media (images/videos changing scrollHeight late).
+      const jumpToBottom = () => {
+        const c = messagesContainerRef.current;
+        if (c) c.scrollTop = c.scrollHeight;
+      };
+      requestAnimationFrame(() => requestAnimationFrame(jumpToBottom));
+      const t = setTimeout(jumpToBottom, 150);
       lastScrolledChatRef.current = selectedChat.id;
-    } else if (hasNewMessage) {
+      lastMessageCountRef.current = messages.length;
+      return () => clearTimeout(t);
+    }
+
+    if (hasNewMessage) {
       const distanceFromBottom =
         container.scrollHeight - container.scrollTop - container.clientHeight;
       if (distanceFromBottom < 120) {
@@ -1596,41 +1624,69 @@ export default function ConversationsPage() {
     setMobileShowMessages(false);
   }, []);
 
-  // Auto-select chat from URL param ?chat=wppId
+  // Auto-select chat from URL params (?contact=<id> | ?chat=<wppId> | ?phone=<digits>).
+  // Tries client-side match first, then falls back to the server resolver
+  // which has full access to contacts↔chats and can persist a real chat row
+  // when no existing one matches — guarantees the caller never lands on a
+  // phantom chat that /api/messages can't fetch history for.
   useEffect(() => {
-    if (!chatParam || chats.length === 0 || selectedChat || !activeSessionId) return;
+    if ((!chatParam && !phoneParam && !contactParam) || chats.length === 0 || selectedChat || !activeSessionId) return;
 
-    // Try exact match first
-    let match = chats.find((c) => c.wppId === chatParam);
+    let match: Chat | undefined;
 
-    // Try matching by phone number (strip @c.us, @lid, etc.)
-    if (!match) {
-      const phone = chatParam.replace(/@.*$/, '');
-      match = chats.find((c) => c.wppId.replace(/@.*$/, '') === phone);
+    if (chatParam) {
+      match = chats.find((c) => c.wppId === chatParam);
+    }
+
+    if (!match && phoneParam) {
+      match = chats.find((c) => {
+        const digits = c.wppId.replace(/\D/g, '');
+        if (!digits) return false;
+        return digits === phoneParam || digits.endsWith(phoneParam) || phoneParam.endsWith(digits);
+      });
+    }
+
+    if (!match && chatParam) {
+      const digits = chatParam.replace(/\D/g, '');
+      if (digits) {
+        match = chats.find((c) => c.wppId.replace(/\D/g, '') === digits);
+      }
     }
 
     if (match) {
       handleSelectChat(match);
-    } else {
-      // No chat exists yet — create a temporary one so user can start messaging
-      const phone = chatParam.replace(/@.*$/, '');
-      const wppId = chatParam.includes('@') ? chatParam : `${chatParam}@c.us`;
-      const tempChat: Chat = {
-        id: `new-${phone}`,
-        sessionId: activeSessionId,
-        wppId,
-        name: phone,
-        isGroup: false,
-        unreadCount: 0,
-        isArchived: false,
-        isPinned: false,
-        isMuted: false,
-        updatedAt: new Date().toISOString(),
-      };
-      setChats((prev) => [tempChat, ...prev]);
-      handleSelectChat(tempChat);
+      return;
     }
-  }, [chatParam, chats, selectedChat, activeSessionId, handleSelectChat]);
+
+    // No client-side match — ask the server to resolve (or create) a real chat.
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/chats/resolve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: activeSessionId,
+            contactId: contactParam || undefined,
+            wppId: chatParam || undefined,
+            phone: phoneParam || undefined,
+          }),
+        });
+        if (!res.ok) return;
+        const data: ApiResponse<Chat & { isNew?: boolean }> = await res.json();
+        if (cancelled || !data.success || !data.data) return;
+        const resolved: Chat = data.data;
+        setChats((prev) => {
+          const exists = prev.some((c) => c.id === resolved.id);
+          return exists ? prev : [resolved, ...prev];
+        });
+        handleSelectChat(resolved);
+      } catch {
+        // ignore — UI just stays unselected
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [chatParam, phoneParam, contactParam, chats, selectedChat, activeSessionId, handleSelectChat]);
 
   // ---------------------------------------------------------------------------
   // Filtering
@@ -1661,17 +1717,10 @@ export default function ConversationsPage() {
   // Render
   // ---------------------------------------------------------------------------
 
-  if (!activeSessionId) {
-    return (
-      <ThemeContext.Provider value={THEME}>
-        <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.chatBg }}>
-          <div style={{ textAlign: 'center' }}>
-            <Spinner size="lg" />
-            <p style={{ marginTop: 16, fontSize: 14, color: THEME.textMuted }}>Connecting to session...</p>
-          </div>
-        </div>
-      </ThemeContext.Provider>
-    );
+  const currentSession = sessions.find((s) => s.id === activeSessionId);
+  const sessionConnected = currentSession?.status === 'connected';
+  if (!activeSessionId || !sessionConnected) {
+    return <NoSessionState feature="les conversations" />;
   }
 
   if (loading) {

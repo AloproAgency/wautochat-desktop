@@ -135,10 +135,12 @@ export async function POST(request: NextRequest) {
     }
 
     const curr = currency || 'XOF';
-    const noDecimal = ['XOF', 'XAF', 'GNF', 'JPY', 'KRW', 'VND'].includes(curr);
-    const priceAmount1000 = noDecimal
-      ? Math.round(price || 0)
-      : Math.round((price || 0) * 1000);
+    // priceAmount1000 = display price × 1000 regardless of currency. For
+    // zero-decimal currencies (XOF, JPY, …) the user types "25000" meaning
+    // 25 000 XOF — that becomes 25 000 000. For two-decimal currencies the
+    // user types "9.99" meaning $9.99 — that becomes 9990. Missing the ×1000
+    // for zero-decimal made WhatsApp display prices 1000× too low.
+    const priceAmount1000 = Math.round((price || 0) * 1000);
 
     console.log(`[products] Creating "${name}" on WhatsApp: price=${price}, priceAmount1000=${priceAmount1000}, currency=${curr}`);
 

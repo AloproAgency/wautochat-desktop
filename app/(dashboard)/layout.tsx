@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Menu } from 'lucide-react';
 import { Sidebar } from '@/components/layout/sidebar';
-import { useUIStore, useSessionStore } from '@/lib/store';
-import { useKeepAlive } from '@/hooks/use-keep-alive';
+import { useUIStore } from '@/lib/store';
 
 export default function DashboardLayout({
   children,
@@ -12,9 +11,6 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { setMobileSidebarOpen } = useUIStore();
-  const sessions = useSessionStore((s) => s.sessions);
-  const connectedCount = sessions.filter((s) => s.status === 'connected').length;
-  useKeepAlive(connectedCount);
 
   const [isMac, setIsMac] = useState(false);
   useEffect(() => {

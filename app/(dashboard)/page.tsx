@@ -20,9 +20,42 @@ import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/toast';
 import { useDashboardStore } from '@/lib/store';
 import { useActiveSession } from '@/hooks/use-active-session';
-import { formatTimestamp, truncate } from '@/lib/utils';
-import type { DashboardStats, Message, Flow, ApiResponse } from '@/lib/types';
+import { formatTimestamp, truncate, formatPhoneNumber } from '@/lib/utils';
+import type { DashboardStats, Message, MessageType, Flow, ApiResponse } from '@/lib/types';
 import Link from 'next/link';
+
+function displaySender(msg: Message): string {
+  if (msg.senderName && msg.senderName.trim()) return msg.senderName;
+  const phone = (msg.sender || '').replace(/@(c\.us|g\.us|lid|s\.whatsapp\.net|broadcast)$/i, '');
+  if (!phone || !/^\d+$/.test(phone)) return msg.sender || 'Unknown';
+  return formatPhoneNumber(phone);
+}
+
+const MEDIA_LABELS: Partial<Record<MessageType, string>> = {
+  image: '📷 Photo',
+  video: '🎥 Video',
+  audio: '🎵 Audio',
+  ptt: '🎤 Voice message',
+  document: '📄 Document',
+  sticker: '💟 Sticker',
+  contact: '👤 Contact',
+  location: '📍 Location',
+  link: '🔗 Link',
+  list: '📋 List',
+  poll: '📊 Poll',
+  reaction: '👍 Reaction',
+  template: '📋 Template',
+  order: '🛒 Order',
+};
+
+function displayBody(msg: Message): string {
+  const label = MEDIA_LABELS[msg.type];
+  if (label) {
+    const caption = (msg.caption || '').trim();
+    return caption ? `${label} — ${caption}` : label;
+  }
+  return msg.body || '';
+}
 
 export default function DashboardPage() {
   const { stats, setStats } = useDashboardStore();
@@ -271,28 +304,29 @@ export default function DashboardPage() {
               </div>
             ) : (
               <ul className="divide-y divide-wa-border">
-                {recentMessages.map((msg) => (
-                  <li key={msg.id} className="flex items-center gap-3 px-6 py-3 hover:bg-wa-hover transition-colors">
-                    <Avatar
-                      size="sm"
-                      name={msg.senderName || msg.sender}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-wa-text truncate">
-                          {msg.senderName || msg.sender}
+                {recentMessages.map((msg) => {
+                  const sender = displaySender(msg);
+                  const preview = displayBody(msg);
+                  return (
+                    <li key={msg.id} className="flex items-center gap-3 px-6 py-3 hover:bg-wa-hover transition-colors">
+                      <Avatar size="sm" name={sender} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-wa-text truncate">
+                            {sender}
+                          </p>
+                          <span className="shrink-0 text-xs text-wa-text-muted ml-2">
+                            {formatTimestamp(msg.timestamp)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-wa-text-secondary truncate mt-0.5">
+                          {msg.fromMe && <span className="text-wa-text-muted">You: </span>}
+                          {truncate(preview || `[${msg.type}]`, 60)}
                         </p>
-                        <span className="shrink-0 text-xs text-wa-text-muted ml-2">
-                          {formatTimestamp(msg.timestamp)}
-                        </span>
                       </div>
-                      <p className="text-xs text-wa-text-secondary truncate mt-0.5">
-                        {msg.fromMe && <span className="text-wa-text-muted">You: </span>}
-                        {truncate(msg.body || `[${msg.type}]`, 50)}
-                      </p>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </CardBody>

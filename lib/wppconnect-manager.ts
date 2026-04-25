@@ -186,9 +186,12 @@ class WppConnectManager {
 
   private async reconnectAllSessions(reason: string): Promise<void> {
     const db = getDb();
-    const rows = db.prepare(
+    const rows = (db.prepare(
       `SELECT id FROM sessions WHERE status IN ('connected', 'connecting', 'disconnected') ORDER BY updated_at DESC`
-    ).all() as { id: string }[];
+    ).all() as { id: string }[])
+      // Skip sessions explicitly blocked (UNPAIRED, awaiting user action) so
+      // we don't ping-pong a dead browser into another reconnect cycle.
+      .filter((r) => !this.blockedSessions.has(r.id));
 
     console.log(`[reconnectAllSessions:${reason}] found ${rows.length} session(s)`);
     if (rows.length === 0) return;
@@ -203,6 +206,7 @@ class WppConnectManager {
 
     void (async () => {
       for (const row of rows) {
+        if (this.blockedSessions.has(row.id)) continue;
         console.log(`[reconnectAllSessions:${reason}] reconnecting ${row.id}`);
         void this.reconnectSession(row.id).catch((error) => {
           console.error(`[${row.id}] Reconnect failed (${reason}):`, error);
@@ -293,7 +297,9 @@ class WppConnectManager {
                   }, sanitizedPhone) as Result;
 
                   if (result.ok) {
-                    console.log(`[${sessionId}] Pair code generated on attempt ${attempt}: ${result.code}`);
+                    // Don't log the pair code itself — anyone with disk access
+                    // to the logs could pair the session.
+                    console.log(`[${sessionId}] Pair code generated on attempt ${attempt}`);
                     managerRef.pairCodes.set(sessionId, result.code);
                     managerRef.updateSessionStatus(sessionId, 'qr_ready');
                     return;
@@ -338,7 +344,8 @@ class WppConnectManager {
             ],
             catchQR: catchQRCallback as (base64Qr: string, asciiQR: string, attempts: number, urlCode?: string) => void,
             catchLinkCode: (code: string) => {
-              console.log(`[${sessionId}] Pair code generated: ${code}`);
+              // Don't log the code itself — sensitive auth material.
+              console.log(`[${sessionId}] Pair code generated`);
               managerRef.pairCodes.set(sessionId, code);
               managerRef.updateSessionStatus(sessionId, 'qr_ready');
             },
@@ -979,7 +986,10 @@ class WppConnectManager {
       (message.sender as Record<string, unknown>)?.name as string ||
       '';
     const body = (message.body as string) || (message.caption as string) || '';
-    const fromMe = !!(message.fromMe);
+    // fromMe can live on m.id (the MsgKey) — same reconciliation as the
+    // history fetch in app/api/messages/route.ts, kept aligned on purpose.
+    const msgIdObj = message.id as Record<string, unknown> | undefined;
+    const fromMe = !!(message.fromMe || msgIdObj?.fromMe || (message as Record<string, unknown>).__x_isSentByMe);
     const isGroup = !!(message.isGroupMsg);
 
     // Determine message type — use message.type as primary source (set by wppconnect)
@@ -1319,6 +1329,12 @@ class WppConnectManager {
       `SELECT * FROM flows WHERE session_id = ? AND is_active = 1`
     ).all(sessionId) as Record<string, unknown>[];
 
+    // Collect all matching flows first, then run them sequentially. If two
+    // flows share the same exclusive trigger (e.g. keyword "menu"), only the
+    // most recently updated one runs so the user doesn't get N parallel
+    // replies clobbering each other's variables.
+    type Candidate = { flow: Flow; updatedAt: string; exclusive: boolean };
+    const candidates: Candidate[] = [];
     for (const row of flowRows) {
       try {
         const flow: Flow = {
@@ -1342,14 +1358,33 @@ class WppConnectManager {
         const flowTriggerType = (triggerNode.data.config?.triggerType as string) || '';
         if (flowTriggerType !== triggerType) continue;
 
-        // Optional custom matcher (ex: specific emoji, presence state)
         if (matcher && !matcher(triggerNode.data.config || {})) continue;
 
+        // Triggers that respond to one specific message ("keyword", "regex",
+        // "message_received", "media_received", "contact_message") are
+        // exclusive: at most one flow should answer. Event-style triggers
+        // (schedule, added_to_group, …) can fan out to all listeners.
+        const exclusive = ['keyword', 'regex', 'message_received', 'media_received', 'contact_message'].includes(triggerType);
+        candidates.push({ flow, updatedAt: flow.updatedAt, exclusive });
+      } catch (err) {
+        console.error(`[${sessionId}] Error parsing flow "${row.name}":`, err);
+      }
+    }
+
+    if (candidates.length === 0) return;
+
+    candidates.sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : -1));
+
+    const exclusiveOnly = candidates.some((c) => c.exclusive);
+    const toRun = exclusiveOnly ? [candidates[0]] : candidates;
+
+    for (const { flow } of toRun) {
+      try {
         console.log(`[${sessionId}] Triggering flow "${flow.name}" (${triggerType})`);
         const log = await executeFlow(flow, eventData, session);
         console.log(`[${sessionId}] Flow "${flow.name}" completed:`, log.length, 'steps');
       } catch (err) {
-        console.error(`[${sessionId}] Error in event flow "${row.name}":`, err);
+        console.error(`[${sessionId}] Error in event flow "${flow.name}":`, err);
       }
     }
   }
@@ -1650,6 +1685,13 @@ class WppConnectManager {
     await this.disconnectSession(sessionId);
 
     const db = getDb();
+    // Collect media files referenced by this session's messages so we can
+    // wipe them off disk after the row deletion. Without this the media dir
+    // grows forever every time the user deletes a session.
+    const mediaRows = db.prepare(
+      `SELECT id, media_url FROM messages WHERE session_id = ? AND (media_url IS NOT NULL OR id IS NOT NULL)`
+    ).all(sessionId) as { id: string; media_url: string | null }[];
+
     db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(sessionId);
     db.prepare(`DELETE FROM chats WHERE session_id = ?`).run(sessionId);
     db.prepare(`DELETE FROM contacts WHERE session_id = ?`).run(sessionId);
@@ -1660,6 +1702,23 @@ class WppConnectManager {
     db.prepare(`DELETE FROM products WHERE session_id = ?`).run(sessionId);
     db.prepare(`DELETE FROM collections WHERE session_id = ?`).run(sessionId);
     db.prepare(`DELETE FROM sessions WHERE id = ?`).run(sessionId);
+
+    // Best-effort filesystem cleanup. Errors here are non-fatal — the row is
+    // already gone and orphan files are recoverable manually.
+    void (async () => {
+      try {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const { getDataDir } = await import('@/lib/paths');
+        const mediaDir = path.join(getDataDir(), 'media');
+        for (const m of mediaRows) {
+          const target = path.join(mediaDir, m.id);
+          await fs.unlink(target).catch(() => { /* file already gone */ });
+        }
+      } catch (err) {
+        console.error(`[deleteSession:${sessionId}] media cleanup failed:`, err);
+      }
+    })();
   }
 
   getSession(sessionId: string): Session | null {

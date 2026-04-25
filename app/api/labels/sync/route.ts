@@ -111,20 +111,21 @@ export async function POST(request: NextRequest) {
         const color = l.hexColor || WA_COLORS[String(l.colorIndex)] || '#25D366';
         const count = l.chatIds.length || l.count || 0;
 
-        // Upsert label
+        // Upsert label — capture WhatsApp's id so we can mutate it later
+        // (addOrRemoveLabels, deleteLabel) without re-syncing.
         const existing = db.prepare(
           `SELECT id FROM labels WHERE session_id = ? AND name = ?`
         ).get(sessionId, name) as { id: string } | undefined;
 
         if (!existing) {
           db.prepare(
-            `INSERT INTO labels (id, session_id, name, color, count) VALUES (?, ?, ?, ?, ?)`
-          ).run(uuidv4(), sessionId, name, color, count);
+            `INSERT INTO labels (id, session_id, name, color, count, wpp_id) VALUES (?, ?, ?, ?, ?, ?)`
+          ).run(uuidv4(), sessionId, name, color, count, l.id || null);
           synced++;
         } else {
           db.prepare(
-            `UPDATE labels SET color = ?, count = ? WHERE id = ?`
-          ).run(color, count, existing.id);
+            `UPDATE labels SET color = ?, count = ?, wpp_id = ? WHERE id = ?`
+          ).run(color, count, l.id || null, existing.id);
         }
 
         // Assign label to contacts matching the chatIds

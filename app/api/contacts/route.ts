@@ -118,8 +118,15 @@ export async function POST(request: NextRequest) {
     const wppContacts = await client.getAllContacts();
     const db = getDb();
 
-    // Clean up duplicate entries (e.g. @lid variants) before syncing
-    db.prepare(`DELETE FROM contacts WHERE session_id = ? AND wpp_id NOT LIKE '%@c.us'`).run(sessionId);
+    // Drop only the @lid duplicates that have NO custom data — keep any row
+    // the user has labeled or otherwise enriched, regardless of its suffix.
+    db.prepare(
+      `DELETE FROM contacts
+       WHERE session_id = ?
+         AND wpp_id LIKE '%@lid'
+         AND (labels IS NULL OR labels = '' OR labels = '[]')
+         AND is_my_contact = 0`
+    ).run(sessionId);
 
     let synced = 0;
     const insertStmt = db.prepare(

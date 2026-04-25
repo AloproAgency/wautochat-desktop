@@ -16,6 +16,15 @@ export function getDb(): Database.Database {
     db = new Database(getDbPath());
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
+    // Cap the WAL file at ~1000 pages (~4 MB) before SQLite checkpoints
+    // automatically. Otherwise the .db-wal file grows without bound on a
+    // long-running app.
+    db.pragma("wal_autocheckpoint = 1000");
+    // On clean shutdown, force a checkpoint so the WAL is fully drained.
+    const captured = db;
+    process.on('exit', () => {
+      try { captured.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* ignore */ }
+    });
     initializeDatabase(db);
   }
   return db;
@@ -207,5 +216,16 @@ function initializeDatabase(db: Database.Database) {
     // If deduplication fails (e.g. locked DB), log and continue — the index
     // still helps on subsequent inserts.
     console.error('[db] Messages dedup/migration failed:', err);
+  }
+
+  // Migration: add wpp_id to labels so we can address labels server-side
+  // (addOrRemoveLabels, deleteLabel) by their WhatsApp identifier rather than name.
+  try {
+    const cols = db.prepare(`PRAGMA table_info(labels)`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === 'wpp_id')) {
+      db.exec(`ALTER TABLE labels ADD COLUMN wpp_id TEXT`);
+    }
+  } catch (err) {
+    console.error('[db] labels.wpp_id migration failed:', err);
   }
 }

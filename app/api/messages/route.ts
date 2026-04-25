@@ -24,6 +24,44 @@ export async function GET(request: NextRequest) {
           `SELECT * FROM messages ORDER BY timestamp DESC LIMIT ? OFFSET ?`
         ).all(limit, offset) as Record<string, unknown>[];
 
+      // Resolve sender → contact name. Match by exact wpp_id first, then by
+      // phone digits (handles @lid ↔ @c.us mismatch). Done in a single batch
+      // query to avoid N+1.
+      const senderKeys = Array.from(new Set(
+        rows.map((r) => r.sender as string).filter(Boolean)
+      ));
+      const contactByKey = new Map<string, { name: string; pushName: string | null }>();
+      if (senderKeys.length > 0) {
+        const phones = senderKeys
+          .map((k) => k.replace(/@(c\.us|g\.us|lid|s\.whatsapp\.net|broadcast)$/i, ''))
+          .filter((p) => /^\d+$/.test(p));
+        const placeholders = senderKeys.map(() => '?').join(',');
+        const phonePlaceholders = phones.map(() => '?').join(',');
+        const sql = `SELECT wpp_id, phone, name, push_name FROM contacts
+                     WHERE wpp_id IN (${placeholders})
+                        ${phones.length > 0 ? `OR phone IN (${phonePlaceholders})` : ''}`;
+        const contactRows = db.prepare(sql).all(
+          ...senderKeys,
+          ...phones,
+        ) as { wpp_id: string; phone: string; name: string; push_name: string | null }[];
+        for (const c of contactRows) {
+          contactByKey.set(c.wpp_id, { name: c.name, pushName: c.push_name });
+          if (c.phone) contactByKey.set(c.phone, { name: c.name, pushName: c.push_name });
+        }
+      }
+
+      function resolveSenderName(sender: string, dbSenderName: string | null): string | undefined {
+        const direct = contactByKey.get(sender);
+        const phone = sender.replace(/@(c\.us|g\.us|lid|s\.whatsapp\.net|broadcast)$/i, '');
+        const byPhone = contactByKey.get(phone);
+        const contact = direct || byPhone;
+        if (contact) {
+          if (contact.name && contact.name.trim()) return contact.name.trim();
+          if (contact.pushName && contact.pushName.trim()) return contact.pushName.trim();
+        }
+        return dbSenderName && dbSenderName.trim() ? dbSenderName : undefined;
+      }
+
       const messages: Message[] = rows.map((row) => ({
         id: row.id as string,
         sessionId: row.session_id as string,
@@ -32,7 +70,7 @@ export async function GET(request: NextRequest) {
         type: row.type as Message['type'],
         body: row.body as string,
         sender: row.sender as string,
-        senderName: (row.sender_name as string) || undefined,
+        senderName: resolveSenderName(row.sender as string, (row.sender_name as string) || null),
         fromMe: !!(row.from_me),
         timestamp: row.timestamp as string,
         status: row.status as Message['status'],
@@ -59,12 +97,13 @@ export async function GET(request: NextRequest) {
       `SELECT COUNT(*) as c FROM messages WHERE chat_id = ? AND session_id = ?`
     ).get(chatId, sessionId) as { c: number }).c;
 
-    // Pull historical messages from WhatsApp whenever the local store is
-    // significantly smaller than what the client asked for. This covers both
-    // first-time opens (count = 0) and partially-synced chats (e.g. the chat
-    // was created from a single onMessage event and never fully backfilled).
-    const historyThreshold = Math.min(limit, 100);
-    if (msgCount < historyThreshold) {
+    // Pull historical messages from WhatsApp ONLY on the first open of a chat
+    // or after a "no messages here" situation. The frontend polls every 5s;
+    // re-fetching 100 messages from WhatsApp on every poll would spam the WA
+    // server and risk a ban. Force a manual `?sync=1` for explicit refresh.
+    const explicitSync = request.nextUrl.searchParams.get('sync') === '1';
+    const shouldFetchHistory = explicitSync || msgCount === 0;
+    if (shouldFetchHistory) {
       const client = manager.getClient(sessionId);
       if (client) {
         try {
@@ -85,14 +124,17 @@ export async function GET(request: NextRequest) {
                       if (typeof WPP !== 'undefined' && WPP.chat) {
                         const msgs = await WPP.chat.getMessages('${chatRow.wpp_id}', { count: ${limit} });
                         if (msgs && Array.isArray(msgs)) {
+                          // fromMe lives on m.id (the MsgKey) more reliably than on m itself.
+                          // Fall back through every place we've seen it appear.
                           return msgs.map(m => ({
                             id: m.id ? (m.id._serialized || m.id) : '',
-                            fromMe: !!m.fromMe,
+                            fromMe: !!(m.fromMe || (m.id && m.id.fromMe) || (m.__x_isSentByMe)),
                             from: m.from ? (m.from._serialized || m.from) : '',
                             to: m.to ? (m.to._serialized || m.to) : '',
                             body: m.body || '',
                             type: m.type || 'chat',
                             t: m.t || 0,
+                            ack: typeof m.ack === 'number' ? m.ack : -1,
                             notifyName: m.notifyName || '',
                             caption: m.caption || '',
                             mimetype: m.mimetype || '',
@@ -125,6 +167,12 @@ export async function GET(request: NextRequest) {
                 `INSERT OR IGNORE INTO messages (id, session_id, chat_id, wpp_id, type, body, sender, sender_name, from_me, timestamp, status, quoted_msg_id, media_url, media_type, caption, is_forwarded)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
               );
+              // INSERT OR IGNORE skips existing rows. Run a separate UPDATE so
+              // earlier syncs that mis-detected fromMe get retroactively fixed
+              // — otherwise the wrong from_me=0 sticks forever.
+              const updateFromMe = db.prepare(
+                `UPDATE messages SET from_me = ? WHERE wpp_id = ? AND session_id = ? AND from_me <> ?`
+              );
 
               const transaction = db.transaction(() => {
                 for (const msg of wppMessages) {
@@ -132,7 +180,10 @@ export async function GET(request: NextRequest) {
                   const wppMsgId = (m.id as Record<string, unknown>)?._serialized as string || (m.id as string) || '';
                   if (!wppMsgId) continue;
 
-                  const fromMe = !!(m.fromMe);
+                  // The fallback path (client.getMessages) returns wppconnect-wrapped
+                  // objects where fromMe may live on m.id (the MsgKey). Cover both.
+                  const idObj = m.id as Record<string, unknown> | undefined;
+                  const fromMe = !!(m.fromMe || idObj?.fromMe || m.__x_isSentByMe);
                   const sender = (m.from as Record<string, unknown>)?._serialized as string || (m.from as string) || '';
                   const senderName = (m.sender as Record<string, unknown>)?.pushname as string
                     || (m.sender as Record<string, unknown>)?.name as string
@@ -155,7 +206,13 @@ export async function GET(request: NextRequest) {
                   const t = (m.t as number) || (m.timestamp as number) || 0;
                   const timestamp = t > 0 ? new Date(t * 1000).toISOString() : new Date().toISOString();
 
-                  const status = fromMe ? 'read' : 'delivered';
+                  // Use the source-of-truth status when WhatsApp provides one.
+                  // Otherwise: outgoing → 'sent' (no read receipt yet), incoming → 'delivered'.
+                  const ack = (m.ack as number) ?? -1;
+                  let status = fromMe ? 'sent' : 'delivered';
+                  if (ack === 3) status = 'read';
+                  else if (ack === 2) status = 'delivered';
+                  else if (ack === 1 && fromMe) status = 'sent';
 
                   insertMsg.run(
                     uuidv4(),
@@ -175,6 +232,7 @@ export async function GET(request: NextRequest) {
                     caption || null,
                     isForwarded ? 1 : 0
                   );
+                  updateFromMe.run(fromMe ? 1 : 0, wppMsgId, sessionId, fromMe ? 1 : 0);
                 }
               });
 
