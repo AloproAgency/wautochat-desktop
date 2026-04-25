@@ -837,8 +837,8 @@ export default function SettingsPage() {
               onClick={() => setTab(id)}
               className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
                 tab === id
-                  ? 'border-slate-900 text-slate-900 dark:border-white dark:text-white'
-                  : 'border-transparent text-slate-500 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-300 hover:border-slate-300 dark:hover:border-zinc-600'
+                  ? 'border-slate-900 text-slate-900 dark:border-white dark:bg-white dark:text-zinc-900 dark:rounded-md dark:border-0'
+                  : 'border-transparent text-slate-500 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-zinc-200 hover:border-slate-300 dark:hover:border-zinc-600'
               }`}
             >
               <Icon className="w-4 h-4" />
