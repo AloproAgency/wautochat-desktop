@@ -52,7 +52,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {loading ? (
-          <Spinner size={size === 'lg' ? 'md' : 'sm'} className={variant === 'primary' || variant === 'danger' ? 'border-white border-r-transparent' : ''} />
+          <Spinner size={size === 'lg' ? 'md' : 'sm'} className={variant === 'primary' ? 'border-white border-r-transparent dark:border-zinc-900 dark:border-r-transparent' : variant === 'danger' ? 'border-white border-r-transparent' : ''} />
         ) : icon ? (
           <span className="shrink-0">{icon}</span>
         ) : null}

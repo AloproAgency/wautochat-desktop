@@ -51,6 +51,10 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --wa-green: #ffffff;
+  --wa-green-dark: #e4e4e7;
+  --wa-teal: #ffffff;
+  --wa-teal-dark: #e4e4e7;
   --wa-bg: #111113;
   --wa-bg-chat: #111113;
   --wa-bg-sidebar: #1c1c1f;
