@@ -12,16 +12,25 @@ export function useActiveSession(): string | null {
   const { activeSessionId, sessions, setSessions, setActiveSession } = useSessionStore();
 
   useEffect(() => {
-    if (activeSessionId) return;
+    // If a sessionId is already pinned, only keep it if it still resolves to
+    // a real, non-failed session. Stale ids (deleted session or hard-failed)
+    // would otherwise silently break every API call that depends on them.
+    if (activeSessionId) {
+      const current = sessions.find((s) => s.id === activeSessionId);
+      const stale = current && (current.status === 'failed');
+      const missing = sessions.length > 0 && !current;
+      if (!stale && !missing) return;
+      // Fall through to re-pick a better candidate.
+      setActiveSession(null);
+    }
 
-    // If we have sessions in store, pick one
     if (sessions.length > 0) {
       const connected = sessions.find((s) => s.status === 'connected');
-      setActiveSession(connected ? connected.id : sessions[0].id);
+      const usable = connected || sessions.find((s) => s.status !== 'failed') || sessions[0];
+      setActiveSession(usable.id);
       return;
     }
 
-    // Fetch sessions from API
     fetch('/api/sessions')
       .then((r) => r.json())
       .then((data) => {
@@ -30,7 +39,10 @@ export function useActiveSession(): string | null {
           const connected = data.data.find(
             (s: { status: string }) => s.status === 'connected'
           );
-          setActiveSession(connected ? connected.id : data.data[0].id);
+          const usable = connected
+            || data.data.find((s: { status: string }) => s.status !== 'failed')
+            || data.data[0];
+          setActiveSession(usable.id);
         }
       })
       .catch(() => {});

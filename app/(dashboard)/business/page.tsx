@@ -26,6 +26,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { Select } from '@/components/ui/select';
 import { useActiveSession } from '@/hooks/use-active-session';
+import Link from 'next/link';
 import type { Product, Collection } from '@/lib/types';
 
 // ---- Inline utility components ----
@@ -215,6 +216,28 @@ export default function BusinessPage() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  // null = unknown (still checking), true/false = resolved
+  const [isBusinessAccount, setIsBusinessAccount] = useState<boolean | null>(null);
+
+  // Check whether the current session is a Business account. Catalog/Products
+  // require WhatsApp Business — personal accounts can't even list products.
+  useEffect(() => {
+    if (!activeSessionId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/sessions/${activeSessionId}/account-type`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data.success && data.data) {
+          setIsBusinessAccount(!!data.data.isBusiness);
+        }
+      } catch {
+        // leave as null — we'll skip the gate if the check itself failed
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeSessionId]);
 
   // Product modal state
   const [showProductModal, setShowProductModal] = useState(false);
@@ -492,6 +515,58 @@ export default function BusinessPage() {
     return (
       <div className="flex flex-1 items-center justify-center py-24">
         <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  // Personal WhatsApp account → catalog APIs are server-side blocked. Show a
+  // dedicated explanation instead of letting the user fight failing CRUD.
+  if (isBusinessAccount === false) {
+    return (
+      <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none bg-slate-50 dark:bg-zinc-900 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+        <header className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-700">
+          <div className="flex items-center gap-3 px-5 h-14">
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Business</h1>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center px-6 py-12">
+          <div className="max-w-md text-center">
+            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-wa-bg dark:bg-zinc-800 border border-wa-border dark:border-zinc-700">
+              <ShoppingBag className="h-6 w-6 text-wa-text-secondary dark:text-zinc-400" />
+            </div>
+            <h2 className="text-base font-semibold text-wa-text dark:text-zinc-100">
+              Fonctionnalité réservée à WhatsApp Business
+            </h2>
+            <p className="mt-2 text-sm text-wa-text-secondary dark:text-zinc-400 leading-relaxed">
+              Le catalogue produits et les collections n&apos;existent que sur les comptes
+              <span className="font-medium"> WhatsApp Business</span>. La session active
+              est un compte personnel — WhatsApp bloque la création et la lecture du
+              catalogue côté serveur, donc rien ne pourra être enregistré ici.
+            </p>
+            <p className="mt-3 text-xs text-wa-text-muted dark:text-zinc-500 leading-relaxed">
+              Pour activer cette page : installe l&apos;application WhatsApp Business sur ton
+              téléphone, transforme le compte (ou crée-en un nouveau), puis reconnecte la
+              session.
+            </p>
+            <div className="mt-5 flex flex-col items-center gap-2">
+              <Link
+                href="/sessions"
+                className="inline-flex items-center gap-2 rounded-lg bg-wa-teal px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-wa-teal-dark"
+              >
+                Reconnecter avec WhatsApp Business
+              </Link>
+              <a
+                href="https://www.whatsapp.com/business"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-wa-text-secondary dark:text-zinc-400 transition-colors hover:text-wa-text dark:hover:text-zinc-100"
+              >
+                En savoir plus
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

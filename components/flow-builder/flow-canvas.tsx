@@ -795,6 +795,42 @@ function FlowCanvasInner({
     };
   }, [nodes, edges, handleSave]);
 
+  // Flush pending changes before the window unloads (Electron quit or web
+  // tab close). The 1.5 s debounce window means edits made just before
+  // closing would otherwise be lost. We use sendBeacon for a best-effort
+  // synchronous-ish fire.
+  useEffect(() => {
+    function flushOnUnload() {
+      if (!autoSaveTimerRef.current) return;
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+      const serializedNodes = nodes.map((n) => ({
+        id: n.id,
+        type: n.type || 'logicNode',
+        position: n.position,
+        data: n.data,
+      }));
+      const serializedEdges = edges.map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle || undefined,
+        label: typeof e.label === 'string' ? e.label : undefined,
+      }));
+      const payload = JSON.stringify({ nodes: serializedNodes, edges: serializedEdges });
+      try {
+        // Synchronous PUT is the only thing the browser still allows during
+        // beforeunload. sendBeacon doesn't support PUT.
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', `/api/flows/${flowId}`, false);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.send(payload);
+      } catch { /* nothing else we can do */ }
+    }
+    window.addEventListener('beforeunload', flushOnUnload);
+    return () => window.removeEventListener('beforeunload', flushOnUnload);
+  }, [nodes, edges, flowId]);
+
   // Keyboard shortcuts
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

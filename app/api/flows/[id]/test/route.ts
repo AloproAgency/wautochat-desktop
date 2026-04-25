@@ -477,8 +477,9 @@ async function walkFlow(
           if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
         }
 
+        // 30s timeout to match the production engine — avoid false negatives in test
         const controller = new AbortController();
-        const tId = setTimeout(() => controller.abort(), 15_000);
+        const tId = setTimeout(() => controller.abort(), 30_000);
         fetchOptions.signal = controller.signal;
 
         try {

@@ -73,6 +73,16 @@
   scrollbar-color: #cccccc transparent;
 }
 
+.scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 body {
   background: var(--wa-bg);
   color: var(--wa-text);

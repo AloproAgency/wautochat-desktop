@@ -637,7 +637,7 @@ async function executeNode(
         if (!client) throw new Error('Client not connected');
         const listTitle = interpolateVariables((config.title as string) || '', ctx);
         const listSubtitle = interpolateVariables((config.subtitle as string) || '', ctx);
-        const listDescription = interpolateVariables((config.description as string) || '', ctx);
+        const listDescription = interpolateVariables((config.body as string) || (config.description as string) || '', ctx);
         const listButtonText = interpolateVariables((config.buttonText as string) || 'Options', ctx);
         const sections = (config.sections as Array<Record<string, unknown>>) || [];
         const result = await client.sendListMessage(ctx.chatId, {
@@ -673,7 +673,7 @@ async function executeNode(
       case 'send-buttons': {
         if (!client) throw new Error('Client not connected');
         const btnTitle = interpolateVariables((config.title as string) || '', ctx);
-        const btnText = interpolateVariables((config.text as string) || (config.message as string) || '', ctx);
+        const btnText = interpolateVariables((config.body as string) || (config.text as string) || (config.message as string) || '', ctx);
         const btnFooter = interpolateVariables((config.footer as string) || '', ctx);
         const buttons: ButtonPayload[] = ((config.buttons as Array<Record<string, unknown>>) || []).map((b) => ({
           id: (b.id as string) || '',

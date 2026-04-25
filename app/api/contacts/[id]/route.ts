@@ -61,16 +61,26 @@ export async function PUT(
       const wppId = row.wpp_id as string;
       const client = manager.getClient(sessionId);
 
-      if (client) {
-        try {
-          if (body.action === 'block') {
-            await client.blockContact(wppId);
-          } else {
-            await client.unblockContact(wppId);
-          }
-        } catch {
-          // WPPConnect may not support this method directly, update DB anyway
+      if (!client) {
+        return Response.json(
+          { success: false, error: 'Session is not connected' },
+          { status: 400 }
+        );
+      }
+
+      try {
+        if (body.action === 'block') {
+          await client.blockContact(wppId);
+        } else {
+          await client.unblockContact(wppId);
         }
+      } catch (err) {
+        // Don't update DB if WhatsApp rejected the call — otherwise the UI
+        // claims "blocked" while the contact can still send messages.
+        return Response.json(
+          { success: false, error: err instanceof Error ? err.message : 'WhatsApp rejected the block' },
+          { status: 502 }
+        );
       }
 
       const isBlocked = body.action === 'block' ? 1 : 0;
@@ -79,12 +89,53 @@ export async function PUT(
       return Response.json({ success: true, data: { id, isBlocked: !!isBlocked } });
     }
 
-    // Handle labels update
+    // Handle labels update — diff against current state and push add/remove
+    // to WhatsApp so the labels show up on the phone too.
     if (body.labels !== undefined) {
-      const labels = JSON.stringify(body.labels);
+      const sessionId = row.session_id as string;
+      const wppId = row.wpp_id as string;
+      const previous: string[] = JSON.parse((row.labels as string) || '[]');
+      const next: string[] = Array.isArray(body.labels) ? body.labels.map(String) : [];
+
+      const toAdd = next.filter((n) => !previous.includes(n));
+      const toRemove = previous.filter((p) => !next.includes(p));
+
+      if ((toAdd.length || toRemove.length) && wppId) {
+        const client = manager.getClient(sessionId);
+        if (client) {
+          // Resolve label names → WhatsApp wpp_id (only labels we know).
+          const placeholders = [...toAdd, ...toRemove].map(() => '?').join(',');
+          const labelRows = placeholders
+            ? db.prepare(
+                `SELECT name, wpp_id FROM labels WHERE session_id = ? AND wpp_id IS NOT NULL AND name IN (${placeholders})`
+              ).all(sessionId, ...toAdd, ...toRemove) as { name: string; wpp_id: string }[]
+            : [];
+          const wppByName = new Map(labelRows.map((r) => [r.name, r.wpp_id]));
+          const ops: { labelId: string; type: 'add' | 'remove' }[] = [];
+          for (const n of toAdd) {
+            const w = wppByName.get(n);
+            if (w) ops.push({ labelId: w, type: 'add' });
+          }
+          for (const n of toRemove) {
+            const w = wppByName.get(n);
+            if (w) ops.push({ labelId: w, type: 'remove' });
+          }
+          if (ops.length) {
+            try {
+              await (client as unknown as {
+                addOrRemoveLabels: (chatId: string | string[], opts: { labelId: string; type: 'add' | 'remove' }[]) => Promise<void>;
+              }).addOrRemoveLabels(wppId, ops);
+            } catch (err) {
+              console.error(`[contacts PUT] WhatsApp label sync failed for ${wppId}:`, err);
+            }
+          }
+        }
+      }
+
+      const labels = JSON.stringify(next);
       db.prepare(`UPDATE contacts SET labels = ? WHERE id = ?`).run(labels, id);
 
-      return Response.json({ success: true, data: { id, labels: body.labels } });
+      return Response.json({ success: true, data: { id, labels: next } });
     }
 
     // Handle name update

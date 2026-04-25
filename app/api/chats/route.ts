@@ -8,7 +8,9 @@ export async function GET(request: NextRequest) {
     const db = getDb();
     const sessionId = request.nextUrl.searchParams.get('sessionId');
 
-    // Get chats with their latest message (using subquery for reliability)
+    // Replaced the per-chat COUNT(*) correlated subquery with a single
+    // GROUP BY so /api/chats doesn't re-do N scans of the messages table on
+    // every request.
     const baseQuery = `
       SELECT c.*,
         lm.body as last_message_body,
@@ -16,7 +18,7 @@ export async function GET(request: NextRequest) {
         lm.from_me as last_message_from_me,
         lm.timestamp as last_message_time,
         lm.sender_name as last_message_sender,
-        (SELECT COUNT(*) FROM messages WHERE chat_id = c.id) as message_count
+        COALESCE(mc.message_count, 0) as message_count
       FROM chats c
       LEFT JOIN (
         SELECT m1.* FROM messages m1
@@ -24,6 +26,9 @@ export async function GET(request: NextRequest) {
           SELECT chat_id, MAX(timestamp) as max_ts FROM messages GROUP BY chat_id
         ) m2 ON m1.chat_id = m2.chat_id AND m1.timestamp = m2.max_ts
       ) lm ON lm.chat_id = c.id
+      LEFT JOIN (
+        SELECT chat_id, COUNT(*) as message_count FROM messages GROUP BY chat_id
+      ) mc ON mc.chat_id = c.id
     `;
 
     let rows;

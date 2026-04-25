@@ -24,17 +24,37 @@
 /dist/electron/
 /dist/release/
 
+# typescript incremental build cache
+tsconfig.tsbuildinfo
+
 # misc
 .DS_Store
 *.pem
+
+# IDE
+.vscode/
+.idea/
+
+# env
+.env
+.env.local
+.env.*.local
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
 # uploads (user-uploaded media for flow nodes)
 public/uploads/
 
-# Cached contact avatars (downloaded from WhatsApp, can be regenerated)
+# user runtime data — never commit
+data/wautochat.db
+data/wautochat.db-shm
+data/wautochat.db-wal
 data/avatars/
+data/media/
+
+# WhatsApp auth tokens — SECRET, anyone with these can hijack your sessions
+tokens/
