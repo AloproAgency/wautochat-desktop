@@ -638,30 +638,30 @@ export default function TestChat({ flowId, sessionId }: TestChatProps) {
           {/* Simulation options panel */}
           {showSimOptions && (
             <div
-              className="shrink-0 px-3 py-2 border-t flex flex-wrap gap-2 items-center"
+              className="shrink-0 px-3 py-2 border-t flex flex-wrap gap-2 items-center dark:border-zinc-700"
               style={{ backgroundColor: '#f0f2f5', borderColor: '#d1d5db' }}
             >
-              <span className="text-xs text-gray-500 font-medium mr-1">Simuler :</span>
+              <span className="text-xs text-gray-500 dark:text-zinc-400 font-medium mr-1">Simuler :</span>
               <select
                 value={simMsgType}
                 onChange={(e) => setSimMsgType(e.target.value)}
-                className="text-xs border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-green-400"
+                className="text-xs border border-gray-300 dark:border-zinc-600 rounded-md px-2 py-1 bg-white dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-green-400"
               >
                 {SIM_MSG_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
-              <label className="flex items-center gap-1.5 text-xs text-gray-700 cursor-pointer select-none">
+              <label className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-zinc-300 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={simIsGroup}
                   onChange={(e) => setSimIsGroup(e.target.checked)}
-                  className="rounded border-gray-300"
+                  className="rounded border-gray-300 dark:border-zinc-600"
                 />
                 Groupe
               </label>
               {(simMsgType !== 'text' || simIsGroup) && (
-                <span className="text-xs text-green-600 font-medium">
+                <span className="text-xs text-green-600 dark:text-green-400 font-medium">
                   {simMsgType !== 'text' ? simMsgType : ''}{simMsgType !== 'text' && simIsGroup ? ' · ' : ''}{simIsGroup ? 'groupe' : ''}
                 </span>
               )}

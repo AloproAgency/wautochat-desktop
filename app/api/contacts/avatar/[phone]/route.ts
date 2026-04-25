@@ -3,8 +3,9 @@ import { readFile, writeFile, mkdir, stat } from 'fs/promises';
 import path from 'path';
 import { getDb } from '@/lib/db';
 import manager from '@/lib/wppconnect-manager';
+import { getDataDir } from '@/lib/paths';
 
-const CACHE_DIR = path.join(process.cwd(), 'data', 'avatars');
+const CACHE_DIR = path.join(getDataDir(), 'avatars');
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // refresh once a day
 
 /**

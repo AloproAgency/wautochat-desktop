@@ -19,7 +19,6 @@ import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
 import { Spinner } from '@/components/ui/spinner';
 import { EmptyState } from '@/components/ui/empty-state';
-import { SearchInput } from '@/components/ui/search-input';
 import { Toggle } from '@/components/ui/toggle';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -219,27 +218,34 @@ export default function FlowsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-wa-text">Flow Builder</h1>
-          <p className="mt-1 text-sm text-wa-text-secondary">
-            Create and manage your automated conversation flows
-          </p>
+    <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none bg-slate-50 dark:bg-zinc-900 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+      <header className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-700">
+        <div className="flex items-center gap-3 px-5 h-14">
+          <div className="flex items-baseline gap-2 shrink-0">
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Flows</h1>
+            <span className="text-xs font-mono text-slate-400 dark:text-zinc-500 tabular-nums">{flows.length}</span>
+          </div>
+          <div className="h-5 w-px bg-slate-200 dark:bg-zinc-700" />
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search flows…"
+              className="w-full rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 pl-8 pr-3 h-8 text-sm text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-500 focus:ring-2 focus:ring-slate-100 dark:focus:ring-zinc-700 transition"
+            />
+          </div>
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-zinc-700 h-8 px-3 text-[13px] font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 active:scale-[0.98] transition-all"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">New flow</span>
+          </button>
         </div>
-        <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowNewModal(true)}>
-          New Flow
-        </Button>
-      </div>
+      </header>
 
-      {/* Search */}
-      <SearchInput
-        value={searchQuery}
-        onChange={setSearchQuery}
-        placeholder="Search flows..."
-        className="max-w-md"
-      />
+      <div className="p-5 space-y-5">
 
       {/* Flows Grid */}
       {filteredFlows.length === 0 ? (
@@ -417,6 +423,7 @@ export default function FlowsPage() {
           This will permanently remove the flow and all its nodes and configurations.
         </p>
       </Modal>
+      </div>
     </div>
   );
 }

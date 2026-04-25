@@ -248,40 +248,40 @@ export default function ContactsPage() {
   return (
     // Negative margins compensate the parent layout's padding so this page is
     // edge-to-edge. The `lg:max-w-none` overrides the parent's `max-w-7xl`.
-    <div className="flex -m-4 md:-m-6 lg:max-w-none bg-slate-50 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+    <div className="flex -m-4 md:-m-6 lg:max-w-none bg-slate-50 dark:bg-zinc-900 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
       {/* ===== Main column ===== */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* --- Sticky header: single compact row, edge-to-edge --- */}
-        <header className="sticky top-0 z-20 bg-white border-b border-slate-200">
+        <header className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-700">
           <div className="flex items-center gap-4 px-5 h-14">
             {/* Title + count */}
             <div className="flex items-baseline gap-2 shrink-0">
-              <h1 className="text-base font-semibold tracking-tight text-slate-900">
+              <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">
                 Contacts
               </h1>
-              <span className="text-xs font-mono text-slate-400 tabular-nums">
+              <span className="text-xs font-mono text-slate-400 dark:text-zinc-500 tabular-nums">
                 {contacts.length}
               </span>
               {filteredContacts.length !== contacts.length && (
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-400 dark:text-zinc-500">
                   · {filteredContacts.length} shown
                 </span>
               )}
             </div>
 
-            <div className="h-5 w-px bg-slate-200" />
+            <div className="h-5 w-px bg-slate-200 dark:bg-zinc-700" />
 
             {/* Search */}
             <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
               <input
                 ref={searchInputRef}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search name, phone…"
-                className="w-full rounded-md border border-slate-200 bg-white pl-8 pr-14 h-8 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition"
+                className="w-full rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 pl-8 pr-14 h-8 text-sm text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-500 focus:ring-2 focus:ring-slate-100 dark:focus:ring-zinc-700 transition"
               />
-              <kbd className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
+              <kbd className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] font-mono text-slate-500 dark:text-zinc-400">
                 ⌘K
               </kbd>
             </div>
@@ -296,14 +296,14 @@ export default function ContactsPage() {
                     onClick={() => setFilter(f.key)}
                     className={`inline-flex items-center gap-1.5 rounded-md h-8 px-2.5 text-[13px] font-medium transition-colors ${
                       active
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-600 hover:bg-slate-100'
+                        ? 'bg-slate-900 text-white dark:bg-zinc-700'
+                        : 'text-slate-600 dark:text-zinc-400 hover:bg-slate-100 dark:hover:bg-zinc-800'
                     }`}
                   >
                     {f.label}
                     <span
                       className={`rounded px-1 text-[10px] font-mono tabular-nums ${
-                        active ? 'bg-white/20 text-white' : 'text-slate-400'
+                        active ? 'bg-white/20 text-white' : 'text-slate-400 dark:text-zinc-500'
                       }`}
                     >
                       {f.count}
@@ -317,7 +317,7 @@ export default function ContactsPage() {
             <button
               onClick={handleSync}
               disabled={syncing}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white h-8 px-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-8 px-2.5 text-[13px] font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-700 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed transition-all"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">{syncing ? 'Syncing…' : 'Sync'}</span>
@@ -339,9 +339,9 @@ export default function ContactsPage() {
             <div className="px-3 py-3">
               {groupedContacts.map((group) => (
                 <section key={group.letter} className="mb-4">
-                  <h2 className="sticky top-0 z-[5] px-3 py-1 text-[11px] font-semibold tracking-widest text-slate-400 uppercase bg-slate-50/95 backdrop-blur">
+                  <h2 className="sticky top-0 z-[5] px-3 py-1 text-[11px] font-semibold tracking-widest text-slate-400 dark:text-zinc-500 uppercase bg-slate-50/95 dark:bg-zinc-900/95 backdrop-blur">
                     {group.letter}
-                    <span className="ml-2 text-slate-300 font-normal">
+                    <span className="ml-2 text-slate-300 dark:text-zinc-600 font-normal">
                       {group.items.length}
                     </span>
                   </h2>
@@ -364,9 +364,9 @@ export default function ContactsPage() {
                                 openContact(c);
                               }
                             }}
-                            className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer hover:bg-white hover:shadow-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-slate-900/10 ${
+                            className={`group w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all cursor-pointer hover:bg-white dark:hover:bg-zinc-800 hover:shadow-sm focus:outline-none focus:bg-white dark:focus:bg-zinc-800 focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-zinc-600/30 ${
                               isSelected
-                                ? 'bg-white shadow-sm ring-1 ring-slate-900/5'
+                                ? 'bg-white dark:bg-zinc-800 shadow-sm ring-1 ring-slate-900/5 dark:ring-gray-700'
                                 : ''
                             }`}
                           >
@@ -376,11 +376,11 @@ export default function ContactsPage() {
                                 size="md"
                                 name={c.name}
                                 src={avatarUrl(c)}
-                                className="ring-1 ring-slate-200"
+                                className="ring-1 ring-slate-200 dark:ring-gray-700"
                               />
                               {c.isWAContact && (
                                 <span
-                                  className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500"
+                                  className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-zinc-900 bg-emerald-500"
                                   title="Active on WhatsApp"
                                 />
                               )}
@@ -394,7 +394,7 @@ export default function ContactsPage() {
                             {/* Name + push name */}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2">
-                                <p className="truncate text-sm font-semibold text-slate-900">
+                                <p className="truncate text-sm font-semibold text-slate-900 dark:text-zinc-100">
                                   {c.name}
                                 </p>
                                 {c.labels?.slice(0, 2).map((label) => (
@@ -402,27 +402,27 @@ export default function ContactsPage() {
                                     key={label}
                                     className={`inline-flex items-center rounded-full border px-1.5 py-[1px] text-[10px] font-medium ${
                                       labelColors[label] ||
-                                      'bg-slate-50 text-slate-600 border-slate-200'
+                                      'bg-slate-50 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700'
                                     }`}
                                   >
                                     {label}
                                   </span>
                                 ))}
                                 {c.labels && c.labels.length > 2 && (
-                                  <span className="text-[10px] text-slate-400">
+                                  <span className="text-[10px] text-slate-400 dark:text-zinc-500">
                                     +{c.labels.length - 2}
                                   </span>
                                 )}
                               </div>
                               {c.pushName && c.pushName !== c.name && (
-                                <p className="truncate text-xs text-slate-400">
+                                <p className="truncate text-xs text-slate-400 dark:text-zinc-500">
                                   {c.pushName}
                                 </p>
                               )}
                             </div>
 
                             {/* Phone (mono) */}
-                            <p className="hidden md:block shrink-0 text-xs font-mono text-slate-500 tabular-nums">
+                            <p className="hidden md:block shrink-0 text-xs font-mono text-slate-500 dark:text-zinc-400 tabular-nums">
                               {formatPhoneNumber(c.phone)}
                             </p>
 
@@ -481,12 +481,12 @@ export default function ContactsPage() {
             onClick={() => setShowPanel(false)}
           />
           <aside
-            className="fixed lg:static right-0 top-0 z-40 h-full w-full sm:w-[400px] shrink-0 border-l border-slate-200 bg-white overflow-y-auto animate-slide-in-right"
+            className="fixed lg:static right-0 top-0 z-40 h-full w-full sm:w-[400px] shrink-0 border-l border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 overflow-y-auto animate-slide-in-right"
             key={selectedContact.id}
           >
             {/* Sticky top bar */}
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3.5">
-              <h3 className="text-[11px] font-semibold tracking-widest text-slate-500 uppercase">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-5 py-3.5">
+              <h3 className="text-[11px] font-semibold tracking-widest text-slate-500 dark:text-zinc-400 uppercase">
                 Contact
               </h3>
               <button
@@ -494,7 +494,7 @@ export default function ContactsPage() {
                   setShowPanel(false);
                   setSelectedContact(null);
                 }}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                className="rounded-lg p-1.5 text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-700 hover:text-slate-700 dark:hover:text-gray-300 transition"
                 aria-label="Close panel"
               >
                 <X className="h-4 w-4" />
@@ -502,36 +502,36 @@ export default function ContactsPage() {
             </div>
 
             {/* Identity block — clean, no gradient, strong hierarchy */}
-            <div className="px-6 pt-8 pb-6 flex flex-col items-center text-center border-b border-slate-100">
+            <div className="px-6 pt-8 pb-6 flex flex-col items-center text-center border-b border-slate-100 dark:border-zinc-700">
               <div className="relative">
                 <Avatar
                   size="lg"
                   name={selectedContact.name}
                   src={avatarUrl(selectedContact)}
-                  className="h-24 w-24 text-2xl ring-1 ring-slate-200"
+                  className="h-24 w-24 text-2xl ring-1 ring-slate-200 dark:ring-gray-700"
                 />
                 {selectedContact.isWAContact && !selectedContact.isBlocked && (
                   <span
-                    className="absolute bottom-0.5 right-0.5 h-4 w-4 rounded-full border-[3px] border-white bg-emerald-500"
+                    className="absolute bottom-0.5 right-0.5 h-4 w-4 rounded-full border-[3px] border-white dark:border-zinc-800 bg-emerald-500"
                     title="Active on WhatsApp"
                   />
                 )}
                 {selectedContact.isBlocked && (
-                  <span className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-red-500 text-white">
+                  <span className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white dark:border-zinc-800 bg-red-500 text-white">
                     <Ban className="h-3 w-3" strokeWidth={3} />
                   </span>
                 )}
               </div>
 
-              <h2 className="mt-5 text-xl font-semibold text-slate-900">
+              <h2 className="mt-5 text-xl font-semibold text-slate-900 dark:text-zinc-100">
                 {selectedContact.name}
               </h2>
-              <p className="mt-1 text-sm font-mono text-slate-500 tabular-nums">
+              <p className="mt-1 text-sm font-mono text-slate-500 dark:text-zinc-400 tabular-nums">
                 {formatPhoneNumber(selectedContact.phone)}
               </p>
               {selectedContact.pushName &&
                 selectedContact.pushName !== selectedContact.name && (
-                  <p className="mt-0.5 text-xs text-slate-400">
+                  <p className="mt-0.5 text-xs text-slate-400 dark:text-zinc-500">
                     @{selectedContact.pushName}
                   </p>
                 )}
@@ -539,17 +539,17 @@ export default function ContactsPage() {
               {/* Status badges */}
               <div className="mt-3 flex items-center gap-1.5">
                 {selectedContact.isBlocked ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-400">
                     <Ban className="h-3 w-3" />
                     Blocked
                   </span>
                 ) : selectedContact.isWAContact ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
                     <Check className="h-3 w-3" />
                     On WhatsApp
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 dark:bg-zinc-700 border border-slate-200 dark:border-zinc-600 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:text-zinc-400">
                     Not on WhatsApp
                   </span>
                 )}
@@ -564,7 +564,7 @@ export default function ContactsPage() {
                       : selectedContact.wppId;
                     window.location.href = `/conversations?chat=${chatId}`;
                   }}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 active:scale-[0.98] transition"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 dark:bg-zinc-700 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 active:scale-[0.98] transition"
                 >
                   <MessageSquare className="h-4 w-4" />
                   Message
@@ -573,8 +573,8 @@ export default function ContactsPage() {
                   onClick={() => setBlockConfirm(selectedContact)}
                   className={`inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium border transition active:scale-[0.98] ${
                     selectedContact.isBlocked
-                      ? 'border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50'
-                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                      ? 'border-emerald-200 dark:border-emerald-800 bg-white dark:bg-zinc-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30'
+                      : 'border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-700'
                   }`}
                 >
                   {selectedContact.isBlocked ? (
@@ -593,20 +593,20 @@ export default function ContactsPage() {
             </div>
 
             {/* Labels — inline editor */}
-            <section className="px-6 py-5 border-b border-slate-100">
+            <section className="px-6 py-5 border-b border-slate-100 dark:border-zinc-700">
               <div className="flex items-center justify-between mb-3">
-                <h4 className="text-[11px] font-semibold tracking-widest text-slate-500 uppercase">
+                <h4 className="text-[11px] font-semibold tracking-widest text-slate-500 dark:text-zinc-400 uppercase">
                   Labels
                 </h4>
                 <button
                   onClick={() => setEditingLabels(!editingLabels)}
-                  className="text-xs font-medium text-slate-700 hover:text-slate-900 transition"
+                  className="text-xs font-medium text-slate-700 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-zinc-100 transition"
                 >
                   {editingLabels ? 'Done' : selectedContact.labels.length ? 'Edit' : '+ Add'}
                 </button>
               </div>
               {selectedContact.labels.length === 0 && !editingLabels ? (
-                <p className="text-xs text-slate-400">No labels assigned.</p>
+                <p className="text-xs text-slate-400 dark:text-zinc-500">No labels assigned.</p>
               ) : (
                 <div className="flex flex-wrap gap-1.5">
                   {selectedContact.labels.map((label) => (
@@ -614,7 +614,7 @@ export default function ContactsPage() {
                       key={label}
                       className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-all ${
                         labelColors[label] ||
-                        'bg-slate-50 text-slate-700 border-slate-200'
+                        'bg-slate-50 dark:bg-zinc-700 text-slate-700 dark:text-zinc-300 border-slate-200 dark:border-zinc-600'
                       }`}
                     >
                       {label}
@@ -642,7 +642,7 @@ export default function ContactsPage() {
                     }}
                     placeholder="Label name…"
                     list="label-suggestions"
-                    className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                    className="flex-1 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-xs text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-500 focus:ring-2 focus:ring-slate-200 dark:focus:ring-zinc-700"
                   />
                   <datalist id="label-suggestions">
                     {availableLabels.map((l) => (
@@ -652,7 +652,7 @@ export default function ContactsPage() {
                   <button
                     onClick={() => handleAddLabel(selectedContact)}
                     disabled={!labelInput.trim()}
-                    className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition active:scale-[0.98]"
+                    className="inline-flex items-center gap-1 rounded-lg bg-slate-900 dark:bg-zinc-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed transition active:scale-[0.98]"
                   >
                     <Plus className="h-3 w-3" />
                     Add
@@ -662,15 +662,15 @@ export default function ContactsPage() {
             </section>
 
             {/* Details — clean two-column list */}
-            <section className="px-6 py-5 border-b border-slate-100">
-              <h4 className="text-[11px] font-semibold tracking-widest text-slate-500 uppercase mb-3">
+            <section className="px-6 py-5 border-b border-slate-100 dark:border-zinc-700">
+              <h4 className="text-[11px] font-semibold tracking-widest text-slate-500 dark:text-zinc-400 uppercase mb-3">
                 Details
               </h4>
               <dl className="space-y-3 text-sm">
                 <InfoRow
                   label="Phone"
                   value={
-                    <span className="font-mono tabular-nums text-slate-700">
+                    <span className="font-mono tabular-nums text-slate-700 dark:text-zinc-300">
                       {formatPhoneNumber(selectedContact.phone)}
                     </span>
                   }
@@ -679,12 +679,12 @@ export default function ContactsPage() {
                   label="Status"
                   value={
                     selectedContact.isWAContact ? (
-                      <span className="inline-flex items-center gap-1 text-emerald-600 font-medium">
+                      <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                         Active
                       </span>
                     ) : (
-                      <span className="text-slate-400">Inactive</span>
+                      <span className="text-slate-400 dark:text-zinc-500">Inactive</span>
                     )
                   }
                 />
@@ -692,18 +692,18 @@ export default function ContactsPage() {
                   label="Last seen"
                   value={
                     selectedContact.lastSeen ? (
-                      <span className="text-slate-700">
+                      <span className="text-slate-700 dark:text-zinc-300">
                         {formatTimestamp(selectedContact.lastSeen)}
                       </span>
                     ) : (
-                      <span className="text-slate-400">Unknown</span>
+                      <span className="text-slate-400 dark:text-zinc-500">Unknown</span>
                     )
                   }
                 />
                 <InfoRow
                   label="Added"
                   value={
-                    <span className="text-slate-700">
+                    <span className="text-slate-700 dark:text-zinc-300">
                       {formatTimestamp(selectedContact.createdAt)}
                     </span>
                   }
@@ -713,12 +713,12 @@ export default function ContactsPage() {
 
             {/* Technical footer — mono ID in a subtle box */}
             <section className="px-6 py-5">
-              <h4 className="text-[11px] font-semibold tracking-widest text-slate-500 uppercase mb-2">
+              <h4 className="text-[11px] font-semibold tracking-widest text-slate-500 dark:text-zinc-400 uppercase mb-2">
                 Technical
               </h4>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-[10px] text-slate-400 mb-0.5">Chat ID</p>
-                <p className="font-mono text-[11px] text-slate-700 break-all">
+              <div className="rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 px-3 py-2">
+                <p className="text-[10px] text-slate-400 dark:text-zinc-500 mb-0.5">Chat ID</p>
+                <p className="font-mono text-[11px] text-slate-700 dark:text-zinc-300 break-all">
                   {selectedContact.wppId}
                 </p>
               </div>
@@ -743,7 +743,7 @@ export default function ContactsPage() {
 
           {/* Dialog */}
           <div
-            className="relative w-full max-w-sm rounded-xl bg-white shadow-xl ring-1 ring-slate-900/5 animate-dialog-in"
+            className="relative w-full max-w-sm rounded-xl bg-white dark:bg-zinc-800 shadow-xl ring-1 ring-slate-900/5 dark:ring-gray-700 animate-dialog-in"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header: avatar + name */}
@@ -751,8 +751,8 @@ export default function ContactsPage() {
               <div
                 className={`flex h-10 w-10 items-center justify-center rounded-full shrink-0 ${
                   blockConfirm.isBlocked
-                    ? 'bg-emerald-50 text-emerald-600'
-                    : 'bg-red-50 text-red-600'
+                    ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400'
                 }`}
               >
                 {blockConfirm.isBlocked ? (
@@ -764,11 +764,11 @@ export default function ContactsPage() {
               <div className="flex-1 min-w-0">
                 <h3
                   id="block-confirm-title"
-                  className="text-base font-semibold text-slate-900"
+                  className="text-base font-semibold text-slate-900 dark:text-zinc-100"
                 >
                   {blockConfirm.isBlocked ? 'Unblock contact?' : 'Block contact?'}
                 </h3>
-                <p className="mt-0.5 text-xs text-slate-500 truncate">
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-zinc-400 truncate">
                   {blockConfirm.name} · {formatPhoneNumber(blockConfirm.phone)}
                 </p>
               </div>
@@ -777,21 +777,21 @@ export default function ContactsPage() {
             {/* Body: explain what's going to happen */}
             <div className="px-5 pb-5">
               {blockConfirm.isBlocked ? (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 leading-relaxed">
+                <div className="rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 p-3 text-sm text-slate-700 dark:text-zinc-300 leading-relaxed">
                   Ce contact sera de nouveau autorisé à t&apos;envoyer des messages WhatsApp, et tu pourras lui écrire normalement.
                 </div>
               ) : (
-                <ul className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1.5 text-sm text-slate-700 leading-relaxed">
+                <ul className="rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-900 p-3 space-y-1.5 text-sm text-slate-700 dark:text-zinc-300 leading-relaxed">
                   <li className="flex gap-2">
-                    <span className="text-slate-400">•</span>
+                    <span className="text-slate-400 dark:text-zinc-500">•</span>
                     Ne pourra plus t&apos;envoyer de messages ni t&apos;appeler sur WhatsApp.
                   </li>
                   <li className="flex gap-2">
-                    <span className="text-slate-400">•</span>
+                    <span className="text-slate-400 dark:text-zinc-500">•</span>
                     Ne verra plus ton statut, ta photo de profil ni ta dernière connexion.
                   </li>
                   <li className="flex gap-2">
-                    <span className="text-slate-400">•</span>
+                    <span className="text-slate-400 dark:text-zinc-500">•</span>
                     Tu pourras le débloquer à tout moment.
                   </li>
                 </ul>
@@ -803,7 +803,7 @@ export default function ContactsPage() {
               <button
                 onClick={() => setBlockConfirm(null)}
                 disabled={blocking}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50 transition active:scale-[0.98]"
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 disabled:opacity-50 transition active:scale-[0.98]"
               >
                 Annuler
               </button>
@@ -913,8 +913,8 @@ function IconBtn({
       title={title}
       className={`rounded-lg p-1.5 transition-colors ${
         danger
-          ? 'text-red-500 hover:bg-red-50'
-          : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+          ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30'
+          : 'text-slate-400 dark:text-zinc-500 hover:bg-slate-100 dark:hover:bg-zinc-700 hover:text-slate-700 dark:hover:text-gray-300'
       }`}
     >
       {children}
@@ -935,11 +935,11 @@ function ActionChip({
 }) {
   const colors: Record<string, string> = {
     default:
-      'bg-slate-900 text-white hover:bg-slate-800',
+      'bg-slate-900 dark:bg-zinc-700 text-white hover:bg-slate-800 dark:hover:bg-zinc-600',
     danger:
-      'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100',
+      'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50',
     success:
-      'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100',
+      'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50',
   };
   return (
     <button
@@ -955,10 +955,10 @@ function ActionChip({
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <dt className="text-[11px] font-semibold tracking-widest text-slate-400 uppercase shrink-0 pt-0.5">
+      <dt className="text-[11px] font-semibold tracking-widest text-slate-400 dark:text-zinc-500 uppercase shrink-0 pt-0.5">
         {label}
       </dt>
-      <dd className="text-right text-sm text-slate-700">{value}</dd>
+      <dd className="text-right text-sm text-slate-700 dark:text-zinc-300">{value}</dd>
     </div>
   );
 }
@@ -972,12 +972,12 @@ function ContactListSkeleton() {
           className="flex items-center gap-3 px-4 py-2.5"
           style={{ opacity: 1 - i * 0.08 }}
         >
-          <div className="h-10 w-10 rounded-full bg-slate-200 animate-pulse" />
+          <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-zinc-700 animate-pulse" />
           <div className="flex-1 space-y-1.5">
-            <div className="h-3 w-32 bg-slate-200 rounded animate-pulse" />
-            <div className="h-2.5 w-20 bg-slate-100 rounded animate-pulse" />
+            <div className="h-3 w-32 bg-slate-200 dark:bg-zinc-700 rounded animate-pulse" />
+            <div className="h-2.5 w-20 bg-slate-100 dark:bg-zinc-700 rounded animate-pulse" />
           </div>
-          <div className="h-3 w-24 bg-slate-100 rounded animate-pulse" />
+          <div className="h-3 w-24 bg-slate-100 dark:bg-zinc-700 rounded animate-pulse" />
         </div>
       ))}
     </div>
@@ -995,13 +995,13 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center px-6">
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
-        <Search className="h-7 w-7 text-slate-400" />
+      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 dark:bg-zinc-800">
+        <Search className="h-7 w-7 text-slate-400 dark:text-zinc-500" />
       </div>
-      <h3 className="text-base font-semibold text-slate-900">
+      <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100">
         {hasQuery ? 'No contacts match' : 'No contacts yet'}
       </h3>
-      <p className="mt-1 max-w-xs text-sm text-slate-500">
+      <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-zinc-400">
         {hasQuery
           ? 'Try adjusting your search or filter.'
           : 'Sync your WhatsApp session to import the contacts saved in your phone.'}
@@ -1010,7 +1010,7 @@ function EmptyState({
         <button
           onClick={onSync}
           disabled={syncing}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60 transition-all active:scale-[0.98]"
+          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 dark:bg-zinc-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 disabled:opacity-60 transition-all active:scale-[0.98]"
         >
           <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
           {syncing ? 'Syncing…' : 'Sync contacts'}

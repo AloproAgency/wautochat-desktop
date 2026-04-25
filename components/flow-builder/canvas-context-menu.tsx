@@ -64,20 +64,22 @@ function MenuItem({ icon: Icon, label, shortcut, danger, disabled, onClick, onCl
         }
       }}
       className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-[12px] font-medium transition-colors
-        ${danger ? 'text-red-500 hover:bg-red-50' : 'text-slate-700 hover:bg-slate-50'}
+        ${danger
+          ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30'
+          : 'text-slate-700 dark:text-zinc-100 hover:bg-slate-50 dark:hover:bg-zinc-700'}
         ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
     >
       <Icon className="w-3.5 h-3.5 shrink-0" />
       <span className="flex-1 text-left">{label}</span>
       {shortcut && (
-        <span className="text-[10px] text-slate-400 font-mono">{shortcut}</span>
+        <span className="text-[10px] text-slate-400 dark:text-zinc-400 font-mono">{shortcut}</span>
       )}
     </button>
   );
 }
 
 function Separator() {
-  return <div className="h-px bg-slate-100 my-1" />;
+  return <div className="h-px bg-slate-100 dark:bg-zinc-700 my-1" />;
 }
 
 export function CanvasContextMenu({ x, y, target, actions, canPaste, onClose }: Props) {
@@ -115,7 +117,7 @@ export function CanvasContextMenu({ x, y, target, actions, canPaste, onClose }: 
     <div
       ref={menuRef}
       style={{ left: clampedX, top: clampedY }}
-      className="fixed z-[1000] bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 min-w-[190px] select-none"
+      className="fixed z-[1000] bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-xl shadow-xl py-1.5 min-w-[190px] select-none"
     >
       {target.kind === 'pane' && (
         <>

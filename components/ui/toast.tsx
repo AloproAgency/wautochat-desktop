@@ -51,18 +51,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className="flex w-80 items-start gap-3 rounded-lg border border-wa-border bg-wa-panel p-4 shadow-lg animate-[slideUp_200ms_ease-out]"
+            className="flex w-80 items-start gap-3 rounded-lg border border-wa-border bg-wa-panel p-4 shadow-lg animate-[slideUp_200ms_ease-out] dark:border-zinc-700 dark:bg-zinc-800"
           >
             {t.variant && icons[t.variant]}
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-wa-text">{t.title}</p>
+              <p className="text-sm font-medium text-wa-text dark:text-zinc-100">{t.title}</p>
               {t.description && (
-                <p className="mt-0.5 text-xs text-wa-text-secondary">{t.description}</p>
+                <p className="mt-0.5 text-xs text-wa-text-secondary dark:text-zinc-300">{t.description}</p>
               )}
             </div>
             <button
               onClick={() => dismiss(t.id)}
-              className="shrink-0 rounded p-0.5 text-wa-text-muted hover:text-wa-text"
+              className="shrink-0 rounded p-0.5 text-wa-text-muted hover:text-wa-text dark:text-zinc-400 dark:hover:text-zinc-100"
             >
               <X className="h-4 w-4" />
             </button>

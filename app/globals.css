@@ -1,10 +1,11 @@
 @import "tailwindcss";
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
 :root {
-  --wa-green: #25D366;
-  --wa-green-dark: #128C7E;
-  --wa-teal: #075E54;
-  --wa-teal-dark: #054640;
+  --wa-green: #18181b;
+  --wa-green-dark: #09090b;
+  --wa-teal: #18181b;
+  --wa-teal-dark: #09090b;
   --wa-light-green: #DCF8C6;
   --wa-blue: #34B7F1;
   --wa-bg: #f0f2f5;
@@ -46,6 +47,21 @@
   --color-wa-success: var(--wa-success);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --wa-bg: #111113;
+  --wa-bg-chat: #111113;
+  --wa-bg-sidebar: #1c1c1f;
+  --wa-border: #3f3f46;
+  --wa-text: #fafafa;
+  --wa-text-secondary: #a1a1aa;
+  --wa-text-muted: #71717a;
+  --wa-header: #1c1c1f;
+  --wa-input-bg: #27272a;
+  --wa-hover: #27272a;
+  --wa-panel: #1c1c1f;
 }
 
 * {

@@ -5,13 +5,13 @@ import { Spinner } from './spinner';
 
 const variantClasses = {
   primary:
-    'bg-wa-teal text-white hover:bg-wa-teal-dark focus-visible:ring-wa-teal active:bg-wa-teal-dark',
+    'bg-wa-teal text-white hover:bg-wa-teal-dark focus-visible:ring-wa-teal active:bg-wa-teal-dark dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-100 dark:active:bg-zinc-200',
   secondary:
-    'border border-wa-border bg-white text-wa-text hover:bg-wa-hover focus-visible:ring-wa-teal active:bg-gray-100',
+    'border border-wa-border bg-white text-wa-text hover:bg-wa-hover focus-visible:ring-wa-teal active:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 dark:active:bg-zinc-700',
   danger:
     'bg-wa-danger text-white hover:bg-red-600 focus-visible:ring-wa-danger active:bg-red-700',
   ghost:
-    'bg-transparent text-wa-text-secondary hover:bg-wa-hover focus-visible:ring-wa-teal active:bg-gray-100',
+    'bg-transparent text-wa-text-secondary hover:bg-wa-hover focus-visible:ring-wa-teal active:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:active:bg-zinc-700',
 } as const;
 
 const sizeClasses = {

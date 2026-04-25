@@ -5,8 +5,9 @@ import { getDb } from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
 import manager from '@/lib/wppconnect-manager';
 import type { Contact } from '@/lib/types';
+import { getDataDir } from '@/lib/paths';
 
-const AVATAR_CACHE_DIR = path.join(process.cwd(), 'data', 'avatars');
+const AVATAR_CACHE_DIR = path.join(getDataDir(), 'avatars');
 
 /** Download an image URL and write it to the on-disk avatar cache. */
 async function cacheAvatar(phone: string, url: string): Promise<boolean> {

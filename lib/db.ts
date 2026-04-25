@@ -1,13 +1,19 @@
 import Database from "better-sqlite3";
 import path from "path";
+import fs from "fs";
+import { getDataDir } from "@/lib/paths";
 
-const DB_PATH = path.join(process.cwd(), "data", "wautochat.db");
+function getDbPath(): string {
+  const dir = getDataDir();
+  fs.mkdirSync(dir, { recursive: true });
+  return path.join(dir, "wautochat.db");
+}
 
 let db: Database.Database | null = null;
 
 export function getDb(): Database.Database {
   if (!db) {
-    db = new Database(DB_PATH);
+    db = new Database(getDbPath());
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     initializeDatabase(db);

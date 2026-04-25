@@ -2,771 +2,85 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Settings,
-  User,
-  Bell,
-  Webhook,
-  Workflow,
-  AlertTriangle,
-  Save,
-  Upload,
-  Trash2,
-  RotateCcw,
-  Download,
-  Zap,
-  Monitor,
-  Volume2,
-  Timer,
-  RefreshCw,
-  FileText,
-  MessageSquare,
-  Users,
-  Activity,
-  Send as SendIcon,
-  Check,
   BrainCircuit,
+  Palette,
+  Settings,
+  Database,
+  Check,
   Eye,
   EyeOff,
   KeyRound,
+  Zap,
+  Save,
+  Trash2,
+  RotateCcw,
+  Download,
+  Sun,
+  Moon,
+  Monitor,
+  Star,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  Timer,
+  Bell,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardBody, CardHeader, CardFooter } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
-import { Textarea } from '@/components/ui/textarea';
-import { useActiveSession } from '@/hooks/use-active-session';
 
-// ---- Toggle ----
-function Toggle({
-  checked,
-  onChange,
-  label,
-  description,
-}: {
-  checked: boolean;
-  onChange: (val: boolean) => void;
-  label?: string;
-  description?: string;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        {label && <span className="text-sm font-medium text-wa-text">{label}</span>}
-        {description && (
-          <p className="mt-0.5 text-xs text-wa-text-muted">{description}</p>
-        )}
-      </div>
-      <button
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors ${
-          checked ? 'bg-wa-teal' : 'bg-gray-300'
-        }`}
-      >
-        <span
-          className={`inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
-            checked ? 'translate-x-5.5' : 'translate-x-0.5'
-          }`}
-        />
-      </button>
-    </div>
-  );
-}
-
-interface AppSettings {
-  // Profile
-  profilePicUrl: string;
-  displayName: string;
-  statusMessage: string;
-
-  // Session
-  defaultDeviceName: string;
-  autoReconnect: boolean;
-  messageLogging: boolean;
-
-  // Notifications
-  enableNotifications: boolean;
-  notificationSound: boolean;
-  desktopNotifications: boolean;
-
-  // Webhook
-  webhookUrl: string;
-  webhookEvents: {
-    messages: boolean;
-    statusChanges: boolean;
-    groupEvents: boolean;
-    contactEvents: boolean;
-    connectionEvents: boolean;
-  };
-
-  // Flow Engine
-  defaultMessageDelay: number;
-  maxRetries: number;
-  typingIndicator: boolean;
-  typingDuration: number;
-}
-
-const DEFAULT_SETTINGS: AppSettings = {
-  profilePicUrl: '',
-  displayName: '',
-  statusMessage: '',
-  defaultDeviceName: 'WAutoChat',
-  autoReconnect: true,
-  messageLogging: true,
-  enableNotifications: true,
-  notificationSound: true,
-  desktopNotifications: false,
-  webhookUrl: '',
-  webhookEvents: {
-    messages: true,
-    statusChanges: true,
-    groupEvents: false,
-    contactEvents: false,
-    connectionEvents: true,
-  },
-  defaultMessageDelay: 1000,
-  maxRetries: 3,
-  typingIndicator: true,
-  typingDuration: 2000,
-};
-
-export default function SettingsPage() {
-  const activeSessionId = useActiveSession();
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [loaded, setLoaded] = useState(false);
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [savingWebhook, setSavingWebhook] = useState(false);
-  const [testingWebhook, setTestingWebhook] = useState(false);
-  const [webhookTestResult, setWebhookTestResult] = useState<
-    'success' | 'error' | null
-  >(null);
-
-  // Load settings from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('wautochat-settings');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        setSettings((prev) => ({ ...prev, ...parsed }));
-      }
-    } catch {
-      // use defaults
-    }
-    setLoaded(true);
-  }, []);
-
-  // Persist settings to localStorage whenever they change
-  useEffect(() => {
-    if (!loaded) return;
-    try {
-      localStorage.setItem('wautochat-settings', JSON.stringify(settings));
-    } catch {
-      // handle silently
-    }
-  }, [settings, loaded]);
-
-  const updateSettings = useCallback(
-    (updates: Partial<AppSettings>) => {
-      setSettings((prev) => ({ ...prev, ...updates }));
-    },
-    []
-  );
-
-  const updateWebhookEvent = useCallback(
-    (event: keyof AppSettings['webhookEvents'], value: boolean) => {
-      setSettings((prev) => ({
-        ...prev,
-        webhookEvents: { ...prev.webhookEvents, [event]: value },
-      }));
-    },
-    []
-  );
-
-  const handleSaveProfile = async () => {
-    if (!activeSessionId) return;
-    setSavingProfile(true);
-    try {
-      await fetch('/api/sessions/profile', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: activeSessionId,
-          displayName: settings.displayName,
-          statusMessage: settings.statusMessage,
-          profilePicUrl: settings.profilePicUrl,
-        }),
-      });
-    } catch {
-      // handle silently
-    } finally {
-      setSavingProfile(false);
-    }
-  };
-
-  const handleTestWebhook = async () => {
-    if (!settings.webhookUrl) return;
-    setTestingWebhook(true);
-    setWebhookTestResult(null);
-    try {
-      const res = await fetch('/api/webhooks/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: settings.webhookUrl }),
-      });
-      const data = await res.json();
-      setWebhookTestResult(data.success ? 'success' : 'error');
-    } catch {
-      setWebhookTestResult('error');
-    } finally {
-      setTestingWebhook(false);
-    }
-  };
-
-  const handleSaveWebhook = async () => {
-    setSavingWebhook(true);
-    try {
-      await fetch('/api/webhooks', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: activeSessionId,
-          url: settings.webhookUrl,
-          events: settings.webhookEvents,
-        }),
-      });
-    } catch {
-      // handle silently
-    } finally {
-      setSavingWebhook(false);
-    }
-  };
-
-  const handleDeleteAllData = async () => {
-    const firstConfirm = confirm(
-      'Are you sure you want to delete ALL data? This action cannot be undone.'
-    );
-    if (!firstConfirm) return;
-    const secondConfirm = confirm(
-      'This is your FINAL warning. All sessions, messages, contacts, and settings will be permanently deleted. Type OK to proceed.'
-    );
-    if (!secondConfirm) return;
-
-    try {
-      await fetch('/api/data', { method: 'DELETE' });
-      localStorage.removeItem('wautochat-settings');
-      setSettings(DEFAULT_SETTINGS);
-    } catch {
-      // handle silently
-    }
-  };
-
-  const handleResetSettings = () => {
-    if (!confirm('Reset all settings to defaults?')) return;
-    setSettings(DEFAULT_SETTINGS);
-    localStorage.removeItem('wautochat-settings');
-  };
-
-  const handleExportData = async () => {
-    try {
-      const res = await fetch('/api/data/export');
-      const data = await res.json();
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: 'application/json',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `wautochat-export-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch {
-      // If API fails, export local settings
-      const blob = new Blob([JSON.stringify(settings, null, 2)], {
-        type: 'application/json',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `wautochat-settings-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
-  };
-
-  if (!loaded) {
-    return (
-      <div className="flex flex-1 items-center justify-center py-24">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-wa-text">Settings</h1>
-        <p className="mt-1 text-sm text-wa-text-secondary">
-          Configure your WAutoChat preferences
-        </p>
-      </div>
-
-      <div className="mx-auto max-w-3xl space-y-6">
-        {/* Profile Section */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <User className="h-5 w-5 text-wa-teal" />
-              <h2 className="text-lg font-semibold text-wa-text">Profile</h2>
-            </div>
-            <p className="mt-1 text-sm text-wa-text-secondary">
-              Update your WhatsApp profile information
-            </p>
-          </CardHeader>
-          <CardBody className="space-y-4">
-            {/* Profile Picture */}
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-wa-text">
-                Profile Picture
-              </label>
-              <div className="flex items-center gap-4">
-                <div className="relative h-20 w-20 overflow-hidden rounded-full bg-gray-100">
-                  {settings.profilePicUrl ? (
-                    <img
-                      src={settings.profilePicUrl}
-                      alt="Profile"
-                      className="h-full w-full object-cover"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center">
-                      <User className="h-8 w-8 text-gray-400" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1">
-                  <Input
-                    value={settings.profilePicUrl}
-                    onChange={(e) =>
-                      updateSettings({ profilePicUrl: e.target.value })
-                    }
-                    placeholder="https://example.com/photo.jpg"
-                    prefix={<Upload className="h-4 w-4" />}
-                  />
-                  <p className="mt-1 text-xs text-wa-text-muted">
-                    Enter a URL for your profile picture
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <Input
-              label="Display Name"
-              value={settings.displayName}
-              onChange={(e) => updateSettings({ displayName: e.target.value })}
-              placeholder="Your display name"
-            />
-
-            <Textarea
-              label="Status Message"
-              value={settings.statusMessage}
-              onChange={(e) =>
-                updateSettings({ statusMessage: e.target.value })
-              }
-              placeholder="Hey there! I am using WAutoChat"
-              maxLength={139}
-              showCount
-            />
-          </CardBody>
-          <CardFooter className="flex justify-end">
-            <Button
-              icon={<Save className="h-4 w-4" />}
-              onClick={handleSaveProfile}
-              loading={savingProfile}
-            >
-              Save Profile
-            </Button>
-          </CardFooter>
-        </Card>
-
-        {/* Session Settings */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Monitor className="h-5 w-5 text-wa-teal" />
-              <h2 className="text-lg font-semibold text-wa-text">
-                Session Settings
-              </h2>
-            </div>
-            <p className="mt-1 text-sm text-wa-text-secondary">
-              Configure session behavior
-            </p>
-          </CardHeader>
-          <CardBody className="space-y-5">
-            <Input
-              label="Default Device Name"
-              value={settings.defaultDeviceName}
-              onChange={(e) =>
-                updateSettings({ defaultDeviceName: e.target.value })
-              }
-              placeholder="WAutoChat"
-            />
-            <Toggle
-              checked={settings.autoReconnect}
-              onChange={(val) => updateSettings({ autoReconnect: val })}
-              label="Auto-reconnect"
-              description="Automatically reconnect disconnected sessions"
-            />
-            <Toggle
-              checked={settings.messageLogging}
-              onChange={(val) => updateSettings({ messageLogging: val })}
-              label="Message Logging"
-              description="Log all incoming and outgoing messages"
-            />
-          </CardBody>
-        </Card>
-
-        {/* Notification Settings */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Bell className="h-5 w-5 text-wa-teal" />
-              <h2 className="text-lg font-semibold text-wa-text">
-                Notifications
-              </h2>
-            </div>
-            <p className="mt-1 text-sm text-wa-text-secondary">
-              Manage notification preferences
-            </p>
-          </CardHeader>
-          <CardBody className="space-y-5">
-            <Toggle
-              checked={settings.enableNotifications}
-              onChange={(val) =>
-                updateSettings({ enableNotifications: val })
-              }
-              label="Enable Notifications"
-              description="Receive notifications for new messages and events"
-            />
-            <Toggle
-              checked={settings.notificationSound}
-              onChange={(val) =>
-                updateSettings({ notificationSound: val })
-              }
-              label="Notification Sound"
-              description="Play a sound when notifications arrive"
-            />
-            <Toggle
-              checked={settings.desktopNotifications}
-              onChange={(val) =>
-                updateSettings({ desktopNotifications: val })
-              }
-              label="Desktop Notifications"
-              description="Show browser desktop notifications"
-            />
-          </CardBody>
-        </Card>
-
-        {/* Webhook Settings */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Webhook className="h-5 w-5 text-wa-teal" />
-              <h2 className="text-lg font-semibold text-wa-text">Webhooks</h2>
-            </div>
-            <p className="mt-1 text-sm text-wa-text-secondary">
-              Forward events to an external URL
-            </p>
-          </CardHeader>
-          <CardBody className="space-y-4">
-            <div>
-              <Input
-                label="Webhook URL"
-                value={settings.webhookUrl}
-                onChange={(e) =>
-                  updateSettings({ webhookUrl: e.target.value })
-                }
-                placeholder="https://example.com/webhook"
-                prefix={<Zap className="h-4 w-4" />}
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-wa-text">
-                Events to Forward
-              </label>
-              <div className="space-y-3 rounded-lg border border-wa-border p-4">
-                <WebhookEventCheckbox
-                  checked={settings.webhookEvents.messages}
-                  onChange={(val) => updateWebhookEvent('messages', val)}
-                  icon={<MessageSquare className="h-4 w-4" />}
-                  label="Messages"
-                  description="New messages received and sent"
-                />
-                <WebhookEventCheckbox
-                  checked={settings.webhookEvents.statusChanges}
-                  onChange={(val) => updateWebhookEvent('statusChanges', val)}
-                  icon={<Activity className="h-4 w-4" />}
-                  label="Status Changes"
-                  description="Message delivery and read receipts"
-                />
-                <WebhookEventCheckbox
-                  checked={settings.webhookEvents.groupEvents}
-                  onChange={(val) => updateWebhookEvent('groupEvents', val)}
-                  icon={<Users className="h-4 w-4" />}
-                  label="Group Events"
-                  description="Member joins, leaves, and group updates"
-                />
-                <WebhookEventCheckbox
-                  checked={settings.webhookEvents.contactEvents}
-                  onChange={(val) => updateWebhookEvent('contactEvents', val)}
-                  icon={<User className="h-4 w-4" />}
-                  label="Contact Events"
-                  description="New contacts and profile updates"
-                />
-                <WebhookEventCheckbox
-                  checked={settings.webhookEvents.connectionEvents}
-                  onChange={(val) =>
-                    updateWebhookEvent('connectionEvents', val)
-                  }
-                  icon={<RefreshCw className="h-4 w-4" />}
-                  label="Connection Events"
-                  description="Session connect, disconnect, and QR events"
-                />
-              </div>
-            </div>
-
-            {/* Test Result */}
-            {webhookTestResult && (
-              <div
-                className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm ${
-                  webhookTestResult === 'success'
-                    ? 'bg-wa-success/10 text-green-700'
-                    : 'bg-wa-danger/10 text-red-700'
-                }`}
-              >
-                {webhookTestResult === 'success' ? (
-                  <>
-                    <Check className="h-4 w-4" />
-                    Webhook test successful
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle className="h-4 w-4" />
-                    Webhook test failed. Check the URL and try again.
-                  </>
-                )}
-              </div>
-            )}
-          </CardBody>
-          <CardFooter className="flex justify-end gap-2">
-            <Button
-              variant="secondary"
-              icon={<SendIcon className="h-4 w-4" />}
-              onClick={handleTestWebhook}
-              loading={testingWebhook}
-              disabled={!settings.webhookUrl}
-            >
-              Test Webhook
-            </Button>
-            <Button
-              icon={<Save className="h-4 w-4" />}
-              onClick={handleSaveWebhook}
-              loading={savingWebhook}
-            >
-              Save Webhook
-            </Button>
-          </CardFooter>
-        </Card>
-
-        {/* Flow Engine Settings */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Workflow className="h-5 w-5 text-wa-teal" />
-              <h2 className="text-lg font-semibold text-wa-text">
-                Flow Engine
-              </h2>
-            </div>
-            <p className="mt-1 text-sm text-wa-text-secondary">
-              Configure automation behavior
-            </p>
-          </CardHeader>
-          <CardBody className="space-y-5">
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Default Delay (ms)"
-                type="number"
-                value={settings.defaultMessageDelay.toString()}
-                onChange={(e) =>
-                  updateSettings({
-                    defaultMessageDelay:
-                      parseInt(e.target.value) || 0,
-                  })
-                }
-                prefix={<Timer className="h-4 w-4" />}
-                helperText="Delay between consecutive messages"
-              />
-              <Input
-                label="Max Retries"
-                type="number"
-                value={settings.maxRetries.toString()}
-                onChange={(e) =>
-                  updateSettings({
-                    maxRetries: parseInt(e.target.value) || 0,
-                  })
-                }
-                helperText="Retry count for failed messages"
-              />
-            </div>
-            <Toggle
-              checked={settings.typingIndicator}
-              onChange={(val) => updateSettings({ typingIndicator: val })}
-              label="Typing Indicator"
-              description="Show typing indicator before sending messages"
-            />
-            {settings.typingIndicator && (
-              <Input
-                label="Typing Duration (ms)"
-                type="number"
-                value={settings.typingDuration.toString()}
-                onChange={(e) =>
-                  updateSettings({
-                    typingDuration: parseInt(e.target.value) || 0,
-                  })
-                }
-                prefix={<Timer className="h-4 w-4" />}
-                helperText="How long to show the typing indicator"
-              />
-            )}
-          </CardBody>
-        </Card>
-
-        {/* AI Provider Settings */}
-        <AiProviderCard />
-
-        {/* Danger Zone */}
-        <Card className="border-wa-danger/30">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-wa-danger" />
-              <h2 className="text-lg font-semibold text-wa-danger">
-                Danger Zone
-              </h2>
-            </div>
-            <p className="mt-1 text-sm text-wa-text-secondary">
-              Irreversible and destructive actions
-            </p>
-          </CardHeader>
-          <CardBody className="space-y-4">
-            <div className="flex items-center justify-between rounded-lg border border-wa-border p-4">
-              <div>
-                <h3 className="font-medium text-wa-text">Export Data</h3>
-                <p className="text-sm text-wa-text-secondary">
-                  Download all your data as JSON
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                icon={<Download className="h-4 w-4" />}
-                onClick={handleExportData}
-              >
-                Export
-              </Button>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg border border-wa-border p-4">
-              <div>
-                <h3 className="font-medium text-wa-text">Reset Settings</h3>
-                <p className="text-sm text-wa-text-secondary">
-                  Reset all settings to their default values
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                icon={<RotateCcw className="h-4 w-4" />}
-                onClick={handleResetSettings}
-              >
-                Reset
-              </Button>
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg border border-wa-danger/30 bg-wa-danger/5 p-4">
-              <div>
-                <h3 className="font-medium text-wa-danger">Delete All Data</h3>
-                <p className="text-sm text-wa-text-secondary">
-                  Permanently delete all sessions, messages, and settings
-                </p>
-              </div>
-              <Button
-                variant="danger"
-                icon={<Trash2 className="h-4 w-4" />}
-                onClick={handleDeleteAllData}
-              >
-                Delete All
-              </Button>
-            </div>
-          </CardBody>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-// ---- Webhook Event Checkbox ----
-function WebhookEventCheckbox({
-  checked,
-  onChange,
-  icon,
-  label,
-  description,
-}: {
-  checked: boolean;
-  onChange: (val: boolean) => void;
-  icon: React.ReactNode;
-  label: string;
-  description: string;
-}) {
-  return (
-    <label className="flex cursor-pointer items-start gap-3">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4 rounded border-wa-border text-wa-teal accent-wa-teal"
-      />
-      <div className="flex items-start gap-2">
-        <span className="mt-0.5 text-wa-text-muted">{icon}</span>
-        <div>
-          <span className="text-sm font-medium text-wa-text">{label}</span>
-          <p className="text-xs text-wa-text-muted">{description}</p>
-        </div>
-      </div>
-    </label>
-  );
-}
-
-// ---- AI Provider Card ----
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type AiProvider = 'groq' | 'openai' | 'anthropic' | 'gemini';
+type Theme = 'light' | 'dark' | 'system';
+type Tab = 'appearance' | 'ai' | 'general' | 'data';
 
-const AI_PROVIDERS: Array<{ value: AiProvider; label: string; docs: string }> = [
-  { value: 'groq', label: 'Groq (gratuit, très rapide)', docs: 'https://console.groq.com/keys' },
-  { value: 'gemini', label: 'Google Gemini (free tier généreux)', docs: 'https://aistudio.google.com/apikey' },
-  { value: 'openai', label: 'OpenAI (payant)', docs: 'https://platform.openai.com/api-keys' },
-  { value: 'anthropic', label: 'Anthropic Claude (payant)', docs: 'https://console.anthropic.com/settings/keys' },
-];
+// ── Provider metadata ─────────────────────────────────────────────────────────
+
+const PROVIDER_INFO: Record<AiProvider, {
+  label: string;
+  description: string;
+  docsUrl: string;
+  keyPlaceholder: string;
+  color: string;
+  bgColor: string;
+}> = {
+  groq: {
+    label: 'Groq',
+    description: 'Ultra-fast inference, generous free tier',
+    docsUrl: 'https://console.groq.com/keys',
+    keyPlaceholder: 'gsk_…',
+    color: '#F55036',
+    bgColor: '#FEF2F0',
+  },
+  openai: {
+    label: 'OpenAI',
+    description: 'GPT-4o and family, industry standard',
+    docsUrl: 'https://platform.openai.com/api-keys',
+    keyPlaceholder: 'sk-…',
+    color: '#10a37f',
+    bgColor: '#F0FFF9',
+  },
+  anthropic: {
+    label: 'Anthropic Claude',
+    description: 'Claude models, best for complex reasoning',
+    docsUrl: 'https://console.anthropic.com/settings/keys',
+    keyPlaceholder: 'sk-ant-…',
+    color: '#D97706',
+    bgColor: '#FFFBEB',
+  },
+  gemini: {
+    label: 'Google Gemini',
+    description: 'Gemini 2.0 Flash is fast and free',
+    docsUrl: 'https://aistudio.google.com/apikey',
+    keyPlaceholder: 'AIza…',
+    color: '#4285F4',
+    bgColor: '#EFF6FF',
+  },
+};
 
 const AI_MODELS: Record<AiProvider, { value: string; label: string }[]> = {
   groq: [
-    { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (rapide, défaut)' },
-    { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B (ultra-rapide)' },
+    { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (default)' },
+    { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B (fastest)' },
     { value: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B' },
     { value: 'gemma2-9b-it', label: 'Gemma 2 9B' },
   ],
@@ -787,67 +101,268 @@ const AI_MODELS: Record<AiProvider, { value: string; label: string }[]> = {
   ],
 };
 
-function AiProviderCard() {
-  const [loading, setLoading] = useState(true);
-  const [configured, setConfigured] = useState(false);
-  const [apiKeyMasked, setApiKeyMasked] = useState('');
-  const [provider, setProvider] = useState<AiProvider>('groq');
-  const [apiKey, setApiKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
-  const [model, setModel] = useState<string>(AI_MODELS.groq[0].value);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+// ── Theme hook ────────────────────────────────────────────────────────────────
 
-  // Load current settings on mount
+function useTheme() {
+  const [theme, setThemeState] = useState<Theme>('light');
+
   useEffect(() => {
-    fetch('/api/settings/ai')
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success && json.data) {
-          setConfigured(true);
-          setProvider(json.data.provider);
-          setModel(json.data.model);
-          setApiKeyMasked(json.data.apiKeyMasked);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    const stored = (localStorage.getItem('wautochat-theme') as Theme) || 'light';
+    setThemeState(stored);
   }, []);
 
-  // When provider changes, reset model to the first one for that provider
-  useEffect(() => {
-    if (!AI_MODELS[provider].some((m) => m.value === model)) {
-      setModel(AI_MODELS[provider][0].value);
+  const setTheme = useCallback((t: Theme) => {
+    setThemeState(t);
+    localStorage.setItem('wautochat-theme', t);
+    const isDark =
+      t === 'dark' ||
+      (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
+  }, []);
+
+  return { theme, setTheme };
+}
+
+// ── Shared components ─────────────────────────────────────────────────────────
+
+function Toggle({
+  checked,
+  onChange,
+  label,
+  description,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label?: string;
+  description?: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex-1 min-w-0">
+        {label && <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">{label}</span>}
+        {description && <p className="mt-0.5 text-xs text-slate-400 dark:text-zinc-500">{description}</p>}
+      </div>
+      <button
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${
+          checked ? 'bg-slate-900 dark:bg-zinc-600' : 'bg-slate-200 dark:bg-zinc-700'
+        }`}
+      >
+        <span
+          className={`inline-block h-4 w-4 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+            checked ? 'translate-x-4.5' : 'translate-x-0.5'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+function SectionHeader({ title, description }: { title: string; description?: string }) {
+  return (
+    <div className="mb-3">
+      <h2 className="text-sm font-semibold text-slate-700 dark:text-zinc-300">{title}</h2>
+      {description && <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">{description}</p>}
+    </div>
+  );
+}
+
+// ── Appearance tab ────────────────────────────────────────────────────────────
+
+function AppearanceTab() {
+  const { theme, setTheme } = useTheme();
+
+  const options: { value: Theme; label: string; description: string; icon: React.ElementType }[] = [
+    { value: 'light', label: 'Light', description: 'Clean white interface', icon: Sun },
+    { value: 'dark', label: 'Dark', description: 'Easy on the eyes at night', icon: Moon },
+    { value: 'system', label: 'System', description: "Follows your OS settings", icon: Monitor },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <SectionHeader title="Theme" description="Choose how WAutoChat looks on your device" />
+        <div className="grid grid-cols-3 gap-3">
+          {options.map(({ value, label, description, icon: Icon }) => (
+            <button
+              key={value}
+              onClick={() => setTheme(value)}
+              className={`relative flex flex-col items-center gap-3 rounded-xl border-2 p-5 text-center transition-all ${
+                theme === value
+                  ? 'border-slate-900 bg-slate-50 dark:border-zinc-500 dark:bg-zinc-700'
+                  : 'border-slate-200 bg-white hover:border-slate-300 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-gray-500'
+              }`}
+            >
+              {theme === value && (
+                <span className="absolute top-2.5 right-2.5 w-4 h-4 rounded-full bg-slate-900 dark:bg-zinc-500 flex items-center justify-center">
+                  <Check className="w-2.5 h-2.5 text-white" />
+                </span>
+              )}
+              <Icon className={`w-6 h-6 ${theme === value ? 'text-slate-900 dark:text-zinc-100' : 'text-slate-400 dark:text-zinc-500'}`} />
+              <div>
+                <div className={`text-sm font-semibold ${theme === value ? 'text-slate-900 dark:text-zinc-100' : 'text-slate-600 dark:text-zinc-400'}`}>
+                  {label}
+                </div>
+                <div className="text-[11px] text-slate-400 dark:text-zinc-500 mt-0.5">{description}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── AI Providers tab ──────────────────────────────────────────────────────────
+
+interface ProviderConfig {
+  model: string;
+  apiKeyMasked: string;
+}
+
+function AiProvidersTab() {
+  const [loading, setLoading] = useState(true);
+  const [configs, setConfigs] = useState<Record<AiProvider, ProviderConfig | null>>({
+    groq: null,
+    openai: null,
+    anthropic: null,
+    gemini: null,
+  });
+  const [defaultProvider, setDefaultProvider] = useState<AiProvider | null>(null);
+  const [expandedProvider, setExpandedProvider] = useState<AiProvider | null>(null);
+
+  const loadAll = useCallback(async () => {
+    try {
+      const r = await fetch('/api/settings/ai');
+      const j = await r.json();
+      if (j.success && j.data) {
+        setConfigs(j.data.providers);
+        setDefaultProvider(j.data.defaultProvider);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
     }
-  }, [provider, model]);
+  }, []);
+
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
+
+  const providers: AiProvider[] = ['groq', 'openai', 'anthropic', 'gemini'];
+  const configuredCount = providers.filter((p) => configs[p]).length;
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader
+        title="AI Providers"
+        description={
+          configuredCount > 0
+            ? `${configuredCount} provider${configuredCount > 1 ? 's' : ''} configured — keys are stored securely in the local SQLite database`
+            : 'Add at least one provider to enable AI nodes in your flows'
+        }
+      />
+
+      <div className="space-y-2">
+        {providers.map((provider) => (
+          <ProviderCard
+            key={provider}
+            provider={provider}
+            config={configs[provider]}
+            isDefault={defaultProvider === provider}
+            isExpanded={expandedProvider === provider}
+            onToggleExpand={() =>
+              setExpandedProvider((prev) => (prev === provider ? null : provider))
+            }
+            onSaved={loadAll}
+            onRemoved={loadAll}
+            onSetDefault={async () => {
+              await fetch('/api/settings/ai', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, setDefaultOnly: true }),
+              });
+              setDefaultProvider(provider);
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProviderCard({
+  provider,
+  config,
+  isDefault,
+  isExpanded,
+  onToggleExpand,
+  onSaved,
+  onRemoved,
+  onSetDefault,
+}: {
+  provider: AiProvider;
+  config: ProviderConfig | null;
+  isDefault: boolean;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onSaved: () => void;
+  onRemoved: () => void;
+  onSetDefault: () => void;
+}) {
+  const info = PROVIDER_INFO[provider];
+  const models = AI_MODELS[provider];
+
+  const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState(config?.model || models[0].value);
+  const [showKey, setShowKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  useEffect(() => {
+    if (isExpanded) {
+      setApiKey('');
+      setModel(config?.model || models[0].value);
+      setResult(null);
+      setShowKey(false);
+    }
+  }, [isExpanded, config, models]);
 
   async function handleSave() {
     if (!apiKey.trim()) {
-      setTestResult({ ok: false, msg: 'Entre une clé API avant de sauvegarder.' });
+      setResult({ ok: false, msg: 'API key is required' });
       return;
     }
     setSaving(true);
-    setTestResult(null);
+    setResult(null);
     try {
-      const res = await fetch('/api/settings/ai', {
+      const r = await fetch('/api/settings/ai', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, apiKey: apiKey.trim(), model }),
       });
-      const json = await res.json();
-      if (!json.success) {
-        setTestResult({ ok: false, msg: json.error || 'Erreur à la sauvegarde' });
+      const j = await r.json();
+      if (!j.success) {
+        setResult({ ok: false, msg: j.error || 'Save failed' });
         return;
       }
-      setConfigured(true);
+      setResult({ ok: true, msg: 'Saved successfully' });
       setApiKey('');
-      setTestResult({ ok: true, msg: 'Configuration sauvegardée !' });
-      // Refresh masked key preview
-      const gr = await fetch('/api/settings/ai').then((r) => r.json());
-      if (gr.success && gr.data) setApiKeyMasked(gr.data.apiKeyMasked);
+      onSaved();
     } catch (err) {
-      setTestResult({ ok: false, msg: err instanceof Error ? err.message : 'Erreur réseau' });
+      setResult({ ok: false, msg: err instanceof Error ? err.message : 'Network error' });
     } finally {
       setSaving(false);
     }
@@ -855,186 +370,493 @@ function AiProviderCard() {
 
   async function handleTest() {
     if (!apiKey.trim()) {
-      setTestResult({ ok: false, msg: 'Entre une clé API à tester.' });
+      setResult({ ok: false, msg: 'Enter an API key to test' });
       return;
     }
     setTesting(true);
-    setTestResult(null);
+    setResult(null);
     try {
-      const res = await fetch('/api/settings/ai/test', {
+      const r = await fetch('/api/settings/ai/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider, apiKey: apiKey.trim(), model }),
       });
-      const json = await res.json();
-      if (json.success) {
-        setTestResult({ ok: true, msg: `✅ Connexion OK. Réponse : ${json.data.sample}` });
+      const j = await r.json();
+      if (j.success) {
+        setResult({ ok: true, msg: `Connected — ${j.data.sample}` });
       } else {
-        setTestResult({ ok: false, msg: `❌ ${json.error}` });
+        setResult({ ok: false, msg: j.error || 'Test failed' });
       }
     } catch (err) {
-      setTestResult({ ok: false, msg: err instanceof Error ? err.message : 'Erreur réseau' });
+      setResult({ ok: false, msg: err instanceof Error ? err.message : 'Network error' });
     } finally {
       setTesting(false);
     }
   }
 
-  async function handleClear() {
-    if (!confirm('Supprimer la configuration IA ? Les nodes AI Response ne fonctionneront plus.')) return;
+  async function handleRemove() {
+    if (!confirm(`Remove ${info.label} configuration?`)) return;
     try {
-      await fetch('/api/settings/ai', { method: 'DELETE' });
-      setConfigured(false);
-      setApiKeyMasked('');
-      setApiKey('');
-      setTestResult(null);
+      await fetch(`/api/settings/ai?provider=${provider}`, { method: 'DELETE' });
+      onRemoved();
     } catch {
       // ignore
     }
   }
 
-  const providerMeta = AI_PROVIDERS.find((p) => p.value === provider);
-
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2">
-          <BrainCircuit className="h-5 w-5 text-wa-teal" />
-          <h2 className="text-lg font-semibold text-wa-text">AI Provider</h2>
+    <div className="bg-white dark:bg-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-700 overflow-hidden">
+      {/* Header row */}
+      <button
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors"
+        onClick={onToggleExpand}
+      >
+        {/* Provider color dot */}
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+          style={{ backgroundColor: info.bgColor }}
+        >
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: info.color }} />
         </div>
-        <p className="mt-1 text-sm text-wa-text-secondary">
-          Configure un provider pour activer le nœud <span className="font-medium">AI Response</span> dans tes flows.
-        </p>
-      </CardHeader>
-      <CardBody className="space-y-4">
-        {loading ? (
-          <div className="flex justify-center py-4"><Spinner /></div>
-        ) : (
-          <>
-            {configured && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 flex items-center gap-2">
-                <Check className="h-4 w-4 text-emerald-600 shrink-0" />
-                <p className="text-xs text-emerald-700 flex-1">
-                  Provider configuré : <span className="font-semibold">{AI_PROVIDERS.find((p) => p.value === provider)?.label}</span>
-                  {' · clé '}<span className="font-mono">{apiKeyMasked}</span>
-                </p>
-                <button
-                  onClick={handleClear}
-                  className="text-xs text-red-600 hover:underline"
-                  type="button"
-                >
-                  Supprimer
-                </button>
-              </div>
-            )}
 
-            <div>
-              <label className="block text-sm font-medium text-wa-text mb-1.5">Provider</label>
-              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {AI_PROVIDERS.map((p) => (
-                  <button
-                    key={p.value}
-                    type="button"
-                    onClick={() => setProvider(p.value)}
-                    className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                      provider === p.value
-                        ? 'border-wa-teal bg-wa-teal/5 text-wa-text ring-1 ring-wa-teal/30'
-                        : 'border-wa-border bg-white text-wa-text hover:bg-gray-50'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-              {providerMeta && (
-                <p className="mt-1.5 text-xs text-wa-text-muted">
-                  Obtenir une clé :{' '}
-                  <a
-                    href={providerMeta.docs}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-wa-teal hover:underline"
-                  >
-                    {providerMeta.docs.replace(/^https?:\/\//, '')}
-                  </a>
-                </p>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-semibold text-slate-800 dark:text-zinc-100">{info.label}</span>
+            {isDefault && config && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-900 dark:bg-zinc-700 text-white">
+                <Star className="w-2.5 h-2.5" />
+                DEFAULT
+              </span>
+            )}
+            {config && !isDefault && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800">
+                <Check className="w-2.5 h-2.5" />
+                Configured
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5 truncate">
+            {config
+              ? `${config.apiKeyMasked} · ${config.model}`
+              : info.description}
+          </p>
+        </div>
+
+        {isExpanded ? (
+          <ChevronUp className="w-4 h-4 text-slate-400 dark:text-zinc-500 shrink-0" />
+        ) : (
+          <ChevronDown className="w-4 h-4 text-slate-400 dark:text-zinc-500 shrink-0" />
+        )}
+      </button>
+
+      {/* Expanded form */}
+      {isExpanded && (
+        <div className="border-t border-slate-100 dark:border-zinc-700 bg-slate-50/60 dark:bg-zinc-900/40 p-4 space-y-4">
+          {/* API Key field */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">
+              API Key
+            </label>
+            <div className="relative">
+              <input
+                type={showKey ? 'text' : 'password'}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={
+                  config
+                    ? `Replace current (${config.apiKeyMasked})`
+                    : info.keyPlaceholder
+                }
+                className="w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 pr-9 text-sm text-slate-800 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:border-slate-400 dark:focus:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-slate-100 dark:focus:ring-zinc-700 transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500 hover:text-slate-600 dark:hover:text-gray-300 transition-colors"
+              >
+                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-400 dark:text-zinc-500 flex items-center gap-1">
+              <KeyRound className="w-3 h-3 shrink-0" />
+              Stored in local SQLite, never sent to the browser.{' '}
+              <a
+                href={info.docsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-600 dark:text-zinc-400 underline underline-offset-2 hover:text-slate-800 dark:hover:text-zinc-200"
+              >
+                Get API key ↗
+              </a>
+            </p>
+          </div>
+
+          {/* Model */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wide">
+              Default model
+            </label>
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-slate-800 dark:text-zinc-100 focus:border-slate-400 dark:focus:border-zinc-500 focus:outline-none transition-all"
+            >
+              {models.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Result banner */}
+          {result && (
+            <div
+              className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${
+                result.ok
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400'
+                  : 'bg-red-50 border border-red-200 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400'
+              }`}
+            >
+              {result.ok ? (
+                <Check className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              )}
+              <span>{result.msg}</span>
+            </div>
+          )}
+
+          {/* Action row */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {config && !isDefault && (
+                <button
+                  onClick={onSetDefault}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  <Star className="w-3.5 h-3.5" />
+                  Set as default
+                </button>
+              )}
+              {config && (
+                <button
+                  onClick={handleRemove}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Remove
+                </button>
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-wa-text mb-1.5">API Key</label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type={showKey ? 'text' : 'password'}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder={configured ? `Remplacer (actuel : ${apiKeyMasked})` : 'sk-... / gsk_... / ...'}
-                    className="w-full rounded-lg border border-wa-border bg-white px-3 py-2 pr-9 text-sm text-wa-text placeholder:text-wa-text-muted focus:border-wa-teal focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowKey(!showKey)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-wa-text-muted hover:text-wa-text"
-                  >
-                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-              <p className="mt-1 text-xs text-wa-text-muted flex items-center gap-1">
-                <KeyRound className="h-3 w-3" />
-                La clé est stockée localement dans la base SQLite, jamais envoyée au navigateur.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-wa-text mb-1.5">Modèle par défaut</label>
-              <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="w-full rounded-lg border border-wa-border bg-white px-3 py-2 text-sm text-wa-text focus:border-wa-teal focus:outline-none"
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleTest}
+                disabled={!apiKey.trim() || testing || saving}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-700 disabled:opacity-40 transition-colors"
               >
-                {AI_MODELS[provider].map((m) => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-wa-text-muted">
-                Tu pourras toujours override ce modèle dans chaque nœud AI Response.
-              </p>
-            </div>
-
-            {testResult && (
-              <div
-                className={`rounded-lg border px-3 py-2 text-xs ${
-                  testResult.ok
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-red-200 bg-red-50 text-red-700'
-                }`}
+                {testing ? <Spinner size="sm" /> : <Zap className="w-3.5 h-3.5" />}
+                Test
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={!apiKey.trim() || saving || testing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 dark:bg-zinc-700 text-white text-xs font-semibold hover:bg-slate-700 dark:hover:bg-zinc-600 disabled:opacity-40 transition-colors"
               >
-                {testResult.msg}
+                {saving ? <Spinner size="sm" /> : <Save className="w-3.5 h-3.5" />}
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── General tab ───────────────────────────────────────────────────────────────
+
+interface GeneralSettings {
+  defaultMessageDelay: number;
+  typingIndicator: boolean;
+  typingDuration: number;
+  maxRetries: number;
+  enableNotifications: boolean;
+  notificationSound: boolean;
+}
+
+const DEFAULT_GENERAL: GeneralSettings = {
+  defaultMessageDelay: 1000,
+  typingIndicator: true,
+  typingDuration: 2000,
+  maxRetries: 3,
+  enableNotifications: true,
+  notificationSound: true,
+};
+
+function GeneralTab() {
+  const [settings, setSettings] = useState<GeneralSettings>(DEFAULT_GENERAL);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('wautochat-settings');
+      if (stored) setSettings((prev) => ({ ...prev, ...JSON.parse(stored) }));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const update = useCallback((updates: Partial<GeneralSettings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...updates };
+      try {
+        localStorage.setItem('wautochat-settings', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      {/* Flow Engine */}
+      <div>
+        <SectionHeader
+          title="Flow Engine"
+          description="Default behavior applied to all automation flows"
+        />
+        <div className="bg-white dark:bg-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-700 divide-y divide-slate-100 dark:divide-gray-700">
+          <div className="flex items-center gap-4 px-4 py-3.5">
+            <Timer className="w-4 h-4 text-slate-400 dark:text-zinc-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-800 dark:text-zinc-100">Message delay</div>
+              <div className="text-xs text-slate-400 dark:text-zinc-500">Pause between consecutive messages (ms)</div>
+            </div>
+            <input
+              type="number"
+              value={settings.defaultMessageDelay}
+              onChange={(e) => update({ defaultMessageDelay: parseInt(e.target.value) || 0 })}
+              className="w-24 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 px-3 py-1.5 text-sm text-right focus:border-slate-400 dark:focus:border-zinc-500 focus:outline-none"
+              min={0}
+              step={100}
+            />
+          </div>
+
+          <div className="px-4 py-3.5">
+            <Toggle
+              checked={settings.typingIndicator}
+              onChange={(v) => update({ typingIndicator: v })}
+              label="Typing indicator"
+              description="Show typing status before sending messages"
+            />
+          </div>
+
+          {settings.typingIndicator && (
+            <div className="flex items-center gap-4 px-4 py-3.5">
+              <div className="w-4 h-4 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-slate-800 dark:text-zinc-100">Typing duration</div>
+                <div className="text-xs text-slate-400 dark:text-zinc-500">How long to show typing (ms)</div>
               </div>
-            )}
-          </>
-        )}
-      </CardBody>
-      <CardFooter className="flex justify-end gap-2">
-        <Button
-          variant="secondary"
-          onClick={handleTest}
-          loading={testing}
-          disabled={!apiKey.trim() || saving}
-          icon={<Zap className="h-4 w-4" />}
-        >
-          Tester la clé
-        </Button>
-        <Button
-          onClick={handleSave}
-          loading={saving}
-          disabled={!apiKey.trim() || testing}
-          icon={<Save className="h-4 w-4" />}
-        >
-          Sauvegarder
-        </Button>
-      </CardFooter>
-    </Card>
+              <input
+                type="number"
+                value={settings.typingDuration}
+                onChange={(e) => update({ typingDuration: parseInt(e.target.value) || 0 })}
+                className="w-24 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 px-3 py-1.5 text-sm text-right focus:border-slate-400 dark:focus:border-zinc-500 focus:outline-none"
+                min={0}
+                step={500}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-4 px-4 py-3.5">
+            <div className="w-4 h-4 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-800 dark:text-zinc-100">Max retries</div>
+              <div className="text-xs text-slate-400 dark:text-zinc-500">Retry count for failed message sends</div>
+            </div>
+            <input
+              type="number"
+              value={settings.maxRetries}
+              onChange={(e) => update({ maxRetries: parseInt(e.target.value) || 0 })}
+              className="w-24 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 px-3 py-1.5 text-sm text-right focus:border-slate-400 dark:focus:border-zinc-500 focus:outline-none"
+              min={0}
+              max={10}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Notifications */}
+      <div>
+        <SectionHeader title="Notifications" description="How you receive alerts from the app" />
+        <div className="bg-white dark:bg-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-700 divide-y divide-slate-100 dark:divide-gray-700">
+          <div className="flex items-center gap-4 px-4 py-3.5">
+            <Bell className="w-4 h-4 text-slate-400 dark:text-zinc-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <Toggle
+                checked={settings.enableNotifications}
+                onChange={(v) => update({ enableNotifications: v })}
+                label="Enable notifications"
+                description="Receive alerts for new messages and events"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-4 px-4 py-3.5">
+            <div className="w-4 h-4 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <Toggle
+                checked={settings.notificationSound}
+                onChange={(v) => update({ notificationSound: v })}
+                label="Sound"
+                description="Play a sound when notifications arrive"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {saved && (
+        <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
+          <Check className="w-3.5 h-3.5" />
+          Saved automatically
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Data tab ──────────────────────────────────────────────────────────────────
+
+function DataTab() {
+  async function handleExport() {
+    try {
+      const res = await fetch('/api/data/export');
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `wautochat-export-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // ignore
+    }
+  }
+
+  function handleReset() {
+    if (!confirm('Reset all settings to defaults?')) return;
+    localStorage.removeItem('wautochat-settings');
+    localStorage.removeItem('wautochat-theme');
+    document.documentElement.dataset.theme = 'light';
+    window.location.reload();
+  }
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader title="Data Management" />
+      <div className="bg-white dark:bg-zinc-800 rounded-xl border border-slate-200 dark:border-zinc-700 divide-y divide-slate-100 dark:divide-gray-700">
+        <div className="flex items-center justify-between px-4 py-4">
+          <div>
+            <div className="text-sm font-medium text-slate-800 dark:text-zinc-100">Export data</div>
+            <div className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">Download all data as a JSON file</div>
+          </div>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between px-4 py-4">
+          <div>
+            <div className="text-sm font-medium text-slate-800 dark:text-zinc-100">Reset settings</div>
+            <div className="text-xs text-slate-400 dark:text-zinc-500 mt-0.5">Restore all preferences to their defaults</div>
+          </div>
+          <button
+            onClick={handleReset}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-700 transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: 'appearance', label: 'Appearance', icon: Palette },
+  { id: 'ai', label: 'AI Providers', icon: BrainCircuit },
+  { id: 'general', label: 'General', icon: Settings },
+  { id: 'data', label: 'Data', icon: Database },
+];
+
+export default function SettingsPage() {
+  const [tab, setTab] = useState<Tab>('ai');
+
+  // Apply stored theme on mount
+  useEffect(() => {
+    try {
+      const stored = (localStorage.getItem('wautochat-theme') as Theme) || 'light';
+      const isDark =
+        stored === 'dark' ||
+        (stored === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  return (
+    <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none min-h-screen bg-slate-50 dark:bg-zinc-900">
+      {/* Sticky header */}
+      <header className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-700">
+        <div className="flex items-center px-5 h-14">
+          <h1 className="text-base font-semibold text-slate-900 dark:text-zinc-100">Settings</h1>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex border-t border-slate-100 dark:border-zinc-700 px-4 gap-0.5 overflow-x-auto">
+          {TABS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
+                tab === id
+                  ? 'border-slate-900 text-slate-900 dark:border-zinc-300 dark:text-zinc-100'
+                  : 'border-transparent text-slate-500 dark:text-zinc-500 hover:text-slate-700 dark:hover:text-gray-300 hover:border-slate-300 dark:hover:border-gray-600'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      {/* Content */}
+      <div className="flex-1 p-5">
+        <div className="mx-auto max-w-2xl">
+          {tab === 'appearance' && <AppearanceTab />}
+          {tab === 'ai' && <AiProvidersTab />}
+          {tab === 'general' && <GeneralTab />}
+          {tab === 'data' && <DataTab />}
+        </div>
+      </div>
+    </div>
   );
 }

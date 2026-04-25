@@ -2,19 +2,15 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import {
-  Smartphone,
   Wifi,
   Users,
   MessageSquare,
   GitBranch,
   Zap,
-  UsersRound,
-  Megaphone,
   Plus,
   Send,
   RefreshCw,
 } from 'lucide-react';
-import { StatCard } from '@/components/ui/stat-card';
 import { Card, CardHeader, CardBody } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/avatar';
@@ -103,15 +99,43 @@ export default function DashboardPage() {
     }
   };
 
-  const statCards = [
-    { label: 'Total Sessions', value: stats?.totalSessions ?? 0, icon: <Smartphone className="h-5 w-5" /> },
-    { label: 'Active Sessions', value: stats?.activeSessions ?? 0, icon: <Wifi className="h-5 w-5" /> },
-    { label: 'Total Contacts', value: stats?.totalContacts ?? 0, icon: <Users className="h-5 w-5" /> },
-    { label: 'Messages (24h)', value: stats?.messagesLast24h ?? 0, icon: <MessageSquare className="h-5 w-5" /> },
-    { label: 'Total Flows', value: stats?.totalFlows ?? 0, icon: <GitBranch className="h-5 w-5" /> },
-    { label: 'Active Flows', value: stats?.activeFlows ?? 0, icon: <Zap className="h-5 w-5" /> },
-    { label: 'Total Groups', value: stats?.totalGroups ?? 0, icon: <UsersRound className="h-5 w-5" /> },
-    { label: 'Total Broadcasts', value: 0, icon: <Megaphone className="h-5 w-5" /> },
+  const heroStats = [
+    {
+      label: 'Sessions actives',
+      value: stats?.activeSessions ?? 0,
+      sub: `${stats?.totalSessions ?? 0} au total`,
+      icon: Wifi,
+      gradient: 'from-slate-800 to-slate-600',
+      iconBg: 'bg-white/10',
+      ratio: stats?.totalSessions ? (stats.activeSessions / stats.totalSessions) : 0,
+    },
+    {
+      label: 'Messages (24h)',
+      value: stats?.messagesLast24h ?? 0,
+      sub: 'dernières 24 heures',
+      icon: MessageSquare,
+      gradient: 'from-orange-500 to-orange-700',
+      iconBg: 'bg-white/10',
+      ratio: null,
+    },
+    {
+      label: 'Contacts',
+      value: stats?.totalContacts ?? 0,
+      sub: 'dans la base',
+      icon: Users,
+      gradient: 'from-zinc-800 to-zinc-900',
+      iconBg: 'bg-white/10',
+      ratio: null,
+    },
+    {
+      label: 'Flows actifs',
+      value: stats?.activeFlows ?? 0,
+      sub: `${stats?.totalFlows ?? 0} configurés`,
+      icon: Zap,
+      gradient: 'from-emerald-600 to-teal-700',
+      iconBg: 'bg-white/10',
+      ratio: stats?.totalFlows ? (stats.activeFlows / stats.totalFlows) : 0,
+    },
   ];
 
   if (loading) {
@@ -123,35 +147,110 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-wa-text">Dashboard</h1>
-          <p className="mt-1 text-sm text-wa-text-secondary">
-            Overview of your WhatsApp automation platform
-          </p>
+    <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none bg-slate-50 dark:bg-zinc-900 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+      <header className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-700">
+        <div className="flex items-center gap-3 px-5 h-14">
+          <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Dashboard</h1>
+          <button
+            onClick={fetchDashboardData}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 h-8 px-3 text-[13px] font-medium text-slate-700 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-700 active:scale-[0.98] transition-all"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<RefreshCw className="h-4 w-4" />}
-          onClick={fetchDashboardData}
-        >
-          Refresh
-        </Button>
+      </header>
+
+      <div className="p-5 space-y-5">
+      {/* Hero stat cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {heroStats.map((s) => {
+          const Icon = s.icon;
+          return (
+            <div
+              key={s.label}
+              className={`relative overflow-hidden rounded-xl bg-linear-to-br ${s.gradient} px-4 py-3.5 text-white shadow-sm`}
+            >
+              <div className="pointer-events-none absolute -right-4 -top-4 h-20 w-20 rounded-full bg-white/5" />
+
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-white/75 truncate uppercase tracking-wide">{s.label}</p>
+                  <p className="mt-1 text-2xl font-bold tracking-tight leading-none">
+                    {s.value.toLocaleString()}
+                  </p>
+                  <p className="mt-1 text-[11px] font-medium text-white/65">{s.sub}</p>
+                </div>
+                <div className={`shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-lg ${s.iconBg}`}>
+                  <Icon className="h-4 w-4 text-white" />
+                </div>
+              </div>
+
+              {s.ratio !== null && (
+                <div className="mt-3 h-0.5 w-full rounded-full bg-white/15">
+                  <div
+                    className="h-0.5 rounded-full bg-white/60 transition-all"
+                    style={{ width: `${Math.round((s.ratio ?? 0) * 100)}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {statCards.map((stat) => (
-          <StatCard
-            key={stat.label}
-            label={stat.label}
-            value={stat.value}
-            icon={stat.icon}
-          />
-        ))}
-      </div>
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-base font-semibold text-wa-text">Quick Actions</h2>
+        </CardHeader>
+        <CardBody>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/sessions">
+              <Button variant="secondary" icon={<Plus className="h-4 w-4" />}>
+                New Session
+              </Button>
+            </Link>
+            <Link href="/flows">
+              <Button variant="secondary" icon={<GitBranch className="h-4 w-4" />}>
+                Create Flow
+              </Button>
+            </Link>
+            <Link href="/broadcasts">
+              <Button variant="secondary" icon={<Send className="h-4 w-4" />}>
+                Send Broadcast
+              </Button>
+            </Link>
+            <Button
+              variant="secondary"
+              icon={<RefreshCw className="h-4 w-4" />}
+              onClick={async () => {
+                if (!activeSessionId) {
+                  toast({ title: 'Select a session first', variant: 'error' });
+                  return;
+                }
+                try {
+                  const res = await fetch('/api/contacts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId: activeSessionId }),
+                  });
+                  if (res.ok) {
+                    toast({ title: 'Contacts sync started', variant: 'success' });
+                  } else {
+                    const data = await res.json().catch(() => null);
+                    toast({ title: data?.error || 'Failed to sync contacts', variant: 'error' });
+                  }
+                } catch {
+                  toast({ title: 'Failed to sync contacts', variant: 'error' });
+                }
+              }}
+            >
+              Sync Contacts
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
 
       {/* Two Column Section */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -239,58 +338,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-base font-semibold text-wa-text">Quick Actions</h2>
-        </CardHeader>
-        <CardBody>
-          <div className="flex flex-wrap gap-3">
-            <Link href="/sessions">
-              <Button variant="secondary" icon={<Plus className="h-4 w-4" />}>
-                New Session
-              </Button>
-            </Link>
-            <Link href="/flows">
-              <Button variant="secondary" icon={<GitBranch className="h-4 w-4" />}>
-                Create Flow
-              </Button>
-            </Link>
-            <Link href="/broadcasts">
-              <Button variant="secondary" icon={<Send className="h-4 w-4" />}>
-                Send Broadcast
-              </Button>
-            </Link>
-            <Button
-              variant="secondary"
-              icon={<RefreshCw className="h-4 w-4" />}
-              onClick={async () => {
-                if (!activeSessionId) {
-                  toast({ title: 'Select a session first', variant: 'error' });
-                  return;
-                }
-                try {
-                  const res = await fetch('/api/contacts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sessionId: activeSessionId }),
-                  });
-                  if (res.ok) {
-                    toast({ title: 'Contacts sync started', variant: 'success' });
-                  } else {
-                    const data = await res.json().catch(() => null);
-                    toast({ title: data?.error || 'Failed to sync contacts', variant: 'error' });
-                  }
-                } catch {
-                  toast({ title: 'Failed to sync contacts', variant: 'error' });
-                }
-              }}
-            >
-              Sync Contacts
-            </Button>
-          </div>
-        </CardBody>
-      </Card>
+      </div>
     </div>
   );
 }

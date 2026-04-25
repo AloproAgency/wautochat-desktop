@@ -6,9 +6,17 @@ import os from 'os';
 import { applyTriggerFilters } from '@/lib/trigger-filters';
 import type { Session, SessionStatus, Flow } from '@/lib/types';
 import { executeFlow, resumeFlowAfterWait } from '@/lib/flow-engine';
+import { getDataDir } from '@/lib/paths';
 
-// Store wppconnect tokens outside the project to avoid Turbopack crashes
-const TOKENS_PATH = path.join(os.tmpdir(), 'wautochat-tokens');
+// In Electron, browser sessions persist in userData/browser-sessions so they
+// survive across app restarts. In dev, fall back to /tmp to avoid Turbopack crashes.
+function getTokensPath(): string {
+  const dataDir = process.env.WAUTOCHAT_DATA_DIR;
+  return dataDir
+    ? path.join(dataDir, 'browser-sessions')
+    : path.join(os.tmpdir(), 'wautochat-tokens');
+}
+const TOKENS_PATH = getTokensPath();
 
 import fs from 'fs';
 
@@ -85,11 +93,12 @@ async function terminateLockedBrowser(sessionId: string, reason: string): Promis
   if (isPidRunning(pid)) {
     console.log(`[${sessionId}] ${reason}. Stopping orphaned browser PID ${pid}...`);
     try {
-      process.kill(pid);
+      process.kill(pid, 'SIGKILL');
     } catch {
       // Browser may already be exiting.
     }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    // Give Chromium time to release its userDataDir lock.
+    await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 
   clearLock(sessionId);
@@ -126,25 +135,81 @@ class WppConnectManager {
   async autoReconnect(): Promise<void> {
     if (this.autoReconnectDone) return;
     this.autoReconnectDone = true;
+    await this.reconnectAllSessions('startup');
+  }
 
+  /**
+   * Reconnect all non-failed sessions regardless of the autoReconnect guard.
+   * Called on system resume from sleep — force-closes any zombie browsers first
+   * so getConnectionState() can't return a stale CONNECTED result.
+   */
+  async reconnectAll(): Promise<void> {
     const db = getDb();
     const rows = db.prepare(
-      `SELECT id FROM sessions WHERE status = 'connected' ORDER BY updated_at DESC`
+      `SELECT id FROM sessions WHERE status NOT IN ('failed') ORDER BY updated_at DESC`
     ).all() as { id: string }[];
 
-    // Clean up orphaned browsers from previous dev server runs
-    // These are browsers that were opened by a prior Node.js process that's now dead
+    console.log(`[reconnectAll] force-closing ${rows.length} session(s) then reconnecting`);
+    if (rows.length === 0) return;
+
+    // Force-close every running browser so we start completely fresh.
+    // This avoids getConnectionState() returning a stale CONNECTED after sleep.
     for (const row of rows) {
-      await terminateLockedBrowser(row.id, 'Cleaning up orphaned browser from previous run');
+      const active = this.sessions.get(row.id);
+      if (active) {
+        try { await active.client.close(); } catch { /* ignore */ }
+        this.sessions.delete(row.id);
+      }
+      await terminateLockedBrowser(row.id, 'Force-close before resume reconnect');
+      this.updateSessionStatus(row.id, 'disconnected');
     }
 
-    // Start sessions sequentially with 3s delay to avoid overload
+    // Small pause to let OS release file handles.
+    await new Promise((r) => setTimeout(r, 1000));
+
+    // Mark all as 'connecting' for UI feedback.
     for (const row of rows) {
-      void this.reconnectSession(row.id).catch((error) => {
-        console.error(`[${row.id}] Auto-reconnect failed:`, error);
-      });
-      await new Promise((r) => setTimeout(r, 3000));
+      this.updateSessionStatus(row.id, 'connecting');
     }
+
+    // Fire-and-forget with 3 s stagger.
+    void (async () => {
+      for (const row of rows) {
+        console.log(`[reconnectAll] reconnecting ${row.id}`);
+        void this.reconnectSession(row.id).catch((error) => {
+          console.error(`[${row.id}] Reconnect failed (resume):`, error);
+        });
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    })();
+  }
+
+  private async reconnectAllSessions(reason: string): Promise<void> {
+    const db = getDb();
+    const rows = db.prepare(
+      `SELECT id FROM sessions WHERE status IN ('connected', 'connecting', 'disconnected') ORDER BY updated_at DESC`
+    ).all() as { id: string }[];
+
+    console.log(`[reconnectAllSessions:${reason}] found ${rows.length} session(s)`);
+    if (rows.length === 0) return;
+
+    for (const row of rows) {
+      await terminateLockedBrowser(row.id, `Cleaning up browser before ${reason} reconnect`);
+    }
+
+    for (const row of rows) {
+      this.updateSessionStatus(row.id, 'connecting');
+    }
+
+    void (async () => {
+      for (const row of rows) {
+        console.log(`[reconnectAllSessions:${reason}] reconnecting ${row.id}`);
+        void this.reconnectSession(row.id).catch((error) => {
+          console.error(`[${row.id}] Reconnect failed (${reason}):`, error);
+        });
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    })();
   }
 
   async createSession(
@@ -197,16 +262,52 @@ class WppConnectManager {
           // where arrow functions can't be used (we rely on `.call(this,...)` binding).
           const managerRef = this;
 
-          // When pair code mode is requested we do NOT pass phoneNumber to create().
-          // Instead we intercept catchQR (fires once WhatsApp has rendered the canvas
-          // and has a valid QR URL) and call this.loginByCode() from there, using the
-          // HostLayer `this` that wppconnect passes via .call(this, ...).
-          const catchQRCallback = phoneNumber
-            ? function (this: { loginByCode: (p: string) => Promise<void> }) {
-                console.log(`[${sessionId}] QR canvas ready — requesting pair code for ${phoneNumber}`);
-                this.loginByCode(phoneNumber).catch((err: Error) => {
-                  console.error(`[${sessionId}] loginByCode failed:`, err);
-                });
+          // Sanitize phone number: strip +, spaces, dashes — wa-js expects digits only
+          const sanitizedPhone = phoneNumber ? phoneNumber.replace(/\D/g, '') : undefined;
+
+          // In pair code mode: catchQR fires once the QR canvas is ready (this = HostLayer,
+          // which has this.page). We call WPP.conn.genLinkDeviceCodeForPhoneNumber directly
+          // via page.evaluate — bypasses wppconnect's internal scrapeImg dependency.
+          // In QR mode: catchQR stores the base64 normally.
+          const catchQRCallback = sanitizedPhone
+            ? async function (this: { page: { evaluate: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) => Promise<unknown> } }) {
+                console.log(`[${sessionId}] QR canvas ready — generating pair code for ${sanitizedPhone}`);
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                  type Result = { ok: true; code: string } | { ok: false; rateLimit: boolean; detail: string };
+                  const result = await this.page.evaluate(async (phone: unknown) => {
+                    try {
+                      type WPPWin = { WPP: { conn: { isRegistered: () => boolean; genLinkDeviceCodeForPhoneNumber: (p: string) => Promise<string> } } };
+                      const WPP = (window as unknown as WPPWin).WPP;
+                      // Wait until the WS is stable: isRegistered() returns false without throwing
+                      for (let i = 0; i < 40; i++) {
+                        try { if (WPP.conn.isRegistered() === false) break; } catch { /* not ready yet */ }
+                        await new Promise(r => setTimeout(r, 250));
+                      }
+                      const code = await WPP.conn.genLinkDeviceCodeForPhoneNumber(phone as string);
+                      return { ok: true, code } as { ok: true; code: string };
+                    } catch (err) {
+                      const detail = (() => { try { return JSON.stringify(err); } catch { return String(err); } })();
+                      const rateLimit = detail.includes('rate-overlimit') || detail.includes('429') || detail.includes('RateOverlimit');
+                      return { ok: false, rateLimit, detail } as { ok: false; rateLimit: boolean; detail: string };
+                    }
+                  }, sanitizedPhone) as Result;
+
+                  if (result.ok) {
+                    console.log(`[${sessionId}] Pair code generated on attempt ${attempt}: ${result.code}`);
+                    managerRef.pairCodes.set(sessionId, result.code);
+                    managerRef.updateSessionStatus(sessionId, 'qr_ready');
+                    return;
+                  }
+
+                  if (result.rateLimit) {
+                    console.warn(`[${sessionId}] WhatsApp rate-limited pair code for ${sanitizedPhone} (attempt ${attempt}/3). Waiting 15s…`);
+                    if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 15000));
+                  } else {
+                    console.warn(`[${sessionId}] Pair code attempt ${attempt}/3 failed: ${result.detail}`);
+                    if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 4000));
+                  }
+                }
+                console.error(`[${sessionId}] Could not generate pair code for ${sanitizedPhone} after 3 attempts`);
               }
             : (base64Qr: string, _asciiQR: string, attempts: number) => {
                 console.log(`[${sessionId}] QR code generated (attempt ${attempts})`);
@@ -218,7 +319,7 @@ class WppConnectManager {
             session: sessionId,
             headless: true,
             useChrome: false,
-            autoClose: 300000,
+            autoClose: 0,
             deviceName: deviceName || 'WAutoChat',
             logQR: false,
             disableWelcome: true,
@@ -272,6 +373,14 @@ class WppConnectManager {
                 statusSession === 'desconnectedMobile' ||
                 statusSession === 'deleteToken'
               ) {
+                // wppconnect fires disconnectedMobile as a false positive on fresh sessions:
+                // the isRegistered() poll sees null→false and fires immediately.
+                // Only treat this as a real disconnect if the session was already connected.
+                const activeSession = this.sessions.get(sessionId);
+                if (!activeSession || activeSession.status !== 'connected') {
+                  // Still in pairing phase — ignore spurious disconnect events.
+                  return;
+                }
                 this.updateSessionStatus(sessionId, 'disconnected');
                 this.qrCodes.delete(sessionId);
                 this.pairCodes.delete(sessionId);
@@ -312,18 +421,39 @@ class WppConnectManager {
       this.updateSessionStatus(sessionId, 'connected');
       this.qrCodes.delete(sessionId);
 
+      console.log(`[${sessionId}] Fetching phone number via page.evaluate...`);
       try {
-        const hostDevice = await client.getHostDevice();
-        if (hostDevice && (hostDevice as unknown as Record<string, unknown>).wid) {
-          const wid = (hostDevice as unknown as Record<string, unknown>).wid as Record<string, unknown>;
-          const phone = (wid.user as string) || '';
-          db.prepare(`UPDATE sessions SET phone = ?, updated_at = datetime('now') WHERE id = ?`).run(
-            phone,
-            sessionId
-          );
+        const phoneRaw = await Promise.race<string | null>([
+          client.page.evaluate(() => {
+            try {
+              type WPPConn = { getMyUserId?: () => { user?: string; _serialized?: string } | undefined; getMe?: () => { id?: string; user?: string; wid?: string } };
+              type WPPWin = { WPP?: { conn?: WPPConn }; WAPI?: { getWid?: () => string } };
+              const w = window as unknown as WPPWin;
+              const digits = (raw: string) => raw.replace(/@c\.us$/i, '').replace(/\D/g, '');
+              const wid = w.WPP?.conn?.getMyUserId?.();
+              if (wid?.user) return digits(wid.user);
+              if (wid?._serialized) return digits(wid._serialized);
+              const me = w.WPP?.conn?.getMe?.();
+              if (me) {
+                const raw = (me.id || me.wid || me.user || '') as string;
+                const d = digits(raw);
+                if (d) return d;
+              }
+              const widStr = w.WAPI?.getWid?.() as string | undefined;
+              if (widStr) return digits(widStr);
+              return null;
+            } catch {
+              return null;
+            }
+          }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+        console.log(`[${sessionId}] phone fetched:`, phoneRaw);
+        if (phoneRaw) {
+          db.prepare(`UPDATE sessions SET phone = ?, updated_at = datetime('now') WHERE id = ?`).run(phoneRaw, sessionId);
         }
-      } catch {
-        console.log(`[${sessionId}] Could not get host device info (may not be logged in yet).`);
+      } catch (e) {
+        console.log(`[${sessionId}] Could not fetch phone:`, e);
       }
 
       this.registerEventHandlers(sessionId, client);
@@ -361,6 +491,9 @@ class WppConnectManager {
       console.log(`[${sessionId}] State changed: ${state}`);
       if (state === 'CONNECTED') {
         this.updateSessionStatus(sessionId, 'connected');
+        void this.refreshHostPhone(sessionId).then((phone) => {
+          if (phone) console.log(`[${sessionId}] phone refreshed on CONNECTED: ${phone}`);
+        });
       } else if (state === 'CONFLICT') {
         // CONFLICT means WhatsApp is open on another device
         // Just call useHere() to reclaim, don't reconnect
@@ -765,7 +898,7 @@ class WppConnectManager {
   ): Promise<void> {
     const fs = await import('fs/promises');
     const path = await import('path');
-    const CACHE_DIR = path.join(process.cwd(), 'data', 'media');
+    const CACHE_DIR = path.join(getDataDir(), 'media');
 
     try {
       const clientAny = client as unknown as {
@@ -849,24 +982,35 @@ class WppConnectManager {
     const fromMe = !!(message.fromMe);
     const isGroup = !!(message.isGroupMsg);
 
-    // Determine message type
+    // Determine message type — use message.type as primary source (set by wppconnect)
+    // then fall back to mimetype for unknown media. This avoids stickers being
+    // classified as 'image' because they share mimetype 'image/webp'.
     let type = 'text';
-    if (message.isMedia || message.isMMS) {
-      const mimetype = (message.mimetype as string) || '';
-      if (mimetype.startsWith('image/')) type = 'image';
-      else if (mimetype.startsWith('video/')) type = 'video';
-      else if (mimetype.startsWith('audio/')) type = message.type === 'ptt' ? 'ptt' : 'audio';
-      else type = 'document';
-    } else if (message.type === 'sticker') {
-      type = 'sticker';
-    } else if (message.type === 'location' || message.type === 'live_location') {
-      type = 'location';
-    } else if (message.type === 'vcard' || message.type === 'multi_vcard') {
-      type = 'contact';
-    } else if (message.type === 'list_response' || message.type === 'list') {
-      type = 'list';
-    } else if (message.type === 'poll_creation') {
-      type = 'poll';
+    const rawMsgType = (message.type as string) || 'chat';
+    switch (rawMsgType) {
+      case 'image':        type = 'image';    break;
+      case 'video':        type = 'video';    break;
+      case 'ptt':          type = 'ptt';      break;
+      case 'audio':        type = 'audio';    break;
+      case 'document':     type = 'document'; break;
+      case 'sticker':      type = 'sticker';  break;
+      case 'location':
+      case 'live_location':type = 'location'; break;
+      case 'vcard':
+      case 'multi_vcard':  type = 'contact';  break;
+      case 'list':
+      case 'list_response':type = 'list';     break;
+      case 'poll_creation':type = 'poll';     break;
+      case 'chat':         type = 'text';     break;
+      default:
+        // Unknown type — fall back to mimetype if it's flagged as media
+        if (message.isMedia || message.isMMS) {
+          const mimetype = (message.mimetype as string) || '';
+          if (mimetype.startsWith('image/'))      type = 'image';
+          else if (mimetype.startsWith('video/')) type = 'video';
+          else if (mimetype.startsWith('audio/')) type = 'audio';
+          else                                    type = 'document';
+        }
     }
 
     // Helper: fetch profile pic URL from WPPConnect (non-blocking)
@@ -1469,6 +1613,9 @@ class WppConnectManager {
       console.log(`[${sessionId}] Reconnected successfully.`);
     } catch (err) {
       console.error(`[${sessionId}] Reconnect failed:`, err);
+      // Clean up any browser that started but didn't fully connect.
+      clearLock(sessionId);
+      this.sessions.delete(sessionId);
       this.updateSessionStatus(sessionId, 'disconnected');
     }
   }
@@ -1539,16 +1686,37 @@ class WppConnectManager {
     const active = this.sessions.get(sessionId);
     if (!active || !active.client) return null;
     try {
-      const hostDevice = await active.client.getHostDevice();
-      if (!hostDevice) return null;
-      const wid = (hostDevice as unknown as Record<string, unknown>).wid as Record<string, unknown> | undefined;
-      const phone = (wid?.user as string) || '';
-      if (!phone) return null;
+      const phoneRaw = await Promise.race<string | null>([
+        active.client.page.evaluate(() => {
+          try {
+            type WPPConn = { getMyUserId?: () => { user?: string; _serialized?: string } | undefined; getMe?: () => { id?: string; user?: string; wid?: string } };
+            type WPPWin = { WPP?: { conn?: WPPConn }; WAPI?: { getWid?: () => string } };
+            const w = window as unknown as WPPWin;
+            const digits = (raw: string) => raw.replace(/@c\.us$/i, '').replace(/\D/g, '');
+            const wid = w.WPP?.conn?.getMyUserId?.();
+            if (wid?.user) return digits(wid.user);
+            if (wid?._serialized) return digits(wid._serialized);
+            const me = w.WPP?.conn?.getMe?.();
+            if (me) {
+              const raw = (me.id || me.wid || me.user || '') as string;
+              const d = digits(raw);
+              if (d) return d;
+            }
+            const widStr = w.WAPI?.getWid?.() as string | undefined;
+            if (widStr) return digits(widStr);
+            return null;
+          } catch {
+            return null;
+          }
+        }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ]);
+      if (!phoneRaw) return null;
       const db = getDb();
       db.prepare(
         `UPDATE sessions SET phone = ?, updated_at = datetime('now') WHERE id = ?`
-      ).run(phone, sessionId);
-      return phone;
+      ).run(phoneRaw, sessionId);
+      return phoneRaw;
     } catch {
       return null;
     }

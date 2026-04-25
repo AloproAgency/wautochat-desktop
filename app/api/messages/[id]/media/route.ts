@@ -3,8 +3,9 @@ import { readFile, writeFile, mkdir, stat } from 'fs/promises';
 import path from 'path';
 import { getDb } from '@/lib/db';
 import manager from '@/lib/wppconnect-manager';
+import { getDataDir } from '@/lib/paths';
 
-const CACHE_DIR = path.join(process.cwd(), 'data', 'media');
+const CACHE_DIR = path.join(getDataDir(), 'media');
 
 /**
  * Lazy media proxy: serves the binary content of a WhatsApp message on demand.

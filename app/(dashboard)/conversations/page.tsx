@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, createContext, useContext } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   MessageSquare,
@@ -49,7 +49,7 @@ import type { Chat, Message, ApiResponse } from '@/lib/types';
 // Constants & Theme
 // ---------------------------------------------------------------------------
 
-const THEME = {
+const LIGHT_THEME = {
   primary: '#075E54',
   primaryDark: '#054640',
   sent: '#DCF8C6',
@@ -68,7 +68,42 @@ const THEME = {
   selectedBg: '#eef5f3',
 };
 
+const DARK_THEME = {
+  primary: '#00a884',
+  primaryDark: '#008c6e',
+  sent: '#005c4b',
+  received: '#1f2c34',
+  chatBg: '#0b141a',
+  inputBg: '#1f2c34',
+  headerBg: '#1f2c34',
+  teal: '#00a884',
+  green: '#25D366',
+  blueCheck: '#53bdeb',
+  textPrimary: '#e9edef',
+  textSecondary: '#aebac1',
+  textMuted: '#8696a0',
+  border: '#2a3942',
+  hoverBg: '#2a3942',
+  selectedBg: '#2a3942',
+};
+
+// Hook to detect dark mode from data-theme="dark" on <html>
+function useDarkMode(): boolean {
+  const [dark, setDark] = useState(false);
+  useEffect(() => {
+    const check = () =>
+      setDark(document.documentElement.getAttribute('data-theme') === 'dark');
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+  return dark;
+}
+
 const CHAT_PATTERN = `url("data:image/svg+xml,%3Csvg width='400' height='400' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3Cpattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'%3E%3Cpath d='M10 10c2-2 5-1 6 1s0 5-2 6-5 0-6-2 0-4 2-5zm50 20c1.5-1 4 0 4 2s-2 4-4 3.5-2.5-3-1.5-4.5zm-30 35c2 0 3 2 2.5 4s-3 3-4.5 1.5 0-5 2-5.5zm55 10c1 1 1 3-.5 4s-4 .5-4-1.5 3-4 4.5-2.5zM25 65c1.5.5 2 3 .5 4.5s-4 1-4.5-.5 2.5-4.5 4-4z' fill='%23d4cfc6' fill-opacity='.35'/%3E%3Ccircle cx='60' cy='12' r='1.5' fill='%23d4cfc6' fill-opacity='.3'/%3E%3Ccircle cx='15' cy='50' r='1' fill='%23d4cfc6' fill-opacity='.25'/%3E%3Ccircle cx='70' cy='55' r='1.2' fill='%23d4cfc6' fill-opacity='.3'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='400' height='400' fill='%23efeae2'/%3E%3Crect width='400' height='400' fill='url(%23p)'/%3E%3C/svg%3E")`;
+
+const DARK_CHAT_PATTERN = `url("data:image/svg+xml,%3Csvg width='400' height='400' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3Cpattern id='p' width='80' height='80' patternUnits='userSpaceOnUse'%3E%3Cpath d='M10 10c2-2 5-1 6 1s0 5-2 6-5 0-6-2 0-4 2-5zm50 20c1.5-1 4 0 4 2s-2 4-4 3.5-2.5-3-1.5-4.5zm-30 35c2 0 3 2 2.5 4s-3 3-4.5 1.5 0-5 2-5.5zm55 10c1 1 1 3-.5 4s-4 .5-4-1.5 3-4 4.5-2.5zM25 65c1.5.5 2 3 .5 4.5s-4 1-4.5-.5 2.5-4.5 4-4z' fill='%23182229' fill-opacity='.6'/%3E%3Ccircle cx='60' cy='12' r='1.5' fill='%23182229' fill-opacity='.5'/%3E%3Ccircle cx='15' cy='50' r='1' fill='%23182229' fill-opacity='.4'/%3E%3Ccircle cx='70' cy='55' r='1.2' fill='%23182229' fill-opacity='.5'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='400' height='400' fill='%230b141a'/%3E%3Crect width='400' height='400' fill='url(%23p)'/%3E%3C/svg%3E")`;
 
 const AVATAR_COLORS = [
   '#00a884', '#02735e', '#025144', '#128c7e', '#0d7377',
@@ -76,6 +111,13 @@ const AVATAR_COLORS = [
   '#009688', '#4caf50', '#607d8b', '#795548', '#ff5722',
   '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3',
 ];
+
+// ---------------------------------------------------------------------------
+// Theme context — lets sub-components read the active THEME without prop drilling
+// ---------------------------------------------------------------------------
+
+const ThemeContext = createContext(LIGHT_THEME);
+function useTheme() { return useContext(ThemeContext); }
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -185,6 +227,7 @@ function InlineAvatar({
   size?: number;
   online?: boolean;
 }) {
+  const THEME = useTheme();
   const [broken, setBroken] = useState(false);
 
   // Prefer our local avatar proxy when we can extract a phone number from the
@@ -257,6 +300,7 @@ function InlineAvatar({
 }
 
 function MessageStatusIcon({ status }: { status: Message['status'] }) {
+  const THEME = useTheme();
   switch (status) {
     case 'pending':
       return <Clock style={{ width: 14, height: 14, color: THEME.textMuted }} />;
@@ -541,6 +585,7 @@ function ChatDocument({ message }: { message: Message }) {
 }
 
 function ChatAudio({ message }: { message: Message }) {
+  const THEME = useTheme();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -699,6 +744,7 @@ function ChatLocation({ message }: { message: Message }) {
 }
 
 function MessageContent({ message }: { message: Message }) {
+  const THEME = useTheme();
   switch (message.type) {
     case 'image':
       return (
@@ -827,6 +873,7 @@ function MessageBubble({
   isGroup: boolean;
   isMobile: boolean;
 }) {
+  const THEME = useTheme();
   const isSent = message.fromMe;
   const time = formatMessageTime(message.timestamp);
   const body = message.body || message.caption || '';
@@ -933,13 +980,15 @@ function IconBtn({
   children,
   onClick,
   size = 36,
-  color = THEME.textSecondary,
+  color,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   size?: number;
   color?: string;
 }) {
+  const THEME = useTheme();
+  const resolvedColor = color ?? THEME.textSecondary;
   return (
     <button
       onClick={onClick}
@@ -953,7 +1002,7 @@ function IconBtn({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color,
+        color: resolvedColor,
         flexShrink: 0,
         transition: 'background-color 0.15s',
       }}
@@ -978,6 +1027,7 @@ function ChatListItem({
   isSelected: boolean;
   onSelect: () => void;
 }) {
+  const THEME = useTheme();
   const ts = chat.lastMessage?.timestamp || chat.updatedAt;
 
   return (
@@ -1092,6 +1142,10 @@ function ChatListItem({
 // ---------------------------------------------------------------------------
 
 export default function ConversationsPage() {
+  const isDark = useDarkMode();
+  const THEME = isDark ? DARK_THEME : LIGHT_THEME;
+  const activeChatPattern = isDark ? DARK_CHAT_PATTERN : CHAT_PATTERN;
+
   const activeSessionId = useActiveSession();
   const { sessions, setActiveSession } = useSessionStore();
   const { toast } = useToast();
@@ -1609,20 +1663,24 @@ export default function ConversationsPage() {
 
   if (!activeSessionId) {
     return (
-      <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
-          <Spinner size="lg" />
-          <p style={{ marginTop: 16, fontSize: 14, color: THEME.textMuted }}>Connecting to session...</p>
+      <ThemeContext.Provider value={THEME}>
+        <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.chatBg }}>
+          <div style={{ textAlign: 'center' }}>
+            <Spinner size="lg" />
+            <p style={{ marginTop: 16, fontSize: 14, color: THEME.textMuted }}>Connecting to session...</p>
+          </div>
         </div>
-      </div>
+      </ThemeContext.Provider>
     );
   }
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-        <Spinner size="lg" />
-      </div>
+      <ThemeContext.Provider value={THEME}>
+        <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: THEME.chatBg }}>
+          <Spinner size="lg" />
+        </div>
+      </ThemeContext.Provider>
     );
   }
 
@@ -1638,7 +1696,7 @@ export default function ConversationsPage() {
         minWidth: isMobile ? undefined : leftPanelWidth,
         maxWidth: isMobile ? undefined : leftPanelWidth,
         borderRight: isMobile ? 'none' : `1px solid ${THEME.border}`,
-        backgroundColor: '#ffffff',
+        backgroundColor: THEME.headerBg,
         height: '100%',
       }}
     >
@@ -1660,7 +1718,7 @@ export default function ConversationsPage() {
             padding: '8px 12px',
             borderRadius: 10,
             border: `1px solid ${THEME.border}`,
-            backgroundColor: '#ffffff',
+            backgroundColor: THEME.headerBg,
             cursor: 'pointer',
             transition: 'border-color 0.15s',
           }}
@@ -1720,7 +1778,7 @@ export default function ConversationsPage() {
                 left: 16,
                 right: 16,
                 zIndex: 20,
-                backgroundColor: '#ffffff',
+                backgroundColor: THEME.headerBg,
                 borderRadius: 10,
                 border: `1px solid ${THEME.border}`,
                 boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
@@ -1862,7 +1920,7 @@ export default function ConversationsPage() {
                       justifyContent: 'center',
                     }}
                   >
-                    <div style={{ width: 42, height: 42, borderRadius: '50%', overflow: 'hidden', backgroundColor: '#ffffff', padding: 1 }}>
+                    <div style={{ width: 42, height: 42, borderRadius: '50%', overflow: 'hidden', backgroundColor: THEME.headerBg, padding: 1 }}>
                       <InlineAvatar name={sc.name || sc.id} src={sc.profilePicUrl || undefined} size={40} />
                     </div>
                   </div>
@@ -1926,7 +1984,7 @@ export default function ConversationsPage() {
               height: 34,
               borderRadius: 8,
               border: `1px solid ${THEME.border}`,
-              backgroundColor: '#ffffff',
+              backgroundColor: THEME.inputBg,
               paddingLeft: 30,
               paddingRight: 10,
               fontSize: 13,
@@ -1969,7 +2027,7 @@ export default function ConversationsPage() {
                   fontSize: 12,
                   fontWeight: 500,
                   transition: 'all 0.15s ease',
-                  backgroundColor: isActive ? '#ffffff' : 'transparent',
+                  backgroundColor: isActive ? THEME.headerBg : 'transparent',
                   color: isActive ? THEME.textPrimary : THEME.textSecondary,
                   boxShadow: isActive ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
                 }}
@@ -2027,7 +2085,7 @@ export default function ConversationsPage() {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundImage: CHAT_PATTERN,
+            backgroundImage: activeChatPattern,
             backgroundSize: '400px 400px',
           }}
         >
@@ -2151,7 +2209,7 @@ export default function ConversationsPage() {
                         marginTop: 4,
                         zIndex: 20,
                         minWidth: 220,
-                        backgroundColor: '#ffffff',
+                        backgroundColor: THEME.headerBg,
                         borderRadius: 10,
                         border: `1px solid ${THEME.border}`,
                         boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
@@ -2243,7 +2301,7 @@ export default function ConversationsPage() {
               overflowY: 'auto',
               paddingTop: 12,
               paddingBottom: 12,
-              backgroundImage: CHAT_PATTERN,
+              backgroundImage: activeChatPattern,
               backgroundSize: '400px 400px',
             }}
           >
@@ -2255,7 +2313,7 @@ export default function ConversationsPage() {
               <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
                 <p
                   style={{
-                    backgroundColor: 'rgba(255,255,255,0.9)',
+                    backgroundColor: THEME.headerBg,
                     borderRadius: 10,
                     padding: '10px 20px',
                     fontSize: 14,
@@ -2274,7 +2332,7 @@ export default function ConversationsPage() {
                     <div style={{ display: 'flex', justifyContent: 'center', margin: '12px 0' }}>
                       <span
                         style={{
-                          backgroundColor: '#ffffff',
+                          backgroundColor: THEME.headerBg,
                           borderRadius: 8,
                           padding: '5px 14px',
                           fontSize: 12,
@@ -2309,7 +2367,7 @@ export default function ConversationsPage() {
               alignItems: 'flex-end',
               gap: 6,
               padding: '10px 14px',
-              backgroundColor: '#ffffff',
+              backgroundColor: THEME.headerBg,
               borderTop: `1px solid ${THEME.border}`,
               minHeight: 60,
               flexShrink: 0,
@@ -2365,7 +2423,7 @@ export default function ConversationsPage() {
                       left: 0,
                       zIndex: 20,
                       width: 280,
-                      backgroundColor: '#ffffff',
+                      backgroundColor: THEME.headerBg,
                       borderRadius: 12,
                       border: `1px solid ${THEME.border}`,
                       boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
@@ -2423,7 +2481,7 @@ export default function ConversationsPage() {
                   resize: 'none',
                   borderRadius: 22,
                   border: `1px solid ${THEME.border}`,
-                  backgroundColor: '#ffffff',
+                  backgroundColor: THEME.inputBg,
                   padding: '10px 18px',
                   fontSize: 14,
                   color: THEME.textPrimary,
@@ -2481,7 +2539,7 @@ export default function ConversationsPage() {
         justifyContent: 'space-between',
         width: 56,
         minWidth: 56,
-        backgroundColor: '#ffffff',
+        backgroundColor: THEME.headerBg,
         borderLeft: `1px solid ${THEME.border}`,
         padding: '16px 0',
         height: '100%',
@@ -2529,17 +2587,21 @@ export default function ConversationsPage() {
 
   if (isMobile) {
     return (
-      <div style={fullBleedStyle}>
-        {mobileShowMessages && selectedChat ? messagesPanel : chatListPanel}
-      </div>
+      <ThemeContext.Provider value={THEME}>
+        <div style={fullBleedStyle}>
+          {mobileShowMessages && selectedChat ? messagesPanel : chatListPanel}
+        </div>
+      </ThemeContext.Provider>
     );
   }
 
   return (
-    <div style={fullBleedStyle}>
-      {chatListPanel}
-      {messagesPanel}
-      {rightSidebar}
-    </div>
+    <ThemeContext.Provider value={THEME}>
+      <div style={fullBleedStyle}>
+        {chatListPanel}
+        {messagesPanel}
+        {rightSidebar}
+      </div>
+    </ThemeContext.Provider>
   );
 }

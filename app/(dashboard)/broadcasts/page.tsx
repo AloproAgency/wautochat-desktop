@@ -54,19 +54,19 @@ function Modal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
       <div
-        className={`relative z-10 mx-4 flex max-h-[90vh] w-full flex-col rounded-lg border border-wa-border bg-wa-panel shadow-xl ${
+        className={`relative z-10 mx-4 flex max-h-[90vh] w-full flex-col rounded-lg border border-wa-border dark:border-zinc-700 bg-wa-panel dark:bg-zinc-800 shadow-xl ${
           wide ? 'max-w-3xl' : 'max-w-lg'
         }`}
       >
-        <div className="flex items-center justify-between border-b border-wa-border px-6 py-4">
+        <div className="flex items-center justify-between border-b border-wa-border dark:border-zinc-700 px-6 py-4">
           <div>
-            <h2 className="text-lg font-semibold text-wa-text">{title}</h2>
+            <h2 className="text-lg font-semibold text-wa-text dark:text-zinc-100">{title}</h2>
             {description && (
-              <p className="mt-1 text-sm text-wa-text-secondary">{description}</p>
+              <p className="mt-1 text-sm text-wa-text-secondary dark:text-zinc-300">{description}</p>
             )}
           </div>
-          <button onClick={onClose} className="rounded-lg p-1 hover:bg-wa-hover">
-            <X className="h-5 w-5 text-wa-text-muted" />
+          <button onClick={onClose} className="rounded-lg p-1 hover:bg-wa-hover dark:hover:bg-zinc-700">
+            <X className="h-5 w-5 text-wa-text-muted dark:text-zinc-500" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4">{children}</div>
@@ -89,7 +89,7 @@ function DropdownMenu({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 bottom-full z-20 mb-1 min-w-[180px] rounded-lg border border-wa-border bg-wa-panel py-1 shadow-lg">
+          <div className="absolute right-0 bottom-full z-20 mb-1 min-w-[180px] rounded-lg border border-wa-border dark:border-zinc-700 bg-wa-panel dark:bg-zinc-800 py-1 shadow-lg">
             {items.map((item, i) => (
               <button
                 key={i}
@@ -98,8 +98,8 @@ function DropdownMenu({
                   item.onClick();
                   setOpen(false);
                 }}
-                className={`flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-wa-hover ${
-                  item.danger ? 'text-wa-danger' : 'text-wa-text'
+                className={`flex w-full items-center gap-2 px-4 py-2 text-sm transition-colors hover:bg-wa-hover dark:hover:bg-zinc-700 ${
+                  item.danger ? 'text-wa-danger' : 'text-wa-text dark:text-zinc-100'
                 }`}
               >
                 {item.icon}
@@ -126,9 +126,9 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="mb-4 rounded-full bg-wa-bg p-4 text-wa-text-muted">{icon}</div>
-      <h3 className="mb-2 text-lg font-semibold text-wa-text">{title}</h3>
-      <p className="mb-6 max-w-sm text-sm text-wa-text-secondary">{description}</p>
+      <div className="mb-4 rounded-full bg-wa-bg dark:bg-zinc-800 p-4 text-wa-text-muted dark:text-zinc-500">{icon}</div>
+      <h3 className="mb-2 text-lg font-semibold text-wa-text dark:text-zinc-100">{title}</h3>
+      <p className="mb-6 max-w-sm text-sm text-wa-text-secondary dark:text-zinc-300">{description}</p>
       {action}
     </div>
   );
@@ -151,7 +151,7 @@ function SearchInput({
       prefix={<Search className="h-4 w-4" />}
       suffix={
         value ? (
-          <button onClick={() => onChange('')} className="hover:text-wa-text">
+          <button onClick={() => onChange('')} className="hover:text-wa-text dark:hover:text-zinc-100">
             <X className="h-4 w-4" />
           </button>
         ) : undefined
@@ -410,31 +410,34 @@ export default function BroadcastsPage() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-wa-text">Broadcasts</h1>
-          <p className="mt-1 text-sm text-wa-text-secondary">
-            Send messages to multiple contacts at once
-          </p>
+    <div className="flex flex-col -m-4 md:-m-6 lg:max-w-none bg-slate-50 dark:bg-zinc-900 min-h-[calc(100vh-2rem)] md:min-h-[calc(100vh-3rem)]">
+      <header className="sticky top-0 z-20 bg-white dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-700">
+        <div className="flex items-center gap-3 px-5 h-14">
+          <div className="flex items-baseline gap-2 shrink-0">
+            <h1 className="text-base font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Broadcasts</h1>
+            <span className="text-xs font-mono text-slate-400 dark:text-zinc-500 tabular-nums">{broadcasts.length}</span>
+          </div>
+          <div className="h-5 w-px bg-slate-200 dark:bg-zinc-700" />
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 dark:text-zinc-500 pointer-events-none" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search broadcasts…"
+              className="w-full rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 pl-8 pr-3 h-8 text-sm text-slate-900 dark:text-zinc-100 placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-slate-400 dark:focus:border-zinc-500 focus:ring-2 focus:ring-slate-100 dark:focus:ring-zinc-700 transition"
+            />
+          </div>
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md bg-slate-900 dark:bg-zinc-700 h-8 px-3 text-[13px] font-medium text-white hover:bg-slate-800 dark:hover:bg-zinc-600 active:scale-[0.98] transition-all"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">New broadcast</span>
+          </button>
         </div>
-        <Button
-          icon={<Plus className="h-4 w-4" />}
-          onClick={() => setShowNewModal(true)}
-        >
-          New Broadcast
-        </Button>
-      </div>
+      </header>
 
-      {/* Search */}
-      <div className="mb-6 max-w-md">
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Search broadcasts..."
-        />
-      </div>
+      <div className="p-5">
 
       {/* Broadcasts Table */}
       {filteredBroadcasts.length === 0 ? (
@@ -462,29 +465,29 @@ export default function BroadcastsPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-wa-border bg-wa-header text-left">
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+                <tr className="border-b border-wa-border dark:border-zinc-700 bg-wa-header dark:bg-zinc-800 text-left">
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                     Name
                   </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                     Status
                   </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                     Type
                   </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                     Recipients
                   </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                     Progress
                   </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                     Scheduled
                   </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                     Created
                   </th>
-                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted">
+                  <th className="px-4 py-3 text-xs font-medium uppercase tracking-wide text-wa-text-muted dark:text-zinc-500">
                     Actions
                   </th>
                 </tr>
@@ -493,11 +496,11 @@ export default function BroadcastsPage() {
                 {filteredBroadcasts.map((broadcast) => (
                   <tr
                     key={broadcast.id}
-                    className="border-b border-wa-border transition-colors hover:bg-wa-hover cursor-pointer"
+                    className="border-b border-wa-border dark:border-zinc-700 transition-colors hover:bg-wa-hover dark:hover:bg-zinc-700 cursor-pointer"
                     onClick={() => openDetail(broadcast)}
                   >
                     <td className="px-4 py-3">
-                      <span className="font-medium text-wa-text">{broadcast.name}</span>
+                      <span className="font-medium text-wa-text dark:text-zinc-100">{broadcast.name}</span>
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={statusBadgeVariant[broadcast.status] || 'default'}>
@@ -505,25 +508,25 @@ export default function BroadcastsPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5 text-sm text-wa-text-secondary">
+                      <div className="flex items-center gap-1.5 text-sm text-wa-text-secondary dark:text-zinc-300">
                         {messageTypeIcon[broadcast.messageType] || (
                           <FileText className="h-4 w-4" />
                         )}
                         <span className="capitalize">{broadcast.messageType}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-wa-text-secondary">
+                    <td className="px-4 py-3 text-sm text-wa-text-secondary dark:text-zinc-300">
                       {broadcast.totalCount}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <div className="h-2 w-24 overflow-hidden rounded-full bg-gray-200">
+                        <div className="h-2 w-24 overflow-hidden rounded-full bg-gray-200 dark:bg-zinc-700">
                           <div
                             className="h-full rounded-full bg-wa-green transition-all"
                             style={{ width: `${progressPercent(broadcast)}%` }}
                           />
                         </div>
-                        <span className="text-xs text-wa-text-muted">
+                        <span className="text-xs text-wa-text-muted dark:text-zinc-500">
                           <span className="text-wa-green">{broadcast.sentCount}</span>
                           {broadcast.failedCount > 0 && (
                             <>
@@ -536,7 +539,7 @@ export default function BroadcastsPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-wa-text-secondary">
+                    <td className="px-4 py-3 text-sm text-wa-text-secondary dark:text-zinc-300">
                       {broadcast.scheduledAt ? (
                         <div className="flex items-center gap-1">
                           <Clock className="h-3.5 w-3.5" />
@@ -546,14 +549,14 @@ export default function BroadcastsPage() {
                         '-'
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-wa-text-muted">
+                    <td className="px-4 py-3 text-sm text-wa-text-muted dark:text-zinc-500">
                       {new Date(broadcast.createdAt).toLocaleDateString()}
                     </td>
                     <td className="px-4 py-3">
                       <DropdownMenu
                         trigger={
-                          <button className="rounded-lg p-1.5 hover:bg-gray-200">
-                            <MoreVertical className="h-4 w-4 text-wa-text-muted" />
+                          <button className="rounded-lg p-1.5 hover:bg-gray-200 dark:hover:bg-zinc-700">
+                            <MoreVertical className="h-4 w-4 text-wa-text-muted dark:text-zinc-500" />
                           </button>
                         }
                         items={[
@@ -644,7 +647,7 @@ export default function BroadcastsPage() {
                     <button
                       key={v}
                       onClick={() => setFormTextContent((prev) => prev + v)}
-                      className="rounded bg-wa-light-green px-2 py-0.5 text-xs text-wa-teal-dark hover:bg-wa-green/20"
+                      className="rounded bg-wa-light-green dark:bg-zinc-700 px-2 py-0.5 text-xs text-wa-teal-dark dark:text-zinc-200 hover:bg-wa-green/20 dark:hover:bg-zinc-600"
                     >
                       {v}
                     </button>
@@ -656,10 +659,10 @@ export default function BroadcastsPage() {
             {formMessageType === 'image' && (
               <>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-wa-text">Image</label>
+                  <label className="mb-1 block text-sm font-medium text-wa-text dark:text-zinc-100">Image</label>
                   <div className="flex items-center gap-3">
                     <label
-                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border bg-white px-4 py-2 text-sm text-wa-text-secondary transition-colors hover:border-wa-green hover:bg-wa-light-green/30"
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2 text-sm text-wa-text-secondary dark:text-zinc-300 transition-colors hover:border-wa-green hover:bg-wa-light-green/30 dark:hover:bg-zinc-700"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
                       Choose Image
@@ -701,10 +704,10 @@ export default function BroadcastsPage() {
             {formMessageType === 'video' && (
               <>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-wa-text">Video</label>
+                  <label className="mb-1 block text-sm font-medium text-wa-text dark:text-zinc-100">Video</label>
                   <div className="flex items-center gap-3">
                     <label
-                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border bg-white px-4 py-2 text-sm text-wa-text-secondary transition-colors hover:border-wa-green hover:bg-wa-light-green/30"
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2 text-sm text-wa-text-secondary dark:text-zinc-300 transition-colors hover:border-wa-green hover:bg-wa-light-green/30 dark:hover:bg-zinc-700"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect width="14" height="12" x="2" y="6" rx="2"/></svg>
                       Choose Video
@@ -746,10 +749,10 @@ export default function BroadcastsPage() {
             {formMessageType === 'document' && (
               <>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-wa-text">Document</label>
+                  <label className="mb-1 block text-sm font-medium text-wa-text dark:text-zinc-100">Document</label>
                   <div className="flex items-center gap-3">
                     <label
-                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border bg-white px-4 py-2 text-sm text-wa-text-secondary transition-colors hover:border-wa-green hover:bg-wa-light-green/30"
+                      className="flex cursor-pointer items-center gap-2 rounded-lg border border-wa-border dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-2 text-sm text-wa-text-secondary dark:text-zinc-300 transition-colors hover:border-wa-green hover:bg-wa-light-green/30 dark:hover:bg-zinc-700"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
                       Choose File
@@ -796,9 +799,9 @@ export default function BroadcastsPage() {
                   type="checkbox"
                   checked={formSchedule}
                   onChange={(e) => setFormSchedule(e.target.checked)}
-                  className="h-4 w-4 rounded border-wa-border text-wa-teal accent-wa-teal"
+                  className="h-4 w-4 rounded border-wa-border dark:border-zinc-700 text-wa-teal accent-wa-teal"
                 />
-                <span className="text-sm font-medium text-wa-text">
+                <span className="text-sm font-medium text-wa-text dark:text-zinc-100">
                   Schedule for later
                 </span>
               </label>
@@ -824,10 +827,10 @@ export default function BroadcastsPage() {
             {/* Recipients */}
             <div>
               <div className="mb-1.5 flex items-center justify-between">
-                <label className="text-sm font-medium text-wa-text">Recipients</label>
+                <label className="text-sm font-medium text-wa-text dark:text-zinc-100">Recipients</label>
                 <button
                   onClick={handleSelectAllContacts}
-                  className="text-xs font-medium text-wa-teal hover:underline"
+                  className="text-xs font-medium text-wa-teal dark:text-zinc-300 hover:underline"
                 >
                   Select All ({contacts.length})
                 </button>
@@ -841,7 +844,7 @@ export default function BroadcastsPage() {
                     return (
                       <span
                         key={rid}
-                        className="inline-flex items-center gap-1 rounded-full bg-wa-light-green px-2 py-0.5 text-xs text-wa-teal-dark"
+                        className="inline-flex items-center gap-1 rounded-full bg-wa-light-green dark:bg-zinc-700 px-2 py-0.5 text-xs text-wa-teal-dark dark:text-zinc-200"
                       >
                         {contact?.name || rid}
                         <button
@@ -855,13 +858,13 @@ export default function BroadcastsPage() {
                     );
                   })}
                   {formRecipients.length > 20 && (
-                    <span className="text-xs text-wa-text-muted">
+                    <span className="text-xs text-wa-text-muted dark:text-zinc-500">
                       +{formRecipients.length - 20} more
                     </span>
                   )}
                 </div>
               )}
-              <p className="mb-2 text-xs text-wa-text-muted">
+              <p className="mb-2 text-xs text-wa-text-muted dark:text-zinc-500">
                 {formRecipients.length} recipient
                 {formRecipients.length !== 1 ? 's' : ''} selected
               </p>
@@ -872,9 +875,9 @@ export default function BroadcastsPage() {
                 placeholder="Search contacts..."
               />
 
-              <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-wa-border">
+              <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-wa-border dark:border-zinc-700">
                 {filteredContacts.length === 0 ? (
-                  <p className="px-4 py-3 text-center text-sm text-wa-text-muted">
+                  <p className="px-4 py-3 text-center text-sm text-wa-text-muted dark:text-zinc-500">
                     No contacts found
                   </p>
                 ) : (
@@ -884,7 +887,7 @@ export default function BroadcastsPage() {
                       onClick={() =>
                         setFormRecipients((prev) => [...prev, contact.wppId])
                       }
-                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-wa-hover"
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-wa-hover dark:hover:bg-zinc-700"
                     >
                       <Avatar
                         src={contact.profilePicUrl}
@@ -892,10 +895,10 @@ export default function BroadcastsPage() {
                         size="sm"
                       />
                       <div>
-                        <span className="text-sm font-medium text-wa-text">
+                        <span className="text-sm font-medium text-wa-text dark:text-zinc-100">
                           {contact.name}
                         </span>
-                        <span className="ml-2 text-xs text-wa-text-muted">
+                        <span className="ml-2 text-xs text-wa-text-muted dark:text-zinc-500">
                           {contact.phone}
                         </span>
                       </div>
@@ -907,19 +910,19 @@ export default function BroadcastsPage() {
 
             {/* Preview */}
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-wa-text">
+              <label className="mb-1.5 block text-sm font-medium text-wa-text dark:text-zinc-100">
                 Message Preview
               </label>
-              <div className="rounded-lg bg-wa-bg-chat p-4">
-                <div className="inline-block max-w-[280px] rounded-lg bg-wa-light-green p-3 shadow-sm">
+              <div className="rounded-lg bg-wa-bg-chat dark:bg-zinc-900 p-4">
+                <div className="inline-block max-w-[280px] rounded-lg bg-wa-light-green dark:bg-zinc-700 p-3 shadow-sm">
                   {formMessageType === 'text' ? (
-                    <p className="whitespace-pre-wrap text-sm text-wa-text">
+                    <p className="whitespace-pre-wrap text-sm text-wa-text dark:text-zinc-100">
                       {formTextContent || 'Your message will appear here...'}
                     </p>
                   ) : formMessageType === 'image' ? (
                     <div>
                       {formMediaUrl && (
-                        <div className="mb-2 h-32 w-full overflow-hidden rounded bg-gray-200">
+                        <div className="mb-2 h-32 w-full overflow-hidden rounded bg-gray-200 dark:bg-zinc-600">
                           <img
                             src={formMediaUrl}
                             alt="Preview"
@@ -931,20 +934,20 @@ export default function BroadcastsPage() {
                         </div>
                       )}
                       {!formMediaUrl && (
-                        <div className="mb-2 flex h-32 w-full items-center justify-center rounded bg-gray-200">
-                          <ImageIcon className="h-8 w-8 text-gray-400" />
+                        <div className="mb-2 flex h-32 w-full items-center justify-center rounded bg-gray-200 dark:bg-zinc-600">
+                          <ImageIcon className="h-8 w-8 text-gray-400 dark:text-zinc-500" />
                         </div>
                       )}
-                      <p className="text-sm text-wa-text">
+                      <p className="text-sm text-wa-text dark:text-zinc-100">
                         {formCaption || 'Image caption'}
                       </p>
                     </div>
                   ) : formMessageType === 'video' ? (
                     <div>
-                      <div className="mb-2 flex h-32 w-full items-center justify-center rounded bg-gray-800">
+                      <div className="mb-2 flex h-32 w-full items-center justify-center rounded bg-gray-800 dark:bg-zinc-900">
                         <Video className="h-8 w-8 text-white" />
                       </div>
-                      <p className="text-sm text-wa-text">
+                      <p className="text-sm text-wa-text dark:text-zinc-100">
                         {formCaption || 'Video caption'}
                       </p>
                     </div>
@@ -952,14 +955,14 @@ export default function BroadcastsPage() {
                     <div className="flex items-center gap-2">
                       <File className="h-8 w-8 text-wa-teal" />
                       <div>
-                        <p className="text-sm font-medium text-wa-text">
+                        <p className="text-sm font-medium text-wa-text dark:text-zinc-100">
                           {formFilename || 'document.pdf'}
                         </p>
-                        <p className="text-xs text-wa-text-muted">Document</p>
+                        <p className="text-xs text-wa-text-muted dark:text-zinc-500">Document</p>
                       </div>
                     </div>
                   )}
-                  <div className="mt-1 text-right text-[10px] text-wa-text-muted">
+                  <div className="mt-1 text-right text-[10px] text-wa-text-muted dark:text-zinc-500">
                     {new Date().toLocaleTimeString([], {
                       hour: '2-digit',
                       minute: '2-digit',
@@ -972,7 +975,7 @@ export default function BroadcastsPage() {
         </div>
 
         {/* Footer */}
-        <div className="mt-6 flex justify-end gap-2 border-t border-wa-border pt-4">
+        <div className="mt-6 flex justify-end gap-2 border-t border-wa-border dark:border-zinc-700 pt-4">
           <Button
             variant="secondary"
             onClick={() => {
@@ -1008,41 +1011,41 @@ export default function BroadcastsPage() {
           <div className="space-y-6">
             {/* Summary Stats */}
             <div className="grid grid-cols-4 gap-4">
-              <div className="rounded-lg bg-wa-bg p-4 text-center">
-                <div className="text-2xl font-bold text-wa-text">
+              <div className="rounded-lg bg-wa-bg dark:bg-zinc-700 p-4 text-center">
+                <div className="text-2xl font-bold text-wa-text dark:text-zinc-100">
                   {selectedBroadcast.totalCount}
                 </div>
-                <div className="text-xs text-wa-text-muted">Total</div>
+                <div className="text-xs text-wa-text-muted dark:text-zinc-500">Total</div>
               </div>
-              <div className="rounded-lg bg-wa-success/10 p-4 text-center">
-                <div className="text-2xl font-bold text-green-700">
+              <div className="rounded-lg bg-wa-success/10 dark:bg-green-900/30 p-4 text-center">
+                <div className="text-2xl font-bold text-green-700 dark:text-green-400">
                   {selectedBroadcast.sentCount}
                 </div>
-                <div className="text-xs text-wa-text-muted">Sent</div>
+                <div className="text-xs text-wa-text-muted dark:text-zinc-500">Sent</div>
               </div>
-              <div className="rounded-lg bg-wa-danger/10 p-4 text-center">
-                <div className="text-2xl font-bold text-red-700">
+              <div className="rounded-lg bg-wa-danger/10 dark:bg-red-900/30 p-4 text-center">
+                <div className="text-2xl font-bold text-red-700 dark:text-red-400">
                   {selectedBroadcast.failedCount}
                 </div>
-                <div className="text-xs text-wa-text-muted">Failed</div>
+                <div className="text-xs text-wa-text-muted dark:text-zinc-500">Failed</div>
               </div>
-              <div className="rounded-lg bg-wa-blue/10 p-4 text-center">
-                <div className="text-2xl font-bold text-blue-700">
+              <div className="rounded-lg bg-wa-blue/10 dark:bg-blue-900/30 p-4 text-center">
+                <div className="text-2xl font-bold text-blue-700 dark:text-blue-400">
                   {selectedBroadcast.totalCount -
                     selectedBroadcast.sentCount -
                     selectedBroadcast.failedCount}
                 </div>
-                <div className="text-xs text-wa-text-muted">Pending</div>
+                <div className="text-xs text-wa-text-muted dark:text-zinc-500">Pending</div>
               </div>
             </div>
 
             {/* Progress Bar */}
             <div>
-              <div className="mb-1 flex justify-between text-xs text-wa-text-muted">
+              <div className="mb-1 flex justify-between text-xs text-wa-text-muted dark:text-zinc-500">
                 <span>Progress</span>
                 <span>{progressPercent(selectedBroadcast)}%</span>
               </div>
-              <div className="h-3 overflow-hidden rounded-full bg-gray-200">
+              <div className="h-3 overflow-hidden rounded-full bg-gray-200 dark:bg-zinc-700">
                 <div
                   className="h-full rounded-full bg-wa-green transition-all"
                   style={{ width: `${progressPercent(selectedBroadcast)}%` }}
@@ -1053,7 +1056,7 @@ export default function BroadcastsPage() {
             {/* Info */}
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-wa-text-muted">Status:</span>{' '}
+                <span className="text-wa-text-muted dark:text-zinc-500">Status:</span>{' '}
                 <Badge
                   variant={
                     statusBadgeVariant[selectedBroadcast.status] || 'default'
@@ -1063,21 +1066,21 @@ export default function BroadcastsPage() {
                 </Badge>
               </div>
               <div>
-                <span className="text-wa-text-muted">Type:</span>{' '}
-                <span className="capitalize text-wa-text">
+                <span className="text-wa-text-muted dark:text-zinc-500">Type:</span>{' '}
+                <span className="capitalize text-wa-text dark:text-zinc-100">
                   {selectedBroadcast.messageType}
                 </span>
               </div>
               <div>
-                <span className="text-wa-text-muted">Created:</span>{' '}
-                <span className="text-wa-text">
+                <span className="text-wa-text-muted dark:text-zinc-500">Created:</span>{' '}
+                <span className="text-wa-text dark:text-zinc-100">
                   {new Date(selectedBroadcast.createdAt).toLocaleString()}
                 </span>
               </div>
               {selectedBroadcast.scheduledAt && (
                 <div>
-                  <span className="text-wa-text-muted">Scheduled:</span>{' '}
-                  <span className="text-wa-text">
+                  <span className="text-wa-text-muted dark:text-zinc-500">Scheduled:</span>{' '}
+                  <span className="text-wa-text dark:text-zinc-100">
                     {new Date(selectedBroadcast.scheduledAt).toLocaleString()}
                   </span>
                 </div>
@@ -1086,27 +1089,27 @@ export default function BroadcastsPage() {
 
             {/* Recipient List */}
             <div>
-              <h4 className="mb-2 text-sm font-medium text-wa-text">
+              <h4 className="mb-2 text-sm font-medium text-wa-text dark:text-zinc-100">
                 Recipients ({detailRecipients.length})
               </h4>
-              <div className="max-h-64 overflow-y-auto rounded-lg border border-wa-border">
+              <div className="max-h-64 overflow-y-auto rounded-lg border border-wa-border dark:border-zinc-700">
                 {detailRecipients.length === 0 ? (
-                  <p className="px-4 py-6 text-center text-sm text-wa-text-muted">
+                  <p className="px-4 py-6 text-center text-sm text-wa-text-muted dark:text-zinc-500">
                     No recipient data available
                   </p>
                 ) : (
                   detailRecipients.map((r) => (
                     <div
                       key={r.id}
-                      className="flex items-center justify-between border-b border-wa-border px-4 py-2 last:border-0"
+                      className="flex items-center justify-between border-b border-wa-border dark:border-zinc-700 px-4 py-2 last:border-0"
                     >
                       <div className="flex items-center gap-3">
                         <Avatar name={r.name} size="sm" />
                         <div>
-                          <span className="text-sm font-medium text-wa-text">
+                          <span className="text-sm font-medium text-wa-text dark:text-zinc-100">
                             {r.name}
                           </span>
-                          <span className="ml-2 text-xs text-wa-text-muted">
+                          <span className="ml-2 text-xs text-wa-text-muted dark:text-zinc-500">
                             {r.phone}
                           </span>
                         </div>
@@ -1132,6 +1135,7 @@ export default function BroadcastsPage() {
           </div>
         )}
       </Modal>
+      </div>
     </div>
   );
 }

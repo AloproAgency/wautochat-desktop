@@ -120,7 +120,7 @@ export default function NodeConfigPanel({
   const nodeTypeName = nodeType.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
-    <div className="h-full flex flex-col bg-white border-l border-slate-200 shadow-xl" style={{ width: 320 }}>
+    <div className="h-full flex flex-col bg-white dark:bg-zinc-800 border-l border-slate-200 dark:border-zinc-700 shadow-xl" style={{ width: 320 }}>
       {/* Header */}
       <div
         className="px-4 py-3.5 border-b border-slate-100 flex items-center gap-3"
@@ -142,14 +142,14 @@ export default function NodeConfigPanel({
       </div>
 
       {/* Node Label Input */}
-      <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50">
-        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Node Label</label>
+      <div className="px-4 py-3 border-b border-slate-100 dark:border-zinc-700 bg-slate-50/50 dark:bg-zinc-900/50">
+        <label className="block text-[10px] font-semibold text-slate-500 dark:text-zinc-400 uppercase tracking-wider mb-1.5">Node Label</label>
         <input
           type="text"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           placeholder="Enter node name..."
-          className="w-full px-3 py-2 text-sm font-medium text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-300"
+          className="w-full px-3 py-2 text-sm font-medium text-slate-800 dark:text-zinc-100 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-300 dark:placeholder:text-zinc-500"
         />
       </div>
 
@@ -164,16 +164,16 @@ export default function NodeConfigPanel({
       {/* Footer */}
       {showDeleteConfirm ? (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+          <div className="bg-white dark:bg-zinc-800 rounded-2xl shadow-2xl max-w-sm w-full p-6">
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/40 flex items-center justify-center mx-auto mb-4">
               <Trash2 className="w-6 h-6 text-red-500" />
             </div>
-            <h3 className="text-base font-bold text-slate-800 text-center mb-2">Delete Node?</h3>
-            <p className="text-sm text-slate-500 text-center mb-6">This action cannot be undone.</p>
+            <h3 className="text-base font-bold text-slate-800 dark:text-zinc-100 text-center mb-2">Delete Node?</h3>
+            <p className="text-sm text-slate-500 dark:text-zinc-400 text-center mb-6">This action cannot be undone.</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDeleteConfirm(false)}
-                className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-zinc-300 bg-slate-100 dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 rounded-xl transition-colors"
               >
                 Cancel
               </button>
@@ -187,10 +187,10 @@ export default function NodeConfigPanel({
           </div>
         </div>
       ) : null}
-      <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center gap-2">
+      <div className="px-4 py-3 border-t border-slate-100 dark:border-zinc-700 bg-slate-50/50 dark:bg-zinc-900/50 flex items-center gap-2">
         <button
           onClick={() => setShowDeleteConfirm(true)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
           title="Delete node"
         >
           <Trash2 className="w-4 h-4" />
@@ -198,7 +198,7 @@ export default function NodeConfigPanel({
         <div className="flex-1" />
         <button
           onClick={onClose}
-          className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+          className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-700 rounded-lg transition-colors"
         >
           Cancel
         </button>
@@ -322,9 +322,9 @@ function renderConfigForm(
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-[11px] font-semibold text-slate-600 mb-1.5">{label}</label>
+      <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-300 mb-1.5">{label}</label>
       {children}
-      {hint && <p className="text-[10px] text-slate-400 mt-1 leading-snug">{hint}</p>}
+      {hint && <p className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1 leading-snug">{hint}</p>}
     </div>
   );
 }
@@ -347,7 +347,7 @@ function TextInput({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       style={large ? { fontSize: 18, textAlign: 'center', padding: '12px 16px' } : undefined}
-      className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 transition-all"
+      className="w-full px-3 py-2 text-sm text-slate-800 dark:text-zinc-100 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 dark:placeholder:text-zinc-500 transition-all"
     />
   );
 }
@@ -370,7 +370,7 @@ function TextArea({
       placeholder={placeholder}
       rows={rows}
       style={{ minHeight: 100 }}
-      className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 resize-none transition-all"
+      className="w-full px-3 py-2 text-sm text-slate-800 dark:text-zinc-100 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 dark:placeholder:text-zinc-500 resize-none transition-all"
     />
   );
 }
@@ -388,7 +388,7 @@ function SelectInput({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all"
+      className="w-full px-3 py-2 text-sm text-slate-800 dark:text-zinc-100 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all"
     >
       {options.map((opt) => (
         <option key={opt.value} value={opt.value}>
@@ -423,7 +423,7 @@ function NumberInput({
       min={min}
       max={max}
       style={large ? { fontSize: 24, textAlign: 'center', padding: '12px 16px' } : undefined}
-      className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 transition-all"
+      className="w-full px-3 py-2 text-sm text-slate-800 dark:text-zinc-100 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 dark:placeholder:text-zinc-500 transition-all"
     />
   );
 }
@@ -438,7 +438,7 @@ function SegmentedControl({
   options: { value: string; label: string }[];
 }) {
   return (
-    <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+    <div className="flex rounded-lg border border-gray-200 dark:border-zinc-700 overflow-hidden">
       {options.map((opt) => (
         <button
           key={opt.value}
@@ -452,7 +452,7 @@ function SegmentedControl({
           className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
             value === opt.value
               ? ''
-              : 'bg-white text-gray-600 hover:bg-gray-50'
+              : 'bg-white dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-700'
           }`}
         >
           {opt.label}
@@ -480,8 +480,8 @@ function SliderInput({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        {label && <span className="text-xs text-gray-500">{label}</span>}
-        <span className="text-xs font-medium text-gray-900">{value}</span>
+        {label && <span className="text-xs text-gray-500 dark:text-zinc-400">{label}</span>}
+        <span className="text-xs font-medium text-gray-900 dark:text-zinc-100">{value}</span>
       </div>
       <input
         type="range"
@@ -490,9 +490,9 @@ function SliderInput({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+        className="w-full h-1.5 bg-gray-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
       />
-      <div className="flex justify-between text-xs text-gray-400">
+      <div className="flex justify-between text-xs text-gray-400 dark:text-zinc-500">
         <span>{min}</span>
         <span>{max}</span>
       </div>
@@ -502,18 +502,18 @@ function SliderInput({
 
 function InfoText({ text }: { text: string }) {
   return (
-    <div className="flex gap-2 p-2.5 bg-blue-50 border border-blue-100 rounded-lg">
-      <Info className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
-      <p className="text-[11px] text-blue-700 leading-snug">{text}</p>
+    <div className="flex gap-2 p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/40 rounded-lg">
+      <Info className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 shrink-0 mt-0.5" />
+      <p className="text-[11px] text-blue-700 dark:text-blue-300 leading-snug">{text}</p>
     </div>
   );
 }
 
 function HintBox({ text }: { text: string }) {
   return (
-    <div className="flex gap-2 p-2.5 bg-blue-50 border border-blue-100 rounded-lg">
-      <Info className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
-      <p className="text-[11px] text-blue-700 leading-snug">{text}</p>
+    <div className="flex gap-2 p-2.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/40 rounded-lg">
+      <Info className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400 shrink-0 mt-0.5" />
+      <p className="text-[11px] text-blue-700 dark:text-blue-300 leading-snug">{text}</p>
     </div>
   );
 }
@@ -533,7 +533,7 @@ function VariableToolbar({ onInsert }: { onInsert: (v: string) => void }) {
           key={v.label}
           type="button"
           onClick={() => onInsert(v.value)}
-          className="px-2 py-1 text-xs font-medium rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+          className="px-2 py-1 text-xs font-medium rounded-md bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-600 transition-colors"
         >
           {v.value}
         </button>
@@ -544,7 +544,7 @@ function VariableToolbar({ onInsert }: { onInsert: (v: string) => void }) {
           value={customVar}
           onChange={(e) => setCustomVar(e.target.value)}
           placeholder="custom"
-          className="px-2 py-1 text-xs rounded-md border border-slate-200 bg-white text-slate-800 w-20 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+          className="px-2 py-1 text-xs rounded-md border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 w-20 focus:outline-none focus:ring-1 focus:ring-emerald-400 dark:placeholder:text-zinc-500"
         />
         <button
           type="button"
@@ -554,7 +554,7 @@ function VariableToolbar({ onInsert }: { onInsert: (v: string) => void }) {
               setCustomVar('');
             }
           }}
-          className="px-2 py-1 text-xs font-medium rounded-md bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+          className="px-2 py-1 text-xs font-medium rounded-md bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 transition-colors"
         >
           Insert
         </button>
@@ -644,7 +644,7 @@ const categoryIcons: Record<string, React.ElementType> = {
 function CategoryIcon({ category }: { category: string }) {
   const Icon = categoryIcons[category] || MessageSquare;
   return (
-    <div className="w-8 h-8 rounded-md bg-emerald-500 flex items-center justify-center shrink-0">
+    <div className="w-8 h-8 rounded-md bg-emerald-500 dark:bg-emerald-600 flex items-center justify-center shrink-0">
       <Icon className="w-4 h-4 text-white" />
     </div>
   );
@@ -684,7 +684,7 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
 
       {/* Help text for non-Discussion categories */}
       {triggerCategory !== 'message' && (
-        <div className="text-xs text-gray-500 bg-gray-50 rounded-md p-2.5 leading-relaxed">
+        <div className="text-xs text-gray-500 dark:text-zinc-400 bg-gray-50 dark:bg-zinc-900/60 rounded-md p-2.5 leading-relaxed">
           {triggerType === 'added_to_group' && 'Se déclenche quand vous êtes ajouté à un NOUVEAU groupe. Parfait pour auto-saluer.'}
           {triggerType === 'group_joined' && 'Se déclenche quand une personne rejoint un groupe où vous êtes.'}
           {triggerType === 'group_left' && 'Se déclenche quand quelqu\'un quitte un groupe.'}
@@ -709,7 +709,7 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
               placeholder={"hello\nhi\nhey\nwelcome"}
               rows={4}
               style={{ minHeight: 80 }}
-              className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 resize-none transition-all font-mono"
+              className="w-full px-3 py-2 text-sm text-slate-800 dark:text-zinc-100 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 dark:placeholder:text-zinc-500 resize-none transition-all font-mono"
             />
           </Field>
         </>
@@ -746,7 +746,7 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
                   key={preset.value}
                   type="button"
                   onClick={() => updateConfig('cron', preset.value)}
-                  className="px-2.5 py-1 text-xs rounded-md bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                  className="px-2.5 py-1 text-xs rounded-md bg-gray-100 dark:bg-zinc-700 text-gray-600 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-600 transition-colors"
                 >
                   {preset.label}
                 </button>
@@ -759,19 +759,19 @@ function TriggerConfig({ config, updateConfig }: ConfigProps) {
       {triggerType === 'webhook' && (
         <Field label="Webhook Path">
           <div className="flex items-center gap-2">
-            <div className="flex-1 px-3 py-2.5 text-sm rounded-lg border border-gray-200 bg-gray-50 text-gray-700 font-mono truncate">
+            <div className="flex-1 px-3 py-2.5 text-sm rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900 text-gray-700 dark:text-zinc-300 font-mono truncate">
               {webhookPath}
             </div>
             <button
               type="button"
               onClick={copyWebhookPath}
-              className="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors shrink-0"
+              className="w-9 h-9 flex items-center justify-center rounded-lg border border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors shrink-0"
               title="Copy path"
             >
               {copied ? (
                 <Check className="w-4 h-4 text-emerald-500" />
               ) : (
-                <Copy className="w-4 h-4 text-gray-400" />
+                <Copy className="w-4 h-4 text-gray-400 dark:text-zinc-500" />
               )}
             </button>
           </div>
@@ -910,15 +910,15 @@ function FilterBlock({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 overflow-hidden">
+    <div className="rounded-lg border border-gray-200 dark:border-zinc-700 overflow-hidden">
       <div className="p-3">
         <div className="flex items-start gap-2.5 mb-2">
-          <div className="w-7 h-7 rounded-md bg-gray-100 flex items-center justify-center shrink-0">
-            <Icon className="w-4 h-4 text-gray-600" />
+          <div className="w-7 h-7 rounded-md bg-gray-100 dark:bg-zinc-700 flex items-center justify-center shrink-0">
+            <Icon className="w-4 h-4 text-gray-600 dark:text-zinc-400" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-gray-900">{title}</div>
-            <div className="text-xs text-gray-500">{description}</div>
+            <div className="text-sm font-medium text-gray-900 dark:text-zinc-100">{title}</div>
+            <div className="text-xs text-gray-500 dark:text-zinc-400">{description}</div>
           </div>
         </div>
         {children}
@@ -1000,18 +1000,18 @@ function TriggerFilters({ config, updateConfig }: ConfigProps) {
 
   return (
     <>
-      <div className="w-full h-px bg-gray-100" />
+      <div className="w-full h-px bg-gray-100 dark:bg-zinc-700" />
 
       <div>
         <div className="flex items-center gap-2">
-          <div className="text-sm font-medium text-gray-900">Filtres</div>
+          <div className="text-sm font-medium text-gray-900 dark:text-zinc-100">Filtres</div>
           {activeCount > 0 && (
-            <span className="px-2 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700 rounded-full">
+            <span className="px-2 py-0.5 text-xs font-medium bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 rounded-full">
               {activeCount} actif{activeCount > 1 ? 's' : ''}
             </span>
           )}
         </div>
-        <div className="text-xs text-gray-500 mt-0.5">Définissez quels messages déclenchent ce flow</div>
+        <div className="text-xs text-gray-500 dark:text-zinc-400 mt-0.5">Définissez quels messages déclenchent ce flow</div>
       </div>
 
       {/* 1. Expéditeur */}
@@ -1036,8 +1036,8 @@ function TriggerFilters({ config, updateConfig }: ConfigProps) {
             {senderList.length > 0 && (
               <div className="flex flex-col gap-1 mb-2">
                 {senderList.map((contact, i) => (
-                  <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 rounded-md border border-gray-200">
-                    <span className="text-xs text-gray-700 font-mono flex-1 truncate">{contact}</span>
+                  <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-zinc-700/50 rounded-md border border-gray-200 dark:border-zinc-700">
+                    <span className="text-xs text-gray-700 dark:text-zinc-300 font-mono flex-1 truncate">{contact}</span>
                     <button
                       type="button"
                       onClick={() => removeContact(i)}
@@ -1056,7 +1056,7 @@ function TriggerFilters({ config, updateConfig }: ConfigProps) {
                 onChange={(e) => setNewContact(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addContact()}
                 placeholder="22991234567 ou +229..."
-                className="flex-1 px-2.5 py-1.5 text-xs text-gray-800 bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 placeholder:text-gray-400 font-mono"
+                className="flex-1 px-2.5 py-1.5 text-xs text-gray-800 dark:text-zinc-100 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-400 placeholder:text-gray-400 dark:placeholder:text-zinc-500 font-mono"
               />
               <button
                 type="button"
@@ -1068,7 +1068,7 @@ function TriggerFilters({ config, updateConfig }: ConfigProps) {
               </button>
             </div>
             {senderList.length === 0 && (
-              <p className="text-xs text-gray-400 mt-1.5 italic">Ajouter des contacts pour filtrer</p>
+              <p className="text-xs text-gray-400 dark:text-zinc-500 mt-1.5 italic">Ajouter des contacts pour filtrer</p>
             )}
           </>
         )}
@@ -1115,7 +1115,7 @@ function TriggerFilters({ config, updateConfig }: ConfigProps) {
                 className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-all ${
                   selected
                     ? ''
-                    : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300 hover:text-emerald-700'
+                    : 'bg-white dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 border-gray-200 dark:border-zinc-700 hover:border-emerald-300 hover:text-emerald-700 dark:hover:border-emerald-600 dark:hover:text-emerald-400'
                 }`}
               >
                 {opt.label}
@@ -1124,18 +1124,18 @@ function TriggerFilters({ config, updateConfig }: ConfigProps) {
           })}
         </div>
         {contentTypes.length === 0 && (
-          <p className="text-xs text-gray-400 mt-1.5 italic">Aucun = tous les types acceptés</p>
+          <p className="text-xs text-gray-400 dark:text-zinc-500 mt-1.5 italic">Aucun = tous les types acceptés</p>
         )}
       </FilterBlock>
 
       {/* 4. Condition sur le contenu du message */}
       <FilterBlock icon={GitBranch} title="Condition sur le contenu" description="Filtrer par le texte du message">
-        <label className="flex items-center gap-2 mb-2 text-xs font-medium text-gray-700 cursor-pointer">
+        <label className="flex items-center gap-2 mb-2 text-xs font-medium text-gray-700 dark:text-zinc-300 cursor-pointer">
           <input
             type="checkbox"
             checked={contentEnabled}
             onChange={(e) => updateFilter('content', { ...contentFilter, enabled: e.target.checked })}
-            className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
+            className="rounded border-gray-300 dark:border-zinc-600 text-emerald-500 focus:ring-emerald-500"
           />
           Activer ce filtre
         </label>
@@ -1203,7 +1203,7 @@ function RegexTester({ pattern }: { pattern: string }) {
         value={testInput}
         onChange={(e) => setTestInput(e.target.value)}
         placeholder="Type text to test..."
-        className="w-full px-3 py-2 text-sm text-slate-800 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 transition-all"
+        className="w-full px-3 py-2 text-sm text-slate-800 dark:text-zinc-100 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 placeholder:text-slate-400 dark:placeholder:text-zinc-500 transition-all"
       />
       {testInput && match !== null && (
         <div
@@ -1255,8 +1255,8 @@ function MediaTypeCheckboxes({
             onClick={() => toggle(type)}
             className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors capitalize ${
               isActive
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                ? 'border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                : 'border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-gray-600 dark:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-700'
             }`}
           >
             {type}
@@ -1289,7 +1289,7 @@ function SendTextConfig({ config, updateConfig }: ConfigProps) {
           rows={5}
         />
         <div className="flex items-center justify-between mt-1.5">
-          <span className="text-xs text-gray-400">{charCount} characters</span>
+          <span className="text-xs text-gray-400 dark:text-zinc-500">{charCount} characters</span>
           <button
             type="button"
             onClick={() => setShowPreview(!showPreview)}
@@ -1305,7 +1305,7 @@ function SendTextConfig({ config, updateConfig }: ConfigProps) {
           className="p-3 rounded-lg border"
           style={{ backgroundColor: '#DCF8C6', borderColor: '#c6f0a8' }}
         >
-          <p className="text-sm text-gray-800 whitespace-pre-wrap">
+          <p className="text-sm text-gray-800 dark:text-zinc-200 whitespace-pre-wrap">
             {text
               .replace(/\{\{name\}\}/g, 'John')
               .replace(/\{\{phone\}\}/g, '+1234567890')
@@ -1397,7 +1397,7 @@ function SendMediaConfig({ config, updateConfig, nodeType }: ConfigProps & { nod
       ) : (
         <Field label={`Upload ${mediaLabel}`} hint="Max 50 MB">
           <div className="space-y-2">
-            <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-emerald-400 cursor-pointer transition-colors">
+            <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 dark:border-zinc-600 bg-gray-50 dark:bg-zinc-900/50 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:border-emerald-400 cursor-pointer transition-colors">
               <input
                 type="file"
                 accept={acceptMap[nodeType] || '*/*'}
@@ -1408,12 +1408,12 @@ function SendMediaConfig({ config, updateConfig, nodeType }: ConfigProps & { nod
                 }}
                 disabled={uploading}
               />
-              <span className="text-xs font-medium text-gray-600">
+              <span className="text-xs font-medium text-gray-600 dark:text-zinc-400">
                 {uploading ? 'Uploading...' : url ? 'Replace file' : 'Choose a file'}
               </span>
             </label>
             {url && (
-              <p className="text-xs text-gray-500 truncate" title={url}>
+              <p className="text-xs text-gray-500 dark:text-zinc-400 truncate" title={url}>
                 {(config.uploadedFileName as string) || url.split('/').pop()}
               </p>
             )}
@@ -1425,7 +1425,7 @@ function SendMediaConfig({ config, updateConfig, nodeType }: ConfigProps & { nod
       )}
 
       {url && (nodeType === 'send-image' || nodeType === 'send-sticker') && (
-        <div className="rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+        <div className="rounded-lg border border-gray-200 dark:border-zinc-700 overflow-hidden bg-gray-50 dark:bg-zinc-900/50">
           <NextImage
             src={url}
             alt="Preview"
@@ -1601,15 +1601,15 @@ function SendListConfig({ config, updateConfig }: ConfigProps) {
         />
       </Field>
 
-      <div className="w-full h-px bg-gray-100" />
+      <div className="w-full h-px bg-gray-100 dark:bg-zinc-700" />
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-700">Sections</span>
+          <span className="text-xs font-medium text-gray-700 dark:text-zinc-300">Sections</span>
           <button
             type="button"
             onClick={addSection}
-            className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+            className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 font-medium transition-colors"
           >
             <Plus className="w-3 h-3" />
             Add Section
@@ -1617,14 +1617,14 @@ function SendListConfig({ config, updateConfig }: ConfigProps) {
         </div>
 
         {sections.map((section, sIdx) => (
-          <div key={sIdx} className="border border-gray-200 rounded-lg p-3 space-y-2.5 bg-gray-50/50">
+          <div key={sIdx} className="border border-gray-200 dark:border-zinc-700 rounded-lg p-3 space-y-2.5 bg-gray-50/50 dark:bg-zinc-900/30">
             <div className="flex items-center gap-2">
               <input
                 type="text"
                 value={section.title}
                 onChange={(e) => updateSectionTitle(sIdx, e.target.value)}
                 placeholder={`Section ${sIdx + 1} title`}
-                className="flex-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                className="flex-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 dark:placeholder:text-zinc-500"
               />
               {sections.length > 1 && (
                 <button
@@ -1638,14 +1638,14 @@ function SendListConfig({ config, updateConfig }: ConfigProps) {
             </div>
 
             {section.rows.map((row, rIdx) => (
-              <div key={rIdx} className="ml-3 border-l-2 border-slate-200 pl-3 space-y-1">
+              <div key={rIdx} className="ml-3 border-l-2 border-slate-200 dark:border-zinc-700 pl-3 space-y-1">
                 <div className="flex items-center gap-1.5">
                   <input
                     type="text"
                     value={row.title}
                     onChange={(e) => updateRow(sIdx, rIdx, 'title', e.target.value)}
                     placeholder="Row title"
-                    className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                    className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 dark:placeholder:text-zinc-500"
                   />
                   {section.rows.length > 1 && (
                     <button
@@ -1662,14 +1662,14 @@ function SendListConfig({ config, updateConfig }: ConfigProps) {
                   value={row.description}
                   onChange={(e) => updateRow(sIdx, rIdx, 'description', e.target.value)}
                   placeholder="Row description"
-                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 dark:placeholder:text-zinc-500"
                 />
                 <input
                   type="text"
                   value={row.id}
                   onChange={(e) => updateRow(sIdx, rIdx, 'id', e.target.value)}
                   placeholder="Row ID"
-                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono"
+                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono dark:placeholder:text-zinc-500"
                 />
               </div>
             ))}
@@ -1677,7 +1677,7 @@ function SendListConfig({ config, updateConfig }: ConfigProps) {
             <button
               type="button"
               onClick={() => addRow(sIdx)}
-              className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium ml-3 transition-colors"
+              className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 font-medium ml-3 transition-colors"
             >
               <Plus className="w-3 h-3" />
               Add Row
@@ -1710,11 +1710,11 @@ function SendPollConfig({ config, updateConfig }: ConfigProps) {
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-700">Choices</span>
+          <span className="text-xs font-medium text-gray-700 dark:text-zinc-300">Choices</span>
           <button
             type="button"
             onClick={() => updateChoices([...choices, ''])}
-            className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+            className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 font-medium transition-colors"
           >
             <Plus className="w-3 h-3" />
             Add Choice
@@ -1723,7 +1723,7 @@ function SendPollConfig({ config, updateConfig }: ConfigProps) {
         {choices.map((choice, idx) => (
           <div key={idx} className="flex items-center gap-2">
             <span
-              className="text-xs font-medium text-gray-400 w-5 text-center shrink-0"
+              className="text-xs font-medium text-gray-400 dark:text-zinc-500 w-5 text-center shrink-0"
             >
               {idx + 1}.
             </span>
@@ -1736,7 +1736,7 @@ function SendPollConfig({ config, updateConfig }: ConfigProps) {
                 updateChoices(updated);
               }}
               placeholder={`Choice ${idx + 1}`}
-              className="flex-1 px-2.5 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              className="flex-1 px-2.5 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 dark:placeholder:text-zinc-500"
             />
             {choices.length > 2 && (
               <button
@@ -1752,12 +1752,12 @@ function SendPollConfig({ config, updateConfig }: ConfigProps) {
       </div>
 
       <Field label="Allow Multiple Selections">
-        <label className="flex items-center gap-2.5 text-xs text-gray-700 cursor-pointer">
+        <label className="flex items-center gap-2.5 text-xs text-gray-700 dark:text-zinc-300 cursor-pointer">
           <input
             type="checkbox"
             checked={(config.allowMultiple as boolean) || false}
             onChange={(e) => updateConfig('allowMultiple', e.target.checked)}
-            className="rounded border-gray-300 text-emerald-500 focus:ring-emerald-500"
+            className="rounded border-gray-300 dark:border-zinc-600 text-emerald-500 focus:ring-emerald-500"
           />
           Users can select multiple options
         </label>
@@ -1793,16 +1793,16 @@ function SendButtonsConfig({ config, updateConfig }: ConfigProps) {
         />
       </Field>
 
-      <div className="w-full h-px bg-gray-100" />
+      <div className="w-full h-px bg-gray-100 dark:bg-zinc-700" />
 
       <div className="space-y-2.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-700">Buttons (max 3)</span>
+          <span className="text-xs font-medium text-gray-700 dark:text-zinc-300">Buttons (max 3)</span>
           {buttons.length < 3 && (
             <button
               type="button"
               onClick={() => updateButtons([...buttons, { id: String(Date.now()), text: '' }])}
-              className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+              className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 font-medium transition-colors"
             >
               <Plus className="w-3 h-3" />
               Add Button
@@ -1821,7 +1821,7 @@ function SendButtonsConfig({ config, updateConfig }: ConfigProps) {
                   updateButtons(updated);
                 }}
                 placeholder={`Button ${idx + 1} ID`}
-                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono"
+                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-700 dark:text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono dark:placeholder:text-zinc-500"
               />
               <input
                 type="text"
@@ -1832,7 +1832,7 @@ function SendButtonsConfig({ config, updateConfig }: ConfigProps) {
                   updateButtons(updated);
                 }}
                 placeholder={`Button ${idx + 1} text`}
-                className="w-full px-2.5 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                className="w-full px-2.5 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 dark:placeholder:text-zinc-500"
               />
             </div>
             {buttons.length > 1 && (
@@ -1916,8 +1916,8 @@ function ConditionConfig({ config, updateConfig }: ConfigProps) {
 
       {/* Visual preview pill */}
       {leftOperand && (
-        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
-          <p className="text-xs text-amber-800 font-medium text-center">
+        <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40">
+          <p className="text-xs text-amber-800 dark:text-amber-300 font-medium text-center">
             If{' '}
             <span className="font-bold">{leftOperand}</span>
             {' '}{operatorLabels[operator] || operator}{' '}
@@ -2012,15 +2012,15 @@ function HttpRequestConfig({ config, updateConfig }: ConfigProps) {
         />
       </Field>
 
-      <div className="w-full h-px bg-gray-100" />
+      <div className="w-full h-px bg-gray-100 dark:bg-zinc-700" />
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-700">Headers</span>
+          <span className="text-xs font-medium text-gray-700 dark:text-zinc-300">Headers</span>
           <button
             type="button"
             onClick={() => updateConfig('headers', [...headers, { key: '', value: '' }])}
-            className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+            className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 font-medium transition-colors"
           >
             <Plus className="w-3 h-3" />
             Add Header
@@ -2037,7 +2037,7 @@ function HttpRequestConfig({ config, updateConfig }: ConfigProps) {
                 updateConfig('headers', updated);
               }}
               placeholder="Key"
-              className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 dark:placeholder:text-zinc-500"
             />
             <input
               type="text"
@@ -2048,7 +2048,7 @@ function HttpRequestConfig({ config, updateConfig }: ConfigProps) {
                 updateConfig('headers', updated);
               }}
               placeholder="Value"
-              className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-emerald-400 dark:placeholder:text-zinc-500"
             />
             <button
               type="button"
@@ -2072,7 +2072,7 @@ function HttpRequestConfig({ config, updateConfig }: ConfigProps) {
         </Field>
       )}
 
-      <div className="w-full h-px bg-gray-100" />
+      <div className="w-full h-px bg-gray-100 dark:bg-zinc-700" />
 
       <Field label="Store Response In Variable" hint="Save the API response to use later in the flow">
         <TextInput
@@ -2134,7 +2134,7 @@ function AiResponseConfig({ config, updateConfig }: ConfigProps) {
         />
       </Field>
 
-      <div className="w-full h-px bg-gray-100" />
+      <div className="w-full h-px bg-gray-100 dark:bg-zinc-700" />
 
       <Field label="Store Response In Variable">
         <TextInput
@@ -2232,7 +2232,7 @@ function GroupConfig({
       >
         {/* Selected group card */}
         {selectedGroupId ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+          <div className="rounded-lg border border-emerald-200 dark:border-emerald-700/50 bg-emerald-50 dark:bg-emerald-900/20 p-3">
             <div className="flex items-center gap-3">
               {selectedGroup?.profilePicUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -2242,15 +2242,15 @@ function GroupConfig({
                   className="w-10 h-10 rounded-full object-cover shrink-0"
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-emerald-200 flex items-center justify-center text-sm font-semibold text-emerald-700 shrink-0">
+                <div className="w-10 h-10 rounded-full bg-emerald-200 dark:bg-emerald-800 flex items-center justify-center text-sm font-semibold text-emerald-700 dark:text-emerald-300 shrink-0">
                   {(selectedGroupName || '?').charAt(0).toUpperCase()}
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">
+                <p className="text-sm font-semibold text-gray-900 dark:text-zinc-100 truncate">
                   {selectedGroupName || 'Unnamed group'}
                 </p>
-                <p className="text-xs text-gray-500 truncate">
+                <p className="text-xs text-gray-500 dark:text-zinc-400 truncate">
                   {selectedGroup
                     ? `${selectedGroup.participantCount} members · ${selectedGroupId}`
                     : selectedGroupId}
@@ -2268,7 +2268,7 @@ function GroupConfig({
             <button
               type="button"
               onClick={() => setShowPicker(true)}
-              className="mt-2 text-xs text-emerald-700 font-medium hover:underline"
+              className="mt-2 text-xs text-emerald-700 dark:text-emerald-400 font-medium hover:underline"
             >
               Change group
             </button>
@@ -2277,7 +2277,7 @@ function GroupConfig({
           <button
             type="button"
             onClick={() => setShowPicker(true)}
-            className="w-full px-3 py-3 text-sm rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-emerald-400 text-gray-600 transition-colors flex items-center justify-center gap-2"
+            className="w-full px-3 py-3 text-sm rounded-lg border-2 border-dashed border-gray-300 dark:border-zinc-600 bg-gray-50 dark:bg-zinc-900/50 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:border-emerald-400 text-gray-600 dark:text-zinc-400 transition-colors flex items-center justify-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Choose a group
@@ -2286,15 +2286,15 @@ function GroupConfig({
 
         {/* Picker */}
         {showPicker && (
-          <div className="mt-2 rounded-lg border border-gray-200 bg-white overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
+          <div className="mt-2 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-zinc-700">
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search groups..."
                 autoFocus
-                className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400"
+                className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400 dark:placeholder:text-zinc-500 text-gray-800 dark:text-zinc-100"
               />
               <button
                 type="button"
@@ -2302,7 +2302,7 @@ function GroupConfig({
                   setShowPicker(false);
                   setSearch('');
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2310,19 +2310,19 @@ function GroupConfig({
 
             <div className="max-h-56 overflow-y-auto">
               {!sessionId ? (
-                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                <p className="px-3 py-4 text-xs text-gray-500 dark:text-zinc-400 text-center">
                   No session linked to this flow.
                 </p>
               ) : loading ? (
-                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                <p className="px-3 py-4 text-xs text-gray-500 dark:text-zinc-400 text-center">
                   Loading groups...
                 </p>
               ) : actionableGroups.length === 0 ? (
-                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                <p className="px-3 py-4 text-xs text-gray-500 dark:text-zinc-400 text-center">
                   No groups where you are administrator. Sync groups from the Groups page.
                 </p>
               ) : filteredGroups.length === 0 ? (
-                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                <p className="px-3 py-4 text-xs text-gray-500 dark:text-zinc-400 text-center">
                   No groups match your search.
                 </p>
               ) : (
@@ -2331,7 +2331,7 @@ function GroupConfig({
                     key={g.id}
                     type="button"
                     onClick={() => selectGroup(g)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 text-left transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700 text-left transition-colors"
                   >
                     {g.profilePicUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -2341,15 +2341,15 @@ function GroupConfig({
                         className="w-8 h-8 rounded-full object-cover shrink-0"
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-sm font-semibold text-emerald-700 shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center text-sm font-semibold text-emerald-700 dark:text-emerald-400 shrink-0">
                         {g.name.charAt(0).toUpperCase() || '?'}
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-medium text-gray-900 dark:text-zinc-100 truncate">
                         {g.name || 'Unnamed group'}
                       </p>
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-gray-500 dark:text-zinc-400">
                         {g.participantCount} members
                       </p>
                     </div>
@@ -2442,16 +2442,16 @@ function GoToFlowConfig({
         hint="Execution will continue inside the selected flow."
       >
         {selectedFlowId ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+          <div className="rounded-lg border border-emerald-200 dark:border-emerald-700/50 bg-emerald-50 dark:bg-emerald-900/20 p-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-emerald-200 flex items-center justify-center text-emerald-700 shrink-0">
+              <div className="w-10 h-10 rounded-lg bg-emerald-200 dark:bg-emerald-800 flex items-center justify-center text-emerald-700 dark:text-emerald-300 shrink-0">
                 <ExternalLink className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">
+                <p className="text-sm font-semibold text-gray-900 dark:text-zinc-100 truncate">
                   {selectedFlowName || 'Unnamed flow'}
                 </p>
-                <p className="text-xs text-gray-500 truncate">
+                <p className="text-xs text-gray-500 dark:text-zinc-400 truncate">
                   {selectedFlow?.isActive ? 'Active' : 'Inactive'}
                   {selectedFlow?.description ? ` · ${selectedFlow.description}` : ''}
                 </p>
@@ -2468,7 +2468,7 @@ function GoToFlowConfig({
             <button
               type="button"
               onClick={() => setShowPicker(true)}
-              className="mt-2 text-xs text-emerald-700 font-medium hover:underline"
+              className="mt-2 text-xs text-emerald-700 dark:text-emerald-400 font-medium hover:underline"
             >
               Change flow
             </button>
@@ -2477,7 +2477,7 @@ function GoToFlowConfig({
           <button
             type="button"
             onClick={() => setShowPicker(true)}
-            className="w-full px-3 py-3 text-sm rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-emerald-400 text-gray-600 transition-colors flex items-center justify-center gap-2"
+            className="w-full px-3 py-3 text-sm rounded-lg border-2 border-dashed border-gray-300 dark:border-zinc-600 bg-gray-50 dark:bg-zinc-900/50 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:border-emerald-400 text-gray-600 dark:text-zinc-400 transition-colors flex items-center justify-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Choose a flow
@@ -2485,15 +2485,15 @@ function GoToFlowConfig({
         ) : null}
 
         {showPicker && (
-          <div className="mt-2 rounded-lg border border-gray-200 bg-white overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
+          <div className="mt-2 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-zinc-700">
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search flows..."
                 autoFocus
-                className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400"
+                className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400 dark:placeholder:text-zinc-500 text-gray-800 dark:text-zinc-100"
               />
               <button
                 type="button"
@@ -2501,7 +2501,7 @@ function GoToFlowConfig({
                   setShowPicker(false);
                   setSearch('');
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2509,15 +2509,15 @@ function GoToFlowConfig({
 
             <div className="max-h-56 overflow-y-auto">
               {loading ? (
-                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                <p className="px-3 py-4 text-xs text-gray-500 dark:text-zinc-400 text-center">
                   Loading flows...
                 </p>
               ) : availableFlows.length === 0 ? (
-                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                <p className="px-3 py-4 text-xs text-gray-500 dark:text-zinc-400 text-center">
                   No other flows found. Create one first on the Flows page.
                 </p>
               ) : filteredFlows.length === 0 ? (
-                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                <p className="px-3 py-4 text-xs text-gray-500 dark:text-zinc-400 text-center">
                   No flows match your search.
                 </p>
               ) : (
@@ -2526,22 +2526,22 @@ function GoToFlowConfig({
                     key={f.id}
                     type="button"
                     onClick={() => selectFlow(f)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 text-left transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700 text-left transition-colors"
                   >
                     <div
                       className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                         f.isActive
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-gray-100 text-gray-500'
+                          ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400'
+                          : 'bg-gray-100 dark:bg-zinc-700 text-gray-500 dark:text-zinc-400'
                       }`}
                     >
                       <ExternalLink className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-medium text-gray-900 dark:text-zinc-100 truncate">
                         {f.name || 'Unnamed flow'}
                       </p>
-                      <p className="text-xs text-gray-500 truncate">
+                      <p className="text-xs text-gray-500 dark:text-zinc-400 truncate">
                         {f.isActive ? 'Active' : 'Inactive'}
                         {f.description ? ` · ${f.description}` : ''}
                       </p>
@@ -2603,8 +2603,8 @@ function ReactionConfig({ config, updateConfig }: ConfigProps) {
                 title={label}
                 className={`aspect-square flex items-center justify-center rounded-xl text-2xl transition-all ${
                   isSelected
-                    ? 'ring-2 ring-emerald-500 bg-emerald-50 scale-110 shadow-md'
-                    : 'bg-gray-50 hover:bg-gray-100 hover:scale-105 border border-gray-200'
+                    ? 'ring-2 ring-emerald-500 bg-emerald-50 dark:bg-emerald-900/30 scale-110 shadow-md'
+                    : 'bg-gray-50 dark:bg-zinc-700/50 hover:bg-gray-100 dark:hover:bg-zinc-700 hover:scale-105 border border-gray-200 dark:border-zinc-600'
                 }`}
               >
                 {emoji}
@@ -2614,7 +2614,7 @@ function ReactionConfig({ config, updateConfig }: ConfigProps) {
         </div>
       </Field>
 
-      <div className="w-full h-px bg-gray-100" />
+      <div className="w-full h-px bg-gray-100 dark:bg-zinc-700" />
 
       <Field label="Or enter a custom emoji">
         <div className="flex items-center gap-2">
@@ -2629,10 +2629,10 @@ function ReactionConfig({ config, updateConfig }: ConfigProps) {
             placeholder="🚀"
             maxLength={4}
             style={{ fontSize: 24, textAlign: 'center', padding: '8px 12px', width: 80 }}
-            className="rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all"
+            className="rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-all"
           />
           {selectedEmoji && (
-            <div className="flex items-center gap-2 text-xs text-gray-500">
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-zinc-400">
               <span>Selected:</span>
               <span className="text-xl">{selectedEmoji}</span>
             </div>
@@ -2642,10 +2642,10 @@ function ReactionConfig({ config, updateConfig }: ConfigProps) {
 
       {/* Preview card */}
       {selectedEmoji && (
-        <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-50 to-blue-50 border border-emerald-200">
-          <p className="text-xs text-gray-500 mb-2">Preview</p>
+        <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-emerald-900/20 dark:to-blue-900/20 border border-emerald-200 dark:border-emerald-700/40">
+          <p className="text-xs text-gray-500 dark:text-zinc-400 mb-2">Preview</p>
           <div className="flex items-center gap-3">
-            <div className="flex-1 px-3 py-2 bg-white rounded-lg text-sm text-gray-700 shadow-sm">
+            <div className="flex-1 px-3 py-2 bg-white dark:bg-zinc-800 rounded-lg text-sm text-gray-700 dark:text-zinc-300 shadow-sm">
               Their message
             </div>
             <div className="text-3xl animate-bounce">{selectedEmoji}</div>
@@ -2744,7 +2744,7 @@ function ForwardConfig({
             {selectedContacts.map(({ wppId, contact }) => (
               <span
                 key={wppId}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-xs text-emerald-700"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700/50 text-xs text-emerald-700 dark:text-emerald-400"
               >
                 {contact?.profilePicUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -2754,7 +2754,7 @@ function ForwardConfig({
                     className="w-4 h-4 rounded-full object-cover"
                   />
                 ) : (
-                  <span className="w-4 h-4 rounded-full bg-emerald-200 flex items-center justify-center text-[9px] font-semibold">
+                  <span className="w-4 h-4 rounded-full bg-emerald-200 dark:bg-emerald-800 flex items-center justify-center text-[9px] font-semibold">
                     {(contact?.name || wppId).charAt(0).toUpperCase()}
                   </span>
                 )}
@@ -2778,21 +2778,21 @@ function ForwardConfig({
           <button
             type="button"
             onClick={() => setShowPicker(true)}
-            className="w-full px-3 py-2.5 text-sm rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-emerald-400 text-gray-600 transition-colors flex items-center justify-center gap-2"
+            className="w-full px-3 py-2.5 text-sm rounded-lg border-2 border-dashed border-gray-300 dark:border-zinc-600 bg-gray-50 dark:bg-zinc-900/50 hover:bg-gray-100 dark:hover:bg-zinc-800 hover:border-emerald-400 text-gray-600 dark:text-zinc-400 transition-colors flex items-center justify-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Add recipient
           </button>
         ) : (
-          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100">
+          <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 overflow-hidden">
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-zinc-700">
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search contacts..."
                 autoFocus
-                className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400"
+                className="flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400 dark:placeholder:text-zinc-500 text-gray-800 dark:text-zinc-100"
               />
               <button
                 type="button"
@@ -2800,7 +2800,7 @@ function ForwardConfig({
                   setShowPicker(false);
                   setSearch('');
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -2808,15 +2808,15 @@ function ForwardConfig({
 
             <div className="max-h-56 overflow-y-auto">
               {!sessionId ? (
-                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                <p className="px-3 py-4 text-xs text-gray-500 dark:text-zinc-400 text-center">
                   No session linked to this flow.
                 </p>
               ) : loading ? (
-                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                <p className="px-3 py-4 text-xs text-gray-500 dark:text-zinc-400 text-center">
                   Loading contacts...
                 </p>
               ) : filteredContacts.length === 0 ? (
-                <p className="px-3 py-4 text-xs text-gray-500 text-center">
+                <p className="px-3 py-4 text-xs text-gray-500 dark:text-zinc-400 text-center">
                   {search ? 'No contacts match your search.' : 'No more contacts available. Sync contacts from the Contacts page.'}
                 </p>
               ) : (
@@ -2825,7 +2825,7 @@ function ForwardConfig({
                     key={c.id}
                     type="button"
                     onClick={() => addTarget(c.wppId)}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 text-left transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-gray-50 dark:hover:bg-zinc-700 text-left transition-colors"
                   >
                     {c.profilePicUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -2835,15 +2835,15 @@ function ForwardConfig({
                         className="w-7 h-7 rounded-full object-cover shrink-0"
                       />
                     ) : (
-                      <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-xs font-semibold text-emerald-700 shrink-0">
+                      <div className="w-7 h-7 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center text-xs font-semibold text-emerald-700 dark:text-emerald-400 shrink-0">
                         {c.name.charAt(0).toUpperCase()}
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
+                      <p className="text-sm font-medium text-gray-900 dark:text-zinc-100 truncate">
                         {c.name || c.phone}
                       </p>
-                      <p className="text-xs text-gray-500 truncate">
+                      <p className="text-xs text-gray-500 dark:text-zinc-400 truncate">
                         {c.phone}
                       </p>
                     </div>
@@ -2952,7 +2952,7 @@ function AiAgentConfig({ config, updateConfig }: ConfigProps) {
               className={`px-2 py-1 text-xs font-medium rounded-md border transition-colors ${
                 selectedTools.includes(tool)
                   ? 'bg-sky-800 text-white border-sky-800'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-sky-400 hover:text-sky-700'
+                  : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 border-slate-200 dark:border-zinc-700 hover:border-sky-400 hover:text-sky-700 dark:hover:border-sky-500 dark:hover:text-sky-400'
               }`}
             >
               {tool}
@@ -3521,20 +3521,20 @@ function WppConnectAllConfig({ config, updateConfig }: ConfigProps) {
 
   return (
     <>
-      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 mb-2">
-        <p className="text-[11px] text-emerald-800 leading-snug">
+      <div className="rounded-lg border border-emerald-200 dark:border-emerald-700/50 bg-emerald-50 dark:bg-emerald-900/20 p-3 mb-2">
+        <p className="text-[11px] text-emerald-800 dark:text-emerald-300 leading-snug">
           This node grants the AI Agent full access to all WPPConnect methods — acting like an MCP server for your WhatsApp account. The agent can send messages, manage groups, handle labels, and more.
         </p>
       </div>
       <Field label="Capabilities">
-        <label className="flex items-center gap-2.5 py-2 cursor-pointer border-b border-slate-100 mb-2">
+        <label className="flex items-center gap-2.5 py-2 cursor-pointer border-b border-slate-100 dark:border-zinc-700 mb-2">
           <input
             type="checkbox"
             checked={allEnabled}
             onChange={(e) => toggleAll(e.target.checked)}
-            className="rounded border-slate-300 text-emerald-500 focus:ring-emerald-500"
+            className="rounded border-slate-300 dark:border-zinc-600 text-emerald-500 focus:ring-emerald-500"
           />
-          <span className="text-sm font-semibold text-slate-800">All capabilities</span>
+          <span className="text-sm font-semibold text-slate-800 dark:text-zinc-100">All capabilities</span>
         </label>
         <div className="space-y-1">
           {WPP_CAPABILITIES.map(({ key, label, description }) => (
@@ -3544,11 +3544,11 @@ function WppConnectAllConfig({ config, updateConfig }: ConfigProps) {
                 checked={allEnabled || (enabled[key] !== false && enabled[key] !== undefined ? !!enabled[key] : false)}
                 disabled={allEnabled}
                 onChange={(e) => toggleCap(key, e.target.checked)}
-                className="mt-0.5 rounded border-slate-300 text-emerald-500 focus:ring-emerald-500 disabled:opacity-40"
+                className="mt-0.5 rounded border-slate-300 dark:border-zinc-600 text-emerald-500 focus:ring-emerald-500 disabled:opacity-40"
               />
               <div className="min-w-0">
-                <div className="text-[11px] font-semibold text-slate-700">{label}</div>
-                <div className="text-[10px] text-slate-400 leading-tight">{description}</div>
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-zinc-300">{label}</div>
+                <div className="text-[10px] text-slate-400 dark:text-zinc-500 leading-tight">{description}</div>
               </div>
             </label>
           ))}
